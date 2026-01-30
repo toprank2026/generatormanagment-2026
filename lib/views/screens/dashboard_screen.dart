@@ -43,36 +43,78 @@ class DashboardScreen extends StatelessWidget {
                 ),
                 child: Stack(
                   children: [
+                    // Background Pattern
                     Positioned(
-                      right: -20,
-                      top: -20,
+                      right: -30,
+                      top: -30,
                       child: Icon(
                         Icons.flash_on,
                         size: 150,
-                        color: Colors.white.withOpacity(0.2),
+                        color: Colors.white.withOpacity(0.15),
                       ),
                     ),
                     Positioned(
                       left: 20,
+                      right: 20,
                       bottom: 20,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      top: 20,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Obx(
-                            () => Text(
-                              "Welcome Back, ${authController.currentUser.value?.username ?? ''}",
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 16,
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const CircleAvatar(
+                              radius: 30,
+                              backgroundColor: Colors.white,
+                              child: Icon(
+                                Icons.person,
+                                size: 35,
+                                color: Color(0xFF1565C0),
                               ),
                             ),
                           ),
-                          Text(
-                            "System Online",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Obx(
+                                  () => Text(
+                                    authController.currentUser.value?.username
+                                            .toUpperCase() ??
+                                        'ADMIN',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.1,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Text(
+                                    "System Administrator",
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
