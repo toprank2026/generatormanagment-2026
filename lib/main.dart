@@ -1,0 +1,68 @@
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/views/screens/login_screen.dart';
+import 'package:generatormanagment/views/screens/home_screen.dart';
+import 'package:generatormanagment/views/screens/setup_screen.dart';
+import 'package:generatormanagment/views/root_handler.dart';
+import 'package:generatormanagment/utils/translations.dart';
+
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/date_symbol_data_local.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting();
+
+  // Load saved language directly from preferences
+  final prefs = await SharedPreferences.getInstance();
+  final langCode = prefs.getString('lang_code');
+  final locale = langCode == 'ar'
+      ? const Locale('ar', 'AR')
+      : const Locale('en', 'US');
+
+  runApp(MyApp(initialLocale: locale));
+}
+
+class MyApp extends StatelessWidget {
+  final Locale initialLocale;
+  const MyApp({super.key, required this.initialLocale});
+
+  @override
+  Widget build(BuildContext context) {
+    return GetMaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Moldati Owner',
+      translations: Messages(), // your translations class
+      locale: initialLocale, // default locale, or use Get.deviceLocale
+      fallbackLocale: const Locale('en', 'US'),
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF2196F3), // Blue
+          primary: const Color(0xFF2196F3),
+          secondary: const Color(0xFF64B5F6),
+          background: Colors.white,
+          surface: Colors.white,
+        ),
+        useMaterial3: true,
+        scaffoldBackgroundColor: const Color(
+          0xFFF5F5F5,
+        ), // Light grey background
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black, // Dark text on white app bar
+          elevation: 0,
+        ),
+      ),
+      initialBinding: BindingsBuilder(() {
+        Get.put(AuthController());
+      }),
+      home: const RootHandler(),
+      getPages: [
+        GetPage(name: '/login', page: () => const LoginScreen()),
+        GetPage(name: '/setup', page: () => const SetupScreen()),
+        GetPage(name: '/home', page: () => const HomeScreen()),
+      ],
+    );
+  }
+}

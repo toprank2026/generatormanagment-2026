@@ -1,0 +1,259 @@
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:generatormanagment/controllers/core_controller.dart';
+import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/views/screens/subscribers_screen.dart';
+import 'package:generatormanagment/views/screens/circuits_screen.dart';
+
+class BoardsScreen extends StatelessWidget {
+  final bool forCircuits;
+  const BoardsScreen({super.key, this.forCircuits = false});
+
+  @override
+  Widget build(BuildContext context) {
+    // We put the controller if not exists, or find it.
+    // Usually put in binding, but lazy put here is fine for now.
+    final CoreController controller = Get.put(CoreController());
+    final AuthController auth = Get.find<AuthController>();
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFE3F2FD),
+      appBar: AppBar(
+        title: Text(
+          'boards'.tr,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        backgroundColor: const Color(0xFF1565C0),
+        iconTheme: const IconThemeData(color: Colors.white),
+        elevation: 0,
+        centerTitle: true,
+      ),
+      floatingActionButton: Obx(
+        () => auth.isAdmin
+            ? FloatingActionButton.extended(
+                onPressed: () => _showBoardForm(context, controller),
+                icon: const Icon(Icons.add, color: Colors.white),
+                label: Text(
+                  'add_new'.tr,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                backgroundColor: const Color(0xFF1565C0),
+              )
+            : const SizedBox.shrink(),
+      ),
+      body: GetBuilder<CoreController>(
+        builder: (ctrl) {
+          if (ctrl.isLoading.value) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (ctrl.boards.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.grid_off, size: 80, color: Colors.grey[400]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'no_boards'.tr,
+                    style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return GridView.builder(
+            padding: const EdgeInsets.all(16),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              childAspectRatio: 0.9,
+            ),
+            itemCount: ctrl.boards.length,
+            itemBuilder: (context, index) {
+              final board = ctrl.boards[index];
+              return Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Stack(
+                  children: [
+                    InkWell(
+                      onTap: () {
+                        if (forCircuits) {
+                          Get.to(() => CircuitsScreen(board: board));
+                        } else {
+                          Get.to(() => SubscribersScreen(boardId: board.id));
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.grid_view,
+                              size: 48,
+                              color: Color(0xFF1565C0),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              board.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (board.code != null && board.code!.isNotEmpty)
+                              Text(
+                                board.code!,
+                                style: const TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 12,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (auth.isAdmin)
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert, color: Colors.grey),
+                          onSelected: (val) {
+                            if (val == 'edit') {
+                              _showBoardForm(context, controller, board: board);
+                            } else if (val == 'delete') {
+                              _showDeleteConfirm(controller, board);
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            PopupMenuItem(
+                              value: 'edit',
+                              child: ListTile(
+                                leading: const Icon(
+                                  Icons.edit,
+                                  color: Colors.blue,
+                                ),
+                                title: Text('edit'.tr),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'delete',
+                              child: ListTile(
+                                leading: const Icon(
+                                  Icons.delete,
+                                  color: Colors.red,
+                                ),
+                                title: Text('delete'.tr),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  void _showBoardForm(
+    BuildContext context,
+    CoreController controller, {
+    Board? board,
+  }) {
+    final nameCtrl = TextEditingController(text: board?.name);
+    final codeCtrl = TextEditingController(text: board?.code);
+    final isEdit = board != null;
+
+    Get.defaultDialog(
+      title: isEdit ? "edit_board".tr : "add_board".tr,
+      content: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: InputDecoration(
+                labelText: "full_name".tr,
+                hintText: "board_name_hint".tr,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: codeCtrl,
+              decoration: InputDecoration(
+                labelText: "code".tr,
+                hintText: "board_code_hint".tr,
+              ),
+            ),
+          ],
+        ),
+      ),
+      textConfirm: isEdit ? "save_changes".tr : "add".tr,
+      textCancel: "cancel".tr,
+      confirmTextColor: Colors.white,
+      buttonColor: const Color(0xFF1565C0),
+      onConfirm: () {
+        if (nameCtrl.text.isNotEmpty) {
+          if (isEdit) {
+            controller.updateBoard(
+              Board(id: board.id, name: nameCtrl.text, code: codeCtrl.text),
+            );
+          } else {
+            controller.addBoard(nameCtrl.text, codeCtrl.text);
+          }
+          Get.back();
+          Get.snackbar(
+            "success".tr,
+            isEdit ? "board_updated".tr : "board_added".tr,
+            backgroundColor: Colors.green,
+            colorText: Colors.white,
+          );
+        }
+      },
+    );
+  }
+
+  void _showDeleteConfirm(CoreController controller, Board board) {
+    Get.defaultDialog(
+      title: "delete_board_title".tr,
+      middleText: "delete_board_confirm".tr,
+      textConfirm: "delete".tr,
+      textCancel: "cancel".tr,
+      confirmTextColor: Colors.white,
+      buttonColor: Colors.red,
+      onConfirm: () async {
+        await controller.deleteBoard(board.id);
+        Get.back();
+        Get.snackbar(
+          "success".tr,
+          "board_deleted".tr,
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+      },
+    );
+  }
+}
