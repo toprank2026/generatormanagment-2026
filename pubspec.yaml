@@ -51,6 +51,7 @@ dependencies:
   esc_pos_utils_plus: ^2.0.4
   permission_handler: ^11.3.1
   iconsax: ^0.0.8
+  csv: ^6.0.0
 
 dev_dependencies:
   flutter_test:

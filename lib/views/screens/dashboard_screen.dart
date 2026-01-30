@@ -226,10 +226,19 @@ class DashboardScreen extends StatelessWidget {
     required String value,
     VoidCallback? onTap,
   }) {
-    return Card(
-      elevation: 4,
-      shadowColor: Colors.black12,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
