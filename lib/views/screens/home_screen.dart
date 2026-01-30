@@ -4,6 +4,7 @@ import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/views/screens/boards_screen.dart';
 import 'package:generatormanagment/views/screens/subscribers_screen.dart';
 import 'package:generatormanagment/views/screens/monthly_pricing_screen.dart';
+import 'package:iconsax/iconsax.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -17,7 +18,7 @@ class HomeScreen extends StatelessWidget {
         title: const Text("Dashboard"),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Iconsax.logout),
             onPressed: () => auth.logout(),
           ),
         ],
@@ -46,38 +47,38 @@ class HomeScreen extends StatelessWidget {
               accountEmail: Obx(() => Text(auth.currentUser.value?.role ?? "")),
             ),
             ListTile(
-              leading: const Icon(Icons.dashboard),
+              leading: const Icon(Iconsax.home),
               title: const Text("Home"),
               onTap: () => Get.back(),
             ),
             ListTile(
-              leading: const Icon(Icons.grid_view),
+              leading: const Icon(Iconsax.box),
               title: const Text("Boards"),
               onTap: () {
                 Get.to(() => const BoardsScreen());
               },
             ),
             ListTile(
-              leading: const Icon(Icons.people),
+              leading: const Icon(Iconsax.people),
               title: const Text("Users"),
               onTap: () {
                 Get.to(() => const SubscribersScreen());
               },
             ),
             ListTile(
-              leading: const Icon(Icons.money),
+              leading: const Icon(Iconsax.money),
               title: const Text("Payment"),
               onTap: () {
                 Get.to(() => const MonthlyPricingScreen());
               },
             ),
             ListTile(
-              leading: const Icon(Icons.receipt),
+              leading: const Icon(Iconsax.receipt),
               title: const Text("Expenses"),
               onTap: () {},
             ),
             ListTile(
-              leading: const Icon(Icons.settings),
+              leading: const Icon(Iconsax.setting),
               title: const Text("Settings"),
               onTap: () {},
             ),
