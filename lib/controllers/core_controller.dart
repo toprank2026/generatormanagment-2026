@@ -18,6 +18,13 @@ class CoreController extends GetxController {
   var subscribers = <Subscriber>[].obs;
   var isLoading = false.obs;
 
+  // Pagination
+  static const int itemsPerPage = 2;
+  var currentPage = 1.obs;
+  var hasNextPage = false.obs;
+  // Keep track of current query to maintain state across pages
+  String? _currentQuery;
+
   @override
   void onInit() {
     super.onInit();
@@ -101,14 +108,42 @@ class CoreController extends GetxController {
   }
 
   // --- Subscribers ---
-  Future<void> loadSubscribers({String? query}) async {
+  Future<void> loadSubscribers({String? query, int page = 1}) async {
     isLoading.value = true;
+    _currentQuery = query;
+    currentPage.value = page;
+
     try {
-      subscribers.value = await _subscriberRepo.getAll(query: query);
+      // Fetch one extra item to check if there is a next page
+      final result = await _subscriberRepo.getAll(
+        query: query,
+        limit: itemsPerPage + 1,
+        offset: (page - 1) * itemsPerPage,
+      );
+
+      if (result.length > itemsPerPage) {
+        hasNextPage.value = true;
+        subscribers.value = result.sublist(0, itemsPerPage);
+      } else {
+        hasNextPage.value = false;
+        subscribers.value = result;
+      }
     } finally {
       isLoading.value = false;
     }
     update();
+  }
+
+  void nextPage() {
+    if (hasNextPage.value) {
+      loadSubscribers(query: _currentQuery, page: currentPage.value + 1);
+    }
+  }
+
+  void prevPage() {
+    if (currentPage.value > 1) {
+      loadSubscribers(query: _currentQuery, page: currentPage.value - 1);
+    }
   }
 
   Future<void> addSubscriber(Subscriber sub) async {

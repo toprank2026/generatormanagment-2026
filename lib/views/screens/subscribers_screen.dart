@@ -136,85 +136,125 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
             );
           }
 
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(
-              16,
-              16,
-              16,
-              80,
-            ), // Padding for FAB
-            itemCount: ctrl.subscribers.length,
-            separatorBuilder: (c, i) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              final sub = ctrl.subscribers[index];
-              return Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.blue.withOpacity(0.05),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  leading: CircleAvatar(
-                    backgroundColor: const Color(0xFFE3F2FD),
-                    radius: 24,
-                    child: Text(
-                      _getInitials(sub.name),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1565C0),
+          return Column(
+            children: [
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(
+                    16,
+                    16,
+                    16,
+                    80,
+                  ), // Padding for FAB
+                  itemCount: ctrl.subscribers.length,
+                  separatorBuilder: (c, i) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final sub = ctrl.subscribers[index];
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.blue.withOpacity(0.05),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                    ),
-                  ),
-                  title: Text(
-                    sub.name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  subtitle: Row(
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        leading: CircleAvatar(
+                          backgroundColor: const Color(0xFFE3F2FD),
+                          radius: 24,
+                          child: Text(
+                            _getInitials(sub.name),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1565C0),
+                            ),
+                          ),
+                        ),
+                        title: Text(
+                          sub.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        subtitle: Row(
+                          children: [
+                            Icon(
+                              Icons.phone,
+                              size: 14,
+                              color: Colors.grey[500],
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              sub.phone ?? 'no_phone'.tr,
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                        trailing: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE3F2FD),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            "${sub.amps} A",
+                            style: const TextStyle(
+                              color: Color(0xFF1565C0),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        onTap: () {
+                          Get.to(() => SubscriberDetailScreen(subscriber: sub));
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+              // Pagination Footer (Only if not filtered)
+              if (widget.filter == null && widget.boardId == null)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  color: Colors.white,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Icon(Icons.phone, size: 14, color: Colors.grey[500]),
-                      const SizedBox(width: 4),
-                      Text(
-                        sub.phone ?? 'no_phone'.tr,
-                        style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                      TextButton.icon(
+                        onPressed: ctrl.currentPage.value > 1
+                            ? () => ctrl.prevPage()
+                            : null,
+                        icon: const Icon(Icons.arrow_back),
+                        label: const Text("Previous"),
+                      ),
+                      Text("Page ${ctrl.currentPage.value}"),
+                      TextButton.icon(
+                        onPressed: ctrl.hasNextPage.value
+                            ? () => ctrl.nextPage()
+                            : null,
+                        icon: const Icon(Icons.arrow_forward),
+                        label: const Text("Next"),
+                        iconAlignment: IconAlignment.end,
                       ),
                     ],
                   ),
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE3F2FD),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      "${sub.amps} A",
-                      style: const TextStyle(
-                        color: Color(0xFF1565C0),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  onTap: () {
-                    Get.to(() => SubscriberDetailScreen(subscriber: sub));
-                  },
                 ),
-              );
-            },
+            ],
           );
         },
       ),
