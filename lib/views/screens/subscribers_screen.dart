@@ -18,10 +18,12 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
   final CoreController controller = Get.put(CoreController());
   final AuthController auth = Get.find<AuthController>();
   final TextEditingController searchCtrl = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.filter != null) {
         controller.loadFilteredSubscribers(widget.filter!);
@@ -31,6 +33,21 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
         controller.loadSubscribers();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      if (widget.filter == null && widget.boardId == null) {
+        controller.loadMore();
+      }
+    }
   }
 
   @override
@@ -140,15 +157,26 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
             children: [
               Expanded(
                 child: ListView.separated(
+                  controller: _scrollController,
                   padding: const EdgeInsets.fromLTRB(
                     16,
                     16,
                     16,
                     80,
                   ), // Padding for FAB
-                  itemCount: ctrl.subscribers.length,
+                  itemCount:
+                      ctrl.subscribers.length +
+                      (ctrl.isMoreLoading.value ? 1 : 0),
                   separatorBuilder: (c, i) => const SizedBox(height: 12),
                   itemBuilder: (context, index) {
+                    if (index == ctrl.subscribers.length) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: CircularProgressIndicator(),
+                        ),
+                      );
+                    }
                     final sub = ctrl.subscribers[index];
                     return Container(
                       decoration: BoxDecoration(
@@ -156,7 +184,7 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.blue.withOpacity(0.05),
+                            color: Colors.blue.withValues(alpha: 0.05),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -227,33 +255,6 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
                   },
                 ),
               ),
-              // Pagination Footer (Only if not filtered)
-              if (widget.filter == null && widget.boardId == null)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  color: Colors.white,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      TextButton.icon(
-                        onPressed: ctrl.currentPage.value > 1
-                            ? () => ctrl.prevPage()
-                            : null,
-                        icon: const Icon(Icons.arrow_back),
-                        label: const Text("Previous"),
-                      ),
-                      Text("Page ${ctrl.currentPage.value}"),
-                      TextButton.icon(
-                        onPressed: ctrl.hasNextPage.value
-                            ? () => ctrl.nextPage()
-                            : null,
-                        icon: const Icon(Icons.arrow_forward),
-                        label: const Text("Next"),
-                        iconAlignment: IconAlignment.end,
-                      ),
-                    ],
-                  ),
-                ),
             ],
           );
         },

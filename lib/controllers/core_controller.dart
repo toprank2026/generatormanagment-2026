@@ -19,9 +19,10 @@ class CoreController extends GetxController {
   var isLoading = false.obs;
 
   // Pagination
-  static const int itemsPerPage = 2;
+  static const int itemsPerPage = 6;
   var currentPage = 1.obs;
   var hasNextPage = false.obs;
+  var isMoreLoading = false.obs;
   // Keep track of current query to maintain state across pages
   String? _currentQuery;
 
@@ -109,7 +110,13 @@ class CoreController extends GetxController {
 
   // --- Subscribers ---
   Future<void> loadSubscribers({String? query, int page = 1}) async {
-    isLoading.value = true;
+    if (page == 1) {
+      isLoading.value = true;
+      subscribers.clear();
+    } else {
+      isMoreLoading.value = true;
+    }
+
     _currentQuery = query;
     currentPage.value = page;
 
@@ -121,28 +128,30 @@ class CoreController extends GetxController {
         offset: (page - 1) * itemsPerPage,
       );
 
+      List<Subscriber> newItems;
       if (result.length > itemsPerPage) {
         hasNextPage.value = true;
-        subscribers.value = result.sublist(0, itemsPerPage);
+        newItems = result.sublist(0, itemsPerPage);
       } else {
         hasNextPage.value = false;
-        subscribers.value = result;
+        newItems = result;
+      }
+
+      if (page == 1) {
+        subscribers.assignAll(newItems);
+      } else {
+        subscribers.addAll(newItems);
       }
     } finally {
       isLoading.value = false;
+      isMoreLoading.value = false;
     }
     update();
   }
 
-  void nextPage() {
-    if (hasNextPage.value) {
+  void loadMore() {
+    if (hasNextPage.value && !isMoreLoading.value && !isLoading.value) {
       loadSubscribers(query: _currentQuery, page: currentPage.value + 1);
-    }
-  }
-
-  void prevPage() {
-    if (currentPage.value > 1) {
-      loadSubscribers(query: _currentQuery, page: currentPage.value - 1);
     }
   }
 
