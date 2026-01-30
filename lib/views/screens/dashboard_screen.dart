@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
+import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/views/widgets/shimmer_loading.dart';
 import 'package:generatormanagment/views/screens/subscribers_screen.dart';
 import 'package:generatormanagment/views/screens/boards_screen.dart';
@@ -11,6 +12,7 @@ class DashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final DashboardController controller = Get.put(DashboardController());
+    final AuthController authController = Get.find<AuthController>();
 
     return Scaffold(
       appBar: AppBar(
@@ -50,17 +52,19 @@ class DashboardScreen extends StatelessWidget {
                         color: Colors.white.withOpacity(0.2),
                       ),
                     ),
-                    const Positioned(
+                    Positioned(
                       left: 20,
                       bottom: 20,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            "Welcome Back,",
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 16,
+                          Obx(
+                            () => Text(
+                              "Welcome Back, ${authController.currentUser.value?.username ?? ''}",
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 16,
+                              ),
                             ),
                           ),
                           Text(

@@ -59,7 +59,7 @@ class BluetoothPrintService {
     bluetooth.write(" \n"); // Clear buffer
 
     // Header - Render as image for better Arabic support if needed, but keeping English for now
-    bluetooth.printCustom("MOLDATI GENERATOR", 3, 1); // Size 3, Center
+    bluetooth.printCustom("TopRank", 3, 1); // Size 3, Center
     bluetooth.printNewLine();
 
     await printArabicText(
