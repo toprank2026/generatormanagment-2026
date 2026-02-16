@@ -16,7 +16,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final AuthController _authController = Get.find();
   final _formKey = GlobalKey<FormState>();
 
-  bool _isInitialSetup = false;
   bool _isLoading = true;
 
   @override
@@ -26,39 +25,40 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _checkSetup() async {
-    bool hasUser = await _authController.hasAnyUser();
     setState(() {
-      _isInitialSetup = !hasUser;
       _isLoading = false;
     });
   }
 
   void _submit() async {
     if (_formKey.currentState!.validate()) {
-      if (_isInitialSetup) {
-        await _authController.createInitialAdmin(
-          _usernameController.text,
-          _passwordController.text,
-        );
-        // RootHandler will automatically redirect due to state change
+      setState(() => _isLoading = true);
+
+      final result = await _authController.login(
+        _usernameController.text.trim(),
+        _passwordController.text,
+      );
+
+      setState(() => _isLoading = false);
+
+      if (result['success'] == true) {
+        Get.offAll(() => const RootHandler());
       } else {
-        bool success = await _authController.login(
-          _usernameController.text,
-          _passwordController.text,
-        );
-        if (success) {
-          // Clear any pushed routes (like if we came from Setup) and let RootHandler decide
-          Get.offAll(() => const RootHandler());
-          //////import&export
-        } else {
-          Get.snackbar(
-            "Error",
-            "Invalid username or password",
-            snackPosition: SnackPosition.BOTTOM,
-            backgroundColor: Colors.red.withOpacity(0.1),
-            colorText: Colors.red,
-          );
+        String message = result['message'];
+        if (result['statusCode'] == 403) {
+          message =
+              "Your account is disabled. Please contact the administrator.";
+        } else if (result['statusCode'] == 401) {
+          message = "Invalid username or password";
         }
+
+        Get.snackbar(
+          "Login Failed",
+          message,
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red.withOpacity(0.1),
+          colorText: Colors.red,
+        );
       }
     }
   }
@@ -84,19 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const Icon(Icons.bolt, size: 80, color: Color(0xFF1565C0)),
                   const SizedBox(height: 24),
                   Text(
-                    _isInitialSetup ? "Welcome to Moldati" : "Welcome Back",
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1565C0),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _isInitialSetup
-                        ? "Create your admin account to get started"
-                        : "Sign in to your account",
+                    "Sign in to your account",
                     style: const TextStyle(fontSize: 16, color: Colors.grey),
                     textAlign: TextAlign.center,
                   ),
@@ -169,35 +157,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     child: Text(
-                      _isInitialSetup ? "CREATE ACCOUNT" : "LOGIN",
+                      "LOGIN",
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
-                  if (!_isInitialSetup) ...[
-                    const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text(
-                          "Don't have an account? ",
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                        TextButton(
-                          onPressed: () => Get.toNamed('/setup'),
-                          child: const Text(
-                            "Sign Up",
-                            style: TextStyle(
-                              color: Color(0xFF1565C0),
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                 ],
               ),
             ),

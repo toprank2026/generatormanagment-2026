@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:get/get.dart';
 import 'package:crypto/crypto.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -42,21 +43,58 @@ class AuthController extends GetxController {
     update();
   }
 
-  Future<bool> login(String username, String password) async {
-    String hash = sha256.convert(utf8.encode(password)).toString();
-    User? user = await _userRepo.getUserByUsername(username);
+  Future<Map<String, dynamic>> login(String username, String password) async {
+    final String apiUrl = 'http://192.168.1.99:8000/api/login';
 
-    if (user != null && user.passwordHash == hash) {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.setString('user_id', user.id);
-      await prefs.setString('role', user.role);
+    try {
+      print(
+        "Sending Login Request: ${jsonEncode({'username': username, 'password': password})}",
+      );
 
-      currentUser.value = user;
-      isLoggedIn.value = true;
-      update();
-      return true;
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({'username': username, 'password': password}),
+      );
+
+      print("Login Response Status: ${response.statusCode}");
+      print("Login Response Body: ${response.body}");
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        String token = data['token'];
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('auth_token', token);
+        await prefs.setString(
+          'user_id',
+          username,
+        ); // Using username as ID for now or from response
+
+        // Mock user for now since we rely on local DB user model
+        currentUser.value = User(
+          id: "remote",
+          username: username,
+          passwordHash: "",
+          role: "admin", // TODO: Fetch role from API if available
+        );
+        isLoggedIn.value = true;
+        update();
+        return {'success': true};
+      } else {
+        return {
+          'success': false,
+          'statusCode': response.statusCode,
+          'message': data['message'] ?? 'Login failed',
+        };
+      }
+    } catch (e) {
+      print("Network Error: $e");
+      return {'success': false, 'message': 'Network Error: $e'};
     }
-    return false;
   }
 
   Future<void> logout() async {
