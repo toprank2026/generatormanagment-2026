@@ -14,7 +14,11 @@ class ExpenseRepository {
     );
   }
 
-  Future<List<Expense>> getExpensesByMonth(String monthPrefix) async {
+  Future<List<Expense>> getExpensesByMonth(
+    String monthPrefix, {
+    required int limit,
+    required int offset,
+  }) async {
     // monthPrefix expected as 'YYYY-MM'
     final db = await _dbHelper.database;
     final res = await db.query(
@@ -22,6 +26,8 @@ class ExpenseRepository {
       where: 'date LIKE ?',
       whereArgs: ['$monthPrefix%'],
       orderBy: 'date DESC',
+      limit: limit,
+      offset: offset,
     );
     return res.map((e) => Expense.fromMap(e)).toList();
   }

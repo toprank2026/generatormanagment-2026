@@ -4,14 +4,38 @@ import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/expense_controller.dart';
 import 'package:generatormanagment/data/models/expense_model.dart';
 
-class ExpensesScreen extends StatelessWidget {
+class ExpensesScreen extends StatefulWidget {
   const ExpensesScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // Put controller if not exists
-    final ExpenseController controller = Get.put(ExpenseController());
+  State<ExpensesScreen> createState() => _ExpensesScreenState();
+}
 
+class _ExpensesScreenState extends State<ExpensesScreen> {
+  final ExpenseController controller = Get.find<ExpenseController>();
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      controller.loadMore();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFE3F2FD),
       appBar: AppBar(
@@ -185,9 +209,20 @@ class ExpensesScreen extends StatelessWidget {
                         );
                       }
                       return ListView.separated(
-                        itemCount: controller.expenses.length,
+                        controller: _scrollController,
+                        itemCount:
+                            controller.expenses.length +
+                            (controller.expensesMoreLoading.value ? 1 : 0),
                         separatorBuilder: (c, i) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
+                          if (index == controller.expenses.length) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(8.0),
+                                child: CircularProgressIndicator(),
+                              ),
+                            );
+                          }
                           final ex = controller.expenses[index];
                           return Container(
                             decoration: BoxDecoration(

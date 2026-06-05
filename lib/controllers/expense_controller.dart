@@ -12,6 +12,12 @@ class ExpenseController extends GetxController {
   var selectedMonth = "".obs;
   var isLoading = false.obs;
 
+  // Pagination
+  static const int expensesPerPage = 10;
+  var expensesCurrentPage = 1.obs;
+  var expensesHasNextPage = false.obs;
+  var expensesMoreLoading = false.obs;
+
   @override
   void onInit() {
     super.onInit();
@@ -30,12 +36,52 @@ class ExpenseController extends GetxController {
     update();
   }
 
-  Future<void> loadExpenses() async {
-    isLoading.value = true;
-    expenses.value = await _repo.getExpensesByMonth(selectedMonth.value);
-    totalExpenses.value = await _repo.getTotalExpenses(selectedMonth.value);
-    isLoading.value = false;
+  Future<void> loadExpenses({int page = 1}) async {
+    if (page == 1) {
+      isLoading.value = true;
+    } else {
+      expensesMoreLoading.value = true;
+    }
+
+    expensesCurrentPage.value = page;
+
+    try {
+      // Fetch one extra item to check if there is a next page
+      final result = await _repo.getExpensesByMonth(
+        selectedMonth.value,
+        limit: expensesPerPage + 1,
+        offset: (page - 1) * expensesPerPage,
+      );
+
+      List<Expense> newItems;
+      if (result.length > expensesPerPage) {
+        expensesHasNextPage.value = true;
+        newItems = result.sublist(0, expensesPerPage);
+      } else {
+        expensesHasNextPage.value = false;
+        newItems = result;
+      }
+
+      if (page == 1) {
+        expenses.assignAll(newItems);
+        // Month total must reflect ALL expenses, not just the page
+        totalExpenses.value = await _repo.getTotalExpenses(selectedMonth.value);
+      } else {
+        expenses.addAll(newItems);
+      }
+    } finally {
+      isLoading.value = false;
+      expensesMoreLoading.value = false;
+    }
     update();
+  }
+
+  void loadMore() {
+    if (expensesHasNextPage.value &&
+        !expensesMoreLoading.value &&
+        !isLoading.value) {
+      loadExpenses(page: expensesCurrentPage.value + 1);
+    }
   }
 
   Future<void> addExpense({
