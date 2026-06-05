@@ -15,7 +15,7 @@ class SubscribersScreen extends StatefulWidget {
 }
 
 class _SubscribersScreenState extends State<SubscribersScreen> {
-  final CoreController controller = Get.put(CoreController());
+  final CoreController controller = Get.find<CoreController>();
   final AuthController auth = Get.find<AuthController>();
   final TextEditingController searchCtrl = TextEditingController();
   final ScrollController _scrollController = ScrollController();

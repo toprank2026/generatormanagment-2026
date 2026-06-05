@@ -53,6 +53,11 @@ dependencies:
   iconsax: ^0.0.8
   csv: ^6.0.0
   http: ^1.6.0
+  # --- Accounts/online layer (STRUCTURE.md: accounts-only backend) ---
+  flutter_secure_storage: ^9.2.4   # JWT + install-id at rest
+  device_info_plus: ^11.5.0        # device fingerprint (model, androidId, ...)
+  network_info_plus: ^7.0.0        # best-effort Wi-Fi MAC / BSSID
+  connectivity_plus: ^6.1.5        # online/offline detection (offline-first gate)
 
 dev_dependencies:
   flutter_test:

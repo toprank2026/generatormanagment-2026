@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/views/auth/signup_screen.dart';
 import 'package:generatormanagment/views/root_handler.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -16,19 +17,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final AuthController _authController = Get.find();
   final _formKey = GlobalKey<FormState>();
 
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkSetup();
-  }
-
-  Future<void> _checkSetup() async {
-    setState(() {
-      _isLoading = false;
-    });
-  }
+  bool _isLoading = false;
 
   void _submit() async {
     if (_formKey.currentState!.validate()) {
@@ -163,6 +152,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => Get.to(() => const SignupScreen()),
+                    child: Text('no_account_sign_up'.tr),
                   ),
                 ],
               ),

@@ -11,7 +11,7 @@ class DashboardScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final DashboardController controller = Get.put(DashboardController());
+    final DashboardController controller = Get.find<DashboardController>();
     final AuthController authController = Get.find<AuthController>();
 
     return Scaffold(

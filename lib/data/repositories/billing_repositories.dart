@@ -38,13 +38,19 @@ class ReceiptRepository {
     );
   }
 
-  Future<List<Receipt>> getBySubscriber(String subscriberId) async {
+  Future<List<Receipt>> getBySubscriber(
+    String subscriberId, {
+    required int limit,
+    required int offset,
+  }) async {
     final db = await _dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'receipts',
       where: 'subscriber_id = ?',
       whereArgs: [subscriberId],
       orderBy: 'issued_at DESC',
+      limit: limit,
+      offset: offset,
     );
     return List.generate(maps.length, (i) => Receipt.fromMap(maps[i]));
   }

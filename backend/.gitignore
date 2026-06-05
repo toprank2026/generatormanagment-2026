@@ -1,0 +1,10 @@
+node_modules
+.env
+.env.local
+/backups
+/.backups
+/.smoke_backups
+*.db
+.smoke_test.mjs
+npm-debug.log*
+.DS_Store

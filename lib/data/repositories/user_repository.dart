@@ -42,9 +42,15 @@ class UserRepository {
     return null;
   }
 
-  Future<List<User>> getAllUsers() async {
+  Future<List<User>> getAllUsers({int? limit, int? offset}) async {
     final db = await _dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query('users');
+    // Stable ordering so pagination is deterministic across pages.
+    final List<Map<String, dynamic>> maps = await db.query(
+      'users',
+      orderBy: 'username COLLATE NOCASE ASC, id ASC',
+      limit: limit,
+      offset: offset,
+    );
     return List.generate(maps.length, (i) => User.fromMap(maps[i]));
   }
 

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/core/app_binding.dart';
+import 'package:generatormanagment/views/auth/signup_screen.dart';
 import 'package:generatormanagment/views/screens/login_screen.dart';
 import 'package:generatormanagment/views/screens/home_screen.dart';
 import 'package:generatormanagment/views/screens/setup_screen.dart';
+import 'package:generatormanagment/views/screens/plan_selection_screen.dart';
 import 'package:generatormanagment/views/root_handler.dart';
 import 'package:generatormanagment/utils/translations.dart';
 
@@ -41,7 +43,6 @@ class MyApp extends StatelessWidget {
           seedColor: const Color(0xFF2196F3), // Blue
           primary: const Color(0xFF2196F3),
           secondary: const Color(0xFF64B5F6),
-          background: Colors.white,
           surface: Colors.white,
         ),
         useMaterial3: true,
@@ -54,13 +55,13 @@ class MyApp extends StatelessWidget {
           elevation: 0,
         ),
       ),
-      initialBinding: BindingsBuilder(() {
-        Get.put(AuthController());
-      }),
+      initialBinding: AppBinding(),
       home: const RootHandler(),
       getPages: [
         GetPage(name: '/login', page: () => const LoginScreen()),
+        GetPage(name: '/signup', page: () => const SignupScreen()),
         GetPage(name: '/setup', page: () => const SetupScreen()),
+        GetPage(name: '/plan', page: () => const PlanSelectionScreen()),
         GetPage(name: '/home', page: () => const HomeScreen()),
       ],
     );

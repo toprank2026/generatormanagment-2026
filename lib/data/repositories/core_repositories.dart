@@ -29,11 +29,13 @@ class BoardRepository {
     return await db.delete('boards', where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<List<Board>> getAll() async {
+  Future<List<Board>> getAll({int limit = -1, int offset = 0}) async {
     final db = await _dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'boards',
       orderBy: 'name ASC',
+      limit: limit < 0 ? null : limit,
+      offset: limit < 0 ? null : offset,
     );
     return List.generate(maps.length, (i) => Board.fromMap(maps[i]));
   }
@@ -66,13 +68,19 @@ class CircuitRepository {
     return await db.delete('circuits', where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<List<Circuit>> getByBoardId(String boardId) async {
+  Future<List<Circuit>> getByBoardId(
+    String boardId, {
+    int limit = -1,
+    int offset = 0,
+  }) async {
     final db = await _dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'circuits',
       where: 'board_id = ?',
       whereArgs: [boardId],
       orderBy: 'name ASC',
+      limit: limit < 0 ? null : limit,
+      offset: limit < 0 ? null : offset,
     );
     return List.generate(maps.length, (i) => Circuit.fromMap(maps[i]));
   }

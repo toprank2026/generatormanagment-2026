@@ -15,11 +15,26 @@ class CircuitsScreen extends StatefulWidget {
 class _CircuitsScreenState extends State<CircuitsScreen> {
   final CoreController controller = Get.find();
   final AuthController auth = Get.find();
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     controller.loadCircuits(widget.board.id);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      controller.loadMoreCircuits();
+    }
   }
 
   @override
@@ -47,8 +62,19 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
           return const Center(child: Text("No circuits. Add one!"));
 
         return ListView.builder(
-          itemCount: controller.circuits.length,
+          controller: _scrollController,
+          itemCount:
+              controller.circuits.length +
+              (controller.isCircuitsMoreLoading.value ? 1 : 0),
           itemBuilder: (context, index) {
+            if (index == controller.circuits.length) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
             final circuit = controller.circuits[index];
             return ListTile(
               leading: const Icon(Icons.flash_on),

@@ -23,18 +23,18 @@ class SubscriberDetailScreen extends StatefulWidget {
 
 class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
   final AuthController auth = Get.find<AuthController>();
-  final BillingController controller = Get.put(BillingController());
-  final CoreController coreController = Get.put(CoreController());
+  final BillingController controller = Get.find<BillingController>();
+  final CoreController coreController = Get.find<CoreController>();
   final ReceiptRepository receiptRepo = ReceiptRepository();
   final _amountCtrl = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
-  // Local state for receipts list as it's specific to this view
-  List<Receipt> history = [];
   double dueAmount = 0.0;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     // Defer state updates to after the first frame to avoid "setState during build" errors
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Reset to current month when entering screen to avoid stale state from previous visits
@@ -45,16 +45,29 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    _amountCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      controller.loadMoreReceiptHistory(widget.subscriber.id);
+    }
+  }
+
   void _refresh() async {
     await controller.loadMonthPrice(controller.selectedMonth.value);
     dueAmount = await controller.getDueAmount(
       widget.subscriber,
       controller.selectedMonth.value,
     );
-    history = await receiptRepo.getBySubscriberAndMonth(
-      widget.subscriber.id,
-      controller.selectedMonth.value,
-    );
+    // Load receipt history (page 1) via paginated controller list
+    await controller.loadReceiptHistory(widget.subscriber.id);
     // Pre-fill amount with due
     _amountCtrl.text = dueAmount.toStringAsFixed(0);
     setState(() {});
@@ -98,6 +111,7 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
         ],
       ),
       body: SingleChildScrollView(
+        controller: _scrollController,
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
@@ -300,14 +314,23 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
             ),
             const SizedBox(height: 12),
 
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: history.length,
-              separatorBuilder: (c, i) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final r = history[index];
-                return Container(
+            Obx(
+              () => ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount:
+                    controller.receipts.length +
+                    (controller.isHistoryMoreLoading.value ? 1 : 0),
+                separatorBuilder: (c, i) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  if (index >= controller.receipts.length) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  final r = controller.receipts[index];
+                  return Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
@@ -367,10 +390,11 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
                         ),
                       ],
                     ),
-                    onTap: () => _handlePrint(r),
-                  ),
-                );
-              },
+                      onTap: () => _handlePrint(r),
+                    ),
+                  );
+                },
+              ),
             ),
           ],
         ),

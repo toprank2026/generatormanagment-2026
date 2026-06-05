@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="light" />
+<title>Moldati Admin</title>
+<style>
+  :root{
+    --primary:#1565C0;
+    --primary-dark:#0d47a1;
+    --primary-light:#e3f0fc;
+    --bg:#f4f6fa;
+    --surface:#ffffff;
+    --border:#e2e6ee;
+    --text:#1f2733;
+    --muted:#69748a;
+    --danger:#d32f2f;
+    --danger-light:#fdecec;
+    --success:#2e7d32;
+    --success-light:#e8f5e9;
+    --warn:#ed6c02;
+    --warn-light:#fff4e5;
+    --radius:12px;
+    --shadow:0 1px 3px rgba(16,24,40,.08),0 1px 2px rgba(16,24,40,.04);
+    --shadow-lg:0 12px 32px rgba(16,24,40,.18);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--primary);text-decoration:none}
+  a:hover{text-decoration:underline}
+  button{font-family:inherit;font-size:14px;cursor:pointer}
+  input,select,textarea{font-family:inherit;font-size:14px}
+
+  /* ---------- buttons ---------- */
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    padding:9px 16px;border-radius:9px;border:1px solid transparent;
+    background:var(--primary);color:#fff;font-weight:600;transition:.15s;white-space:nowrap;
+  }
+  .btn:hover{background:var(--primary-dark)}
+  .btn:disabled{opacity:.55;cursor:not-allowed}
+  .btn.sm{padding:6px 11px;font-size:13px;border-radius:7px}
+  .btn.ghost{background:transparent;color:var(--primary);border-color:var(--border)}
+  .btn.ghost:hover{background:var(--primary-light)}
+  .btn.danger{background:var(--danger)}
+  .btn.danger:hover{background:#b71c1c}
+  .btn.danger.ghost{background:transparent;color:var(--danger);border-color:#f3c6c6}
+  .btn.danger.ghost:hover{background:var(--danger-light)}
+  .btn.success{background:var(--success)}
+  .btn.success:hover{background:#1b5e20}
+  .btn.warn{background:var(--warn)}
+  .btn.warn:hover{background:#c65a00}
+  .btn.neutral{background:#eef1f6;color:var(--text);border-color:var(--border)}
+  .btn.neutral:hover{background:#e3e8f0}
+
+  /* ---------- form ---------- */
+  label{display:block;font-weight:600;margin-bottom:6px;font-size:13px;color:var(--text)}
+  .field{margin-bottom:16px}
+  .input,select.input,textarea.input{
+    width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:9px;
+    background:#fff;color:var(--text);transition:.15s;outline:none;
+  }
+  .input:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-light)}
+  textarea.input{resize:vertical;min-height:70px}
+  .row{display:flex;gap:14px;flex-wrap:wrap}
+  .row>.field{flex:1;min-width:160px}
+  .check{display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer}
+  .check input{width:16px;height:16px;cursor:pointer}
+
+  /* ---------- layout ---------- */
+  .topbar{
+    position:sticky;top:0;z-index:50;background:var(--primary);color:#fff;
+    display:flex;align-items:center;gap:18px;padding:0 20px;height:58px;box-shadow:var(--shadow);
+  }
+  .topbar .brand{font-weight:800;font-size:18px;letter-spacing:.3px;display:flex;align-items:center;gap:9px}
+  .topbar .brand .logo{
+    width:28px;height:28px;border-radius:7px;background:#fff;color:var(--primary);
+    display:grid;place-items:center;font-weight:900;font-size:15px;
+  }
+  .topbar nav{display:flex;gap:4px;flex:1;flex-wrap:wrap}
+  .topbar nav a{
+    color:#e8f0fb;padding:7px 13px;border-radius:8px;font-weight:600;font-size:14px;
+  }
+  .topbar nav a:hover{background:rgba(255,255,255,.14);text-decoration:none}
+  .topbar nav a.active{background:#fff;color:var(--primary)}
+  .topbar .me{font-size:13px;color:#dbe8f9;display:flex;align-items:center;gap:12px}
+  .topbar .me .who{opacity:.95}
+  .topbar .logout{
+    background:rgba(255,255,255,.16);border:none;color:#fff;padding:7px 13px;border-radius:8px;font-weight:600;
+  }
+  .topbar .logout:hover{background:rgba(255,255,255,.28)}
+
+  .wrap{max-width:1080px;margin:0 auto;padding:24px 20px 60px}
+  .page-head{display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap}
+  .page-head h1{font-size:22px;margin:0;font-weight:700;flex:1}
+  .crumb{color:var(--muted);font-size:13px;margin-bottom:6px}
+  .crumb a{font-weight:600}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:18px}
+  .card .card-h{padding:15px 18px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px;display:flex;align-items:center;gap:10px}
+  .card .card-h .sub{font-weight:500;color:var(--muted);font-size:13px}
+  .card .card-b{padding:18px}
+  .card .card-b.flush{padding:0}
+
+  /* ---------- stats ---------- */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin-bottom:8px}
+  .stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;position:relative;overflow:hidden}
+  .stat .lbl{color:var(--muted);font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+  .stat .val{font-size:34px;font-weight:800;margin-top:6px;color:var(--primary)}
+  .stat .ic{position:absolute;right:14px;top:14px;width:40px;height:40px;border-radius:11px;background:var(--primary-light);display:grid;place-items:center;font-size:20px}
+
+  /* ---------- table ---------- */
+  .tbl-wrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--border);vertical-align:middle}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;background:#fafbfd}
+  tbody tr:hover{background:#fafbff}
+  tbody tr:last-child td{border-bottom:none}
+  td .acts{display:flex;gap:7px;flex-wrap:wrap}
+
+  /* ---------- badges ---------- */
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;line-height:1.6}
+  .badge.green{background:var(--success-light);color:var(--success)}
+  .badge.red{background:var(--danger-light);color:var(--danger)}
+  .badge.orange{background:var(--warn-light);color:var(--warn)}
+  .badge.blue{background:var(--primary-light);color:var(--primary)}
+  .badge.gray{background:#eef1f6;color:var(--muted)}
+  .badge .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+
+  /* ---------- detail grid ---------- */
+  .kv{display:grid;grid-template-columns:160px 1fr;gap:10px 18px}
+  .kv .k{color:var(--muted);font-weight:600}
+  .kv .v{font-weight:600;word-break:break-word}
+  @media(max-width:560px){.kv{grid-template-columns:1fr;gap:2px 0}.kv .k{margin-top:8px}}
+
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+  .toolbar .grow{flex:1}
+  .search{position:relative;flex:1;min-width:200px;max-width:340px}
+  .search input{padding-left:36px}
+  .search .ic{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted)}
+
+  .empty{padding:48px 20px;text-align:center;color:var(--muted)}
+  .empty .big{font-size:40px;margin-bottom:8px;opacity:.6}
+
+  /* ---------- spinner ---------- */
+  .spin{width:18px;height:18px;border:2.5px solid rgba(21,101,192,.25);border-top-color:var(--primary);border-radius:50%;animation:sp .7s linear infinite;display:inline-block}
+  .spin.white{border-color:rgba(255,255,255,.4);border-top-color:#fff}
+  .spin.lg{width:34px;height:34px;border-width:3.5px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .loading-box{display:flex;flex-direction:column;align-items:center;gap:12px;padding:54px 20px;color:var(--muted)}
+
+  /* ---------- login ---------- */
+  .login-screen{min-height:100vh;display:grid;place-items:center;padding:24px;
+    background:linear-gradient(135deg,#1565C0 0%,#0d47a1 100%);}
+  .login-card{width:100%;max-width:380px;background:#fff;border-radius:16px;box-shadow:var(--shadow-lg);padding:32px 30px}
+  .login-card .logo-big{width:56px;height:56px;border-radius:14px;background:var(--primary);color:#fff;display:grid;place-items:center;font-weight:900;font-size:26px;margin:0 auto 16px}
+  .login-card h2{text-align:center;margin:0 0 4px;font-size:22px}
+  .login-card .tag{text-align:center;color:var(--muted);margin:0 0 24px;font-size:13px}
+  .login-card .btn{width:100%;padding:12px;font-size:15px}
+
+  /* ---------- toast ---------- */
+  #toasts{position:fixed;right:18px;bottom:18px;z-index:1000;display:flex;flex-direction:column;gap:10px;max-width:340px}
+  .toast{background:#222b3a;color:#fff;padding:13px 16px;border-radius:10px;box-shadow:var(--shadow-lg);font-weight:600;font-size:13px;display:flex;gap:10px;align-items:flex-start;animation:slidein .25s ease}
+  .toast.ok{background:#1b5e20}
+  .toast.err{background:#b71c1c}
+  .toast .x{margin-left:auto;cursor:pointer;opacity:.8;font-weight:800}
+  @keyframes slidein{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+  /* ---------- modal ---------- */
+  .modal-back{position:fixed;inset:0;background:rgba(16,24,40,.5);z-index:500;display:grid;place-items:center;padding:20px;animation:fade .15s}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .modal{background:#fff;border-radius:14px;box-shadow:var(--shadow-lg);width:100%;max-width:440px;max-height:90vh;overflow:auto;animation:pop .18s}
+  .modal.wide{max-width:560px}
+  @keyframes pop{from{transform:translateY(12px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+  .modal .m-h{padding:18px 20px;border-bottom:1px solid var(--border);font-weight:700;font-size:17px;display:flex;align-items:center}
+  .modal .m-h .x{margin-left:auto;background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer;line-height:1}
+  .modal .m-b{padding:20px}
+  .modal .m-f{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
+  .alert{padding:11px 14px;border-radius:9px;font-size:13px;font-weight:600;margin-bottom:14px}
+  .alert.err{background:var(--danger-light);color:var(--danger)}
+  .alert.info{background:var(--primary-light);color:var(--primary-dark)}
+
+  .muted{color:var(--muted)}
+  .nowrap{white-space:nowrap}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+  .right{text-align:right}
+  .mt0{margin-top:0}.mb0{margin-bottom:0}
+  hr.sep{border:none;border-top:1px solid var(--border);margin:18px 0}
+  .pill-actions{display:flex;gap:8px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal-root"></div>
+<div id="toasts"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   Config / state
+   ============================================================ */
+var TOKEN_KEY = "moldati_admin_token";
+var ME_KEY    = "moldati_admin_me";
+var API_BASE  = ""; // same origin
+
+var state = {
+  token: localStorage.getItem(TOKEN_KEY) || null,
+  me: safeParse(localStorage.getItem(ME_KEY))
+};
+
+function safeParse(s){ try{ return s ? JSON.parse(s) : null; }catch(e){ return null; } }
+
+/* ============================================================
+   Small DOM helpers
+   ============================================================ */
+function $(sel,root){ return (root||document).querySelector(sel); }
+function el(tag,attrs,children){
+  var n=document.createElement(tag);
+  // Support the 2-arg form el(tag, childrenArray): if `attrs` is an array it is
+  // really the children list (no attributes), e.g. el("tr",[td,td]).
+  if(Array.isArray(attrs)){ children=attrs; attrs=null; }
+  if(attrs){
+    for(var k in attrs){
+      if(k==="class") n.className=attrs[k];
+      else if(k==="html") n.innerHTML=attrs[k];
+      else if(k==="text") n.textContent=attrs[k];
+      else if(k.slice(0,2)==="on" && typeof attrs[k]==="function") n.addEventListener(k.slice(2).toLowerCase(),attrs[k]);
+      else if(attrs[k]!==null && attrs[k]!==undefined && attrs[k]!==false) n.setAttribute(k,attrs[k]);
+    }
+  }
+  if(children!=null) appendChildren(n,children);
+  return n;
+}
+function appendChildren(n,children){
+  (Array.isArray(children)?children:[children]).forEach(function(c){
+    if(c==null||c===false) return;
+    if(Array.isArray(c)){ appendChildren(n,c); return; } // flatten nested arrays (e.g. kv())
+    n.appendChild(typeof c==="string"||typeof c==="number"?document.createTextNode(String(c)):c);
+  });
+}
+function esc(s){
+  if(s==null) return "";
+  return String(s).replace(/[&<>"']/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
+function clear(n){ while(n.firstChild) n.removeChild(n.firstChild); }
+
+/* ============================================================
+   Toast
+   ============================================================ */
+function toast(msg,type){
+  var t=el("div",{class:"toast "+(type||"")},[
+    el("span",{text:msg}),
+    el("span",{class:"x",text:"×",onclick:function(){ remove(); }})
+  ]);
+  $("#toasts").appendChild(t);
+  var to=setTimeout(remove,4200);
+  function remove(){ clearTimeout(to); if(t.parentNode) t.parentNode.removeChild(t); }
+}
+
+/* ============================================================
+   Formatting helpers
+   ============================================================ */
+function fmtDate(iso){
+  if(!iso) return "—";
+  var d=new Date(iso); if(isNaN(d)) return esc(iso);
+  return d.toLocaleString(undefined,{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
+}
+function fmtDateShort(iso){
+  if(!iso) return "—";
+  var d=new Date(iso); if(isNaN(d)) return esc(iso);
+  return d.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"});
+}
+function fmtPrice(p){
+  if(p==null||p==="") return "—";
+  var n=Number(p); if(isNaN(n)) return esc(p);
+  try{ return new Intl.NumberFormat().format(n)+" IQD"; }catch(e){ return n+" IQD"; }
+}
+function statusBadge(status){
+  var map={
+    active:["green","Active"], pending:["orange","Pending"],
+    rejected:["red","Rejected"], expired:["gray","Expired"], none:["gray","None"]
+  };
+  var m=map[status]||["gray",status||"None"];
+  return el("span",{class:"badge "+m[0]},[el("span",{class:"dot"}),m[1]]);
+}
+function roleBadge(role){
+  if(role==="admin") return el("span",{class:"badge blue"},["Admin"]);
+  return el("span",{class:"badge gray"},["Owner"]);
+}
+function blockedBadge(blocked){
+  return blocked
+    ? el("span",{class:"badge red"},[el("span",{class:"dot"}),"Blocked"])
+    : el("span",{class:"badge green"},[el("span",{class:"dot"}),"Active"]);
+}
+
+/* ============================================================
+   API layer
+   ============================================================ */
+function ApiError(message,status,code){ this.message=message; this.status=status; this.code=code; }
+ApiError.prototype=Object.create(Error.prototype);
+
+function api(method,path,body,isForm){
+  var opts={method:method,headers:{}};
+  if(state.token) opts.headers["Authorization"]="Bearer "+state.token;
+  if(body!=null && !isForm){
+    opts.headers["Content-Type"]="application/json";
+    opts.body=JSON.stringify(body);
+  } else if(isForm){
+    opts.body=body;
+  }
+  return fetch(API_BASE+path,opts).then(function(res){
+    if(res.status===401){
+      // session expired -> back to login
+      doLogout(true);
+      throw new ApiError("Session expired. Please sign in again.",401);
+    }
+    var ct=res.headers.get("content-type")||"";
+    var pj = ct.indexOf("application/json")>=0 ? res.json().catch(function(){return null;}) : Promise.resolve(null);
+    return pj.then(function(data){
+      if(!res.ok){
+        var msg=(data&&data.message)||("Request failed ("+res.status+")");
+        throw new ApiError(msg,res.status,data&&data.code);
+      }
+      return data;
+    });
+  },function(netErr){
+    if(netErr instanceof ApiError) throw netErr;
+    throw new ApiError("Network error — could not reach the server.",0);
+  });
+}
+var API={
+  login:function(username,password){ return api("POST","/api/auth/login",{username:username,password:password}); },
+  me:function(){ return api("GET","/api/auth/me"); },
+  users:function(){ return api("GET","/api/admin/users"); },
+  user:function(id){ return api("GET","/api/admin/users/"+encodeURIComponent(id)); },
+  createUser:function(body){ return api("POST","/api/admin/users",body); },
+  deleteUser:function(id){ return api("DELETE","/api/admin/users/"+encodeURIComponent(id)); },
+  setBlocked:function(id,blocked){ return api("PUT","/api/admin/users/"+encodeURIComponent(id)+"/blocked",{blocked:blocked}); },
+  setPlan:function(id,planCode,status){ return api("PUT","/api/admin/users/"+encodeURIComponent(id)+"/plan",{planCode:planCode,status:status||"active"}); },
+  approvePlan:function(id){ return api("POST","/api/admin/users/"+encodeURIComponent(id)+"/approve-plan",{}); },
+  rejectPlan:function(id){ return api("POST","/api/admin/users/"+encodeURIComponent(id)+"/reject-plan",{}); },
+  unbindDevice:function(id,deviceId){ return api("DELETE","/api/admin/users/"+encodeURIComponent(id)+"/devices/"+encodeURIComponent(deviceId)); },
+  plans:function(){ return api("GET","/api/admin/plans"); },
+  upsertPlan:function(body){ return api("PUT","/api/admin/plans",body); },
+  deletePlan:function(code){ return api("DELETE","/api/admin/plans/"+encodeURIComponent(code)); }
+};
+
+/* ============================================================
+   Auth helpers
+   ============================================================ */
+function setSession(token,me){
+  state.token=token; state.me=me;
+  localStorage.setItem(TOKEN_KEY,token);
+  if(me) localStorage.setItem(ME_KEY,JSON.stringify(me));
+}
+function doLogout(silent){
+  state.token=null; state.me=null;
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(ME_KEY);
+  if(!silent) toast("Signed out","ok");
+  if(location.hash!=="#/login") location.hash="#/login";
+  else render();
+}
+
+/* ============================================================
+   Modal
+   ============================================================ */
+function modal(opts){
+  closeModal();
+  var root=$("#modal-root");
+  var back=el("div",{class:"modal-back",onclick:function(e){ if(e.target===back && opts.dismissable!==false) closeModal(); }});
+  var box=el("div",{class:"modal"+(opts.wide?" wide":"")});
+  box.appendChild(el("div",{class:"m-h"},[
+    el("span",{text:opts.title||""}),
+    el("button",{class:"x",text:"×",onclick:closeModal})
+  ]));
+  var body=el("div",{class:"m-b"});
+  if(opts.body) body.appendChild(opts.body);
+  box.appendChild(body);
+  if(opts.footer){
+    var f=el("div",{class:"m-f"});
+    opts.footer.forEach(function(b){ f.appendChild(b); });
+    box.appendChild(f);
+  }
+  back.appendChild(box);
+  root.appendChild(back);
+  var firstInput=box.querySelector("input,select,textarea,button");
+  if(firstInput) setTimeout(function(){ firstInput.focus(); },50);
+  return {close:closeModal,body:body,box:box};
+}
+function closeModal(){ var r=$("#modal-root"); if(r) clear(r); }
+document.addEventListener("keydown",function(e){ if(e.key==="Escape") closeModal(); });
+
+function confirmModal(opts){
+  return new Promise(function(resolve){
+    var btn=el("button",{class:"btn "+(opts.danger?"danger":""),text:opts.confirmText||"Confirm",onclick:function(){
+      btn.disabled=true; btn.appendChild(el("span",{class:"spin white",style:"margin-left:8px"}));
+      Promise.resolve(opts.onConfirm?opts.onConfirm():true).then(function(ok){
+        if(ok!==false) closeModal();
+        resolve(ok!==false);
+      }).catch(function(err){
+        btn.disabled=false; toast(err.message||"Failed","err"); resolve(false);
+      });
+    }});
+    modal({
+      title:opts.title||"Confirm",
+      body:el("div",[
+        opts.alert?el("div",{class:"alert "+(opts.alertType||"info"),text:opts.alert}):null,
+        el("div",{html:opts.message||""})
+      ]),
+      footer:[
+        el("button",{class:"btn neutral",text:"Cancel",onclick:function(){ closeModal(); resolve(false); }}),
+        btn
+      ]
+    });
+  });
+}
+
+/* ============================================================
+   Layout shell
+   ============================================================ */
+function shell(activeRoute,content){
+  var app=$("#app"); clear(app);
+  var me=state.me||{};
+  var nav=el("nav",[
+    navLink("#/dashboard","Dashboard",activeRoute),
+    navLink("#/users","Users",activeRoute),
+    navLink("#/plans","Plans",activeRoute)
+  ]);
+  var top=el("div",{class:"topbar"},[
+    el("div",{class:"brand"},[el("span",{class:"logo",text:"M"}),"Moldati Admin"]),
+    nav,
+    el("div",{class:"me"},[
+      el("span",{class:"who",text:(me.name||me.username||"admin")}),
+      el("button",{class:"logout",text:"Logout",onclick:function(){
+        confirmModal({title:"Log out",message:"End your admin session?",confirmText:"Log out",onConfirm:function(){ doLogout(); return true; }});
+      }})
+    ])
+  ]);
+  var wrap=el("div",{class:"wrap"});
+  wrap.appendChild(content);
+  app.appendChild(top);
+  app.appendChild(wrap);
+}
+function navLink(href,label,active){
+  var isActive = active && (active===href || (href!=="#/dashboard" && active.indexOf(href)===0));
+  return el("a",{href:href,class:isActive?"active":"",text:label});
+}
+function loadingBlock(label){
+  return el("div",{class:"loading-box"},[el("span",{class:"spin lg"}),el("span",{text:label||"Loading…"})]);
+}
+function pageHead(title,actions,crumb){
+  var head=el("div");
+  if(crumb) head.appendChild(crumb);
+  var bar=el("div",{class:"page-head"},[el("h1",{text:title})]);
+  if(actions) actions.forEach(function(a){ bar.appendChild(a); });
+  head.appendChild(bar);
+  return head;
+}
+
+/* ============================================================
+   Router
+   ============================================================ */
+var routes=[
+  {re:/^#\/login$/, view:viewLogin, public:true},
+  {re:/^#\/dashboard$/, view:viewDashboard},
+  {re:/^#\/users$/, view:viewUsers},
+  {re:/^#\/users\/([^\/]+)$/, view:viewUserDetail},
+  {re:/^#\/plans$/, view:viewPlans}
+];
+function render(){
+  var hash=location.hash||"";
+  if(!hash){ location.hash = state.token?"#/dashboard":"#/login"; return; }
+  var match=null,params=null;
+  for(var i=0;i<routes.length;i++){
+    var m=hash.match(routes[i].re);
+    if(m){ match=routes[i]; params=m.slice(1).map(decodeURIComponent); break; }
+  }
+  if(!match){ location.hash = state.token?"#/dashboard":"#/login"; return; }
+  if(!match.public && !state.token){ location.hash="#/login"; return; }
+  if(match.public && match.view===viewLogin && state.token){ location.hash="#/dashboard"; return; }
+  closeModal();
+  match.view.apply(null,params||[]);
+}
+window.addEventListener("hashchange",render);
+
+/* ============================================================
+   View: Login
+   ============================================================ */
+function viewLogin(){
+  var app=$("#app"); clear(app);
+  var errBox=el("div");
+  var uIn=el("input",{class:"input",type:"text",placeholder:"username",autocomplete:"username"});
+  var pIn=el("input",{class:"input",type:"password",placeholder:"password",autocomplete:"current-password"});
+  var btn=el("button",{class:"btn",type:"submit",text:"Sign in"});
+
+  function submit(e){
+    if(e) e.preventDefault();
+    clear(errBox);
+    var u=uIn.value.trim(), p=pIn.value;
+    if(!u||!p){ errBox.appendChild(el("div",{class:"alert err",text:"Enter username and password."})); return; }
+    btn.disabled=true; clear(btn); btn.appendChild(el("span",{class:"spin white"})); btn.appendChild(document.createTextNode(" Signing in…"));
+    API.login(u,p).then(function(res){
+      if(!res||!res.token) throw new ApiError("No token returned by server.",0);
+      var acc=res.account||{};
+      if(acc.role && acc.role!=="admin"){
+        throw new ApiError("This account is not an administrator.",403,"NOT_ADMIN");
+      }
+      setSession(res.token,acc);
+      toast("Welcome, "+(acc.name||acc.username||"admin"),"ok");
+      location.hash="#/dashboard";
+    }).catch(function(err){
+      btn.disabled=false; clear(btn); btn.textContent="Sign in";
+      errBox.appendChild(el("div",{class:"alert err",text:err.message||"Login failed."}));
+    });
+  }
+
+  var form=el("form",{onsubmit:submit},[
+    el("div",{class:"logo-big",text:"M"}),
+    el("h2",{text:"Moldati Admin"}),
+    el("p",{class:"tag",text:"Sign in to manage accounts & plans"}),
+    errBox,
+    el("div",{class:"field"},[el("label",{text:"Username"}),uIn]),
+    el("div",{class:"field"},[el("label",{text:"Password"}),pIn]),
+    btn
+  ]);
+  app.appendChild(el("div",{class:"login-screen"},[el("div",{class:"login-card"},[form])]));
+}
+
+/* ============================================================
+   View: Dashboard
+   ============================================================ */
+function viewDashboard(){
+  shell("#/dashboard",loadingBlock("Loading dashboard…"));
+  Promise.all([API.users().catch(function(){return {users:[]};}), API.plans().catch(function(){return {plans:[]};})])
+  .then(function(res){
+    var users=normalizeList(res[0],"users");
+    var plans=normalizeList(res[1],"plans");
+    var total=users.length;
+    var blocked=0,active=0,pending=0,admins=0;
+    users.forEach(function(u){
+      if(u.blocked) blocked++;
+      var sub=u.subscription||{};
+      if(sub.status==="active") active++;
+      if(sub.status==="pending") pending++;
+      if(u.role==="admin") admins++;
+    });
+    var activePlans=plans.filter(function(p){return p.active!==false;}).length;
+
+    var content=el("div");
+    content.appendChild(pageHead("Dashboard"));
+    var grid=el("div",{class:"stats"});
+    grid.appendChild(statCard("Total Users",total,"👥"));
+    grid.appendChild(statCard("Active Subs",active,"✅"));
+    grid.appendChild(statCard("Pending Plans",pending,"⏳"));
+    grid.appendChild(statCard("Blocked",blocked,"🚫"));
+    grid.appendChild(statCard("Admins",admins,"🔑"));
+    grid.appendChild(statCard("Active Plans",activePlans+"/"+plans.length,"📦"));
+    content.appendChild(grid);
+
+    // pending requests panel
+    var pendingUsers=users.filter(function(u){ return (u.subscription||{}).status==="pending"; });
+    if(pendingUsers.length){
+      var card=el("div",{class:"card"});
+      card.appendChild(el("div",{class:"card-h"},[el("span",{text:"Pending plan requests"}),el("span",{class:"sub",text:pendingUsers.length+" waiting"})]));
+      var b=el("div",{class:"card-b flush"});
+      var tw=el("div",{class:"tbl-wrap"});
+      var tbl=el("table");
+      tbl.appendChild(el("thead",[el("tr",[th("User"),th("Username"),th("Requested plan"),th("")])]));
+      var tb=el("tbody");
+      pendingUsers.forEach(function(u){
+        tb.appendChild(el("tr",[
+          el("td",[el("a",{href:"#/users/"+u.id,text:u.name||"—"})]),
+          el("td",{class:"muted",text:u.username||"—"}),
+          el("td",[planChip((u.subscription||{}).planCode)]),
+          el("td",{class:"right"},[el("a",{class:"btn sm ghost",href:"#/users/"+u.id,text:"Review"})])
+        ]));
+      });
+      tbl.appendChild(tb); tw.appendChild(tbl); b.appendChild(tw); card.appendChild(b);
+      content.appendChild(card);
+    }
+
+    // quick links
+    var quick=el("div",{class:"card"});
+    quick.appendChild(el("div",{class:"card-h"},["Quick actions"]));
+    quick.appendChild(el("div",{class:"card-b"},[el("div",{class:"pill-actions"},[
+      el("a",{class:"btn ghost",href:"#/users",text:"Manage users"}),
+      el("a",{class:"btn ghost",href:"#/plans",text:"Manage plans"})
+    ])]));
+    content.appendChild(quick);
+
+    shell("#/dashboard",content);
+  }).catch(function(err){
+    if(err.status===401) return;
+    shell("#/dashboard",errorBlock(err,viewDashboard));
+  });
+}
+function statCard(lbl,val,icon){
+  return el("div",{class:"stat"},[
+    el("div",{class:"ic",text:icon}),
+    el("div",{class:"lbl",text:lbl}),
+    el("div",{class:"val",text:String(val)})
+  ]);
+}
+function planChip(code){
+  if(!code) return el("span",{class:"muted",text:"—"});
+  return el("span",{class:"badge blue",text:code});
+}
+function th(t){ return el("th",{text:t}); }
+
+/* ============================================================
+   View: Users list
+   ============================================================ */
+function viewUsers(){
+  shell("#/users",loadingBlock("Loading users…"));
+  API.users().then(function(res){
+    var users=normalizeList(res,"users");
+    renderUsers(users);
+  }).catch(function(err){
+    if(err.status===401) return;
+    shell("#/users",errorBlock(err,viewUsers));
+  });
+
+  function renderUsers(users){
+    var content=el("div");
+    content.appendChild(pageHead("Users",[
+      el("button",{class:"btn",onclick:function(){ openCreateUser(viewUsers); }},["+ New user"])
+    ]));
+
+    var searchIn=el("input",{class:"input",type:"text",placeholder:"Search name, username, phone…"});
+    var statusSel=el("select",{class:"input",style:"max-width:170px"},[
+      optEl("","All statuses"),optEl("active","Active sub"),optEl("pending","Pending"),
+      optEl("none","No sub"),optEl("rejected","Rejected"),optEl("expired","Expired")
+    ]);
+    var blockSel=el("select",{class:"input",style:"max-width:150px"},[
+      optEl("","All users"),optEl("active","Not blocked"),optEl("blocked","Blocked")
+    ]);
+    var tbody=el("tbody");
+
+    function paint(){
+      var q=searchIn.value.trim().toLowerCase();
+      var st=statusSel.value, bl=blockSel.value;
+      var rows=users.filter(function(u){
+        if(q){
+          var hay=((u.name||"")+" "+(u.username||"")+" "+(u.phone||"")).toLowerCase();
+          if(hay.indexOf(q)<0) return false;
+        }
+        if(st && ((u.subscription||{}).status||"none")!==st) return false;
+        if(bl==="blocked" && !u.blocked) return false;
+        if(bl==="active" && u.blocked) return false;
+        return true;
+      });
+      clear(tbody);
+      if(!rows.length){
+        tbody.appendChild(el("tr",[el("td",{colspan:"6"},[el("div",{class:"empty"},[el("div",{class:"big",text:"🔍"}),"No users match your filters."])])]));
+        return;
+      }
+      rows.forEach(function(u){
+        var sub=u.subscription||{};
+        tbody.appendChild(el("tr",[
+          el("td",[el("a",{href:"#/users/"+u.id,text:u.name||"—",style:"font-weight:700"}),u.role==="admin"?el("span",{style:"margin-left:8px"},[roleBadge(u.role)]):null]),
+          el("td",{class:"muted nowrap",text:u.username||"—"}),
+          el("td",{class:"muted nowrap",text:u.phone||"—"}),
+          el("td",[sub.planCode?planChip(sub.planCode):el("span",{class:"muted",text:"—"}),el("span",{style:"margin-left:6px"},[statusBadge(sub.status||"none")])]),
+          el("td",[blockedBadge(u.blocked)]),
+          el("td",{class:"right"},[el("a",{class:"btn sm ghost",href:"#/users/"+u.id,text:"Manage"})])
+        ]));
+      });
+    }
+
+    searchIn.addEventListener("input",paint);
+    statusSel.addEventListener("change",paint);
+    blockSel.addEventListener("change",paint);
+
+    content.appendChild(el("div",{class:"toolbar"},[
+      el("div",{class:"search"},[el("span",{class:"ic",text:"🔍"}),searchIn]),
+      statusSel, blockSel,
+      el("div",{class:"grow"}),
+      el("span",{class:"muted",text:users.length+" total"})
+    ]));
+
+    var card=el("div",{class:"card"});
+    var b=el("div",{class:"card-b flush"});
+    var tw=el("div",{class:"tbl-wrap"});
+    var tbl=el("table");
+    tbl.appendChild(el("thead",[el("tr",[th("Name"),th("Username"),th("Phone"),th("Subscription"),th("Status"),th("")])]));
+    tbl.appendChild(tbody);
+    tw.appendChild(tbl); b.appendChild(tw); card.appendChild(b);
+    content.appendChild(card);
+
+    shell("#/users",content);
+    paint();
+  }
+}
+function optEl(v,t){ return el("option",{value:v,text:t}); }
+
+/* ============================================================
+   View: User detail
+   ============================================================ */
+function viewUserDetail(id){
+  shell("#/users",loadingBlock("Loading user…"));
+  loadUser();
+
+  function loadUser(){
+    API.user(id).then(function(res){
+      var u=(res&&res.user)||res||{};
+      renderDetail(u);
+    }).catch(function(err){
+      if(err.status===401) return;
+      shell("#/users",errorBlock(err,loadUser));
+    });
+  }
+
+  function reload(){ loadUser(); }
+
+  function renderDetail(u){
+    var sub=u.subscription||{};
+    var devices=u.devices||[];
+    var content=el("div");
+
+    content.appendChild(el("div",{class:"crumb"},[el("a",{href:"#/users",text:"Users"}),el("span",{text:" / "+(u.name||u.username||"detail")})]));
+
+    var headActions=[];
+    headActions.push(u.blocked
+      ? el("button",{class:"btn success",onclick:function(){ toggleBlock(u,false); }},["Unblock"])
+      : el("button",{class:"btn warn",onclick:function(){ toggleBlock(u,true); }},["Block"]));
+    headActions.push(el("button",{class:"btn danger ghost",onclick:function(){ deleteUser(u); }},["Delete"]));
+    content.appendChild(pageHead(u.name||u.username||"User",headActions));
+
+    // overview card
+    var ov=el("div",{class:"card"});
+    ov.appendChild(el("div",{class:"card-h"},["Account"]));
+    ov.appendChild(el("div",{class:"card-b"},[el("div",{class:"kv"},[
+      kv("Name",u.name||"—"),
+      kv("Username",u.username||"—"),
+      kv("Phone",u.phone||"—"),
+      kvNode("Role",roleBadge(u.role)),
+      kvNode("Status",blockedBadge(u.blocked)),
+      kv("Created",fmtDate(u.createdAt)),
+      kv("ID",u.id||"—")
+    ])]));
+    content.appendChild(ov);
+
+    // subscription card
+    var subCard=el("div",{class:"card"});
+    var subActions=el("div",{style:"margin-left:auto",class:"pill-actions"});
+    if(sub.status==="pending"){
+      subActions.appendChild(el("button",{class:"btn sm success",onclick:function(){ approve(u); }},["Approve"]));
+      subActions.appendChild(el("button",{class:"btn sm danger ghost",onclick:function(){ reject(u); }},["Reject"]));
+    }
+    subActions.appendChild(el("button",{class:"btn sm ghost",onclick:function(){ openSetPlan(u); }},["Set plan"]));
+    subCard.appendChild(el("div",{class:"card-h"},[el("span",{text:"Subscription"}),subActions]));
+    subCard.appendChild(el("div",{class:"card-b"},[
+      sub.status==="pending"?el("div",{class:"alert info",text:"This user requested plan \""+(sub.planCode||"?")+"\" and is awaiting approval."}):null,
+      el("div",{class:"kv"},[
+        kvNode("Plan",sub.planCode?planChip(sub.planCode):el("span",{class:"muted",text:"None"})),
+        kvNode("Status",statusBadge(sub.status||"none")),
+        kv("Started",fmtDateShort(sub.startedAt)),
+        kv("Expires",fmtDateShort(sub.expiresAt))
+      ])
+    ]));
+    content.appendChild(subCard);
+
+    // devices card
+    var devCard=el("div",{class:"card"});
+    devCard.appendChild(el("div",{class:"card-h"},[el("span",{text:"Devices"}),el("span",{class:"sub",text:devices.length+" bound"})]));
+    var devBody=el("div",{class:"card-b flush"});
+    if(!devices.length){
+      devBody.className="card-b";
+      devBody.appendChild(el("div",{class:"empty"},[el("div",{class:"big",text:"📱"}),"No devices bound."]));
+    } else {
+      var tw=el("div",{class:"tbl-wrap"});
+      var tbl=el("table");
+      tbl.appendChild(el("thead",[el("tr",[th("Device"),th("Platform"),th("OS"),th("Last seen"),th("")])]));
+      var tb=el("tbody");
+      devices.forEach(function(d){
+        var name=(d.brand||d.model)?((d.brand?d.brand+" ":"")+(d.model||"")).trim():(d.deviceId||"Device");
+        tb.appendChild(el("tr",[
+          el("td",[el("div",{style:"font-weight:700"},[name,d.current?el("span",{class:"badge green",style:"margin-left:8px",text:"Current"}):null]),el("div",{class:"mono muted",text:d.deviceId||""})]),
+          el("td",{class:"muted",text:d.platform||"—"}),
+          el("td",{class:"muted",text:d.osVersion||"—"}),
+          el("td",{class:"muted nowrap",text:fmtDate(d.lastSeen||d.boundAt)}),
+          el("td",{class:"right"},[el("button",{class:"btn sm danger ghost",onclick:function(){ unbind(u,d); }},["Unbind"])])
+        ]));
+      });
+      tbl.appendChild(tb); tw.appendChild(tbl); devBody.appendChild(tw);
+    }
+    devCard.appendChild(devBody);
+    content.appendChild(devCard);
+
+    shell("#/users",content);
+  }
+
+  /* actions */
+  function toggleBlock(u,blocked){
+    confirmModal({
+      title:blocked?"Block user":"Unblock user",
+      message:blocked?"Block <b>"+esc(u.name||u.username)+"</b>? They will not be able to use the app.":"Restore access for <b>"+esc(u.name||u.username)+"</b>?",
+      danger:blocked, confirmText:blocked?"Block":"Unblock",
+      onConfirm:function(){
+        return API.setBlocked(u.id,blocked).then(function(){ toast(blocked?"User blocked":"User unblocked","ok"); reload(); });
+      }
+    });
+  }
+  function deleteUser(u){
+    confirmModal({
+      title:"Delete user", danger:true, confirmText:"Delete",
+      alert:"This permanently removes the account and its subscription.", alertType:"err",
+      message:"Delete <b>"+esc(u.name||u.username)+"</b>? This cannot be undone.",
+      onConfirm:function(){
+        return API.deleteUser(u.id).then(function(){ toast("User deleted","ok"); location.hash="#/users"; });
+      }
+    });
+  }
+  function approve(u){
+    confirmModal({
+      title:"Approve plan", confirmText:"Approve",
+      message:"Approve the pending plan \""+esc((u.subscription||{}).planCode)+"\" for <b>"+esc(u.name||u.username)+"</b>?",
+      onConfirm:function(){ return API.approvePlan(u.id).then(function(){ toast("Plan approved","ok"); reload(); }); }
+    });
+  }
+  function reject(u){
+    confirmModal({
+      title:"Reject plan", danger:true, confirmText:"Reject",
+      message:"Reject the pending plan request for <b>"+esc(u.name||u.username)+"</b>?",
+      onConfirm:function(){ return API.rejectPlan(u.id).then(function(){ toast("Plan rejected","ok"); reload(); }); }
+    });
+  }
+  function unbind(u,d){
+    var name=((d.brand?d.brand+" ":"")+(d.model||"")).trim()||d.deviceId;
+    confirmModal({
+      title:"Unbind device", danger:true, confirmText:"Unbind",
+      message:"Unbind <b>"+esc(name)+"</b> from this account?",
+      onConfirm:function(){ return API.unbindDevice(u.id,d.deviceId).then(function(){ toast("Device unbound","ok"); reload(); }); }
+    });
+  }
+  function openSetPlan(u){
+    setPlanModal(u,reload);
+  }
+}
+// kv()/kvNode() each return an array of two nodes ([key, value]); el() flattens nested arrays.
+function kv(k,v){ return [el("div",{class:"k",text:k}),el("div",{class:"v",text:v})]; }
+function kvNode(k,node){ return [el("div",{class:"k",text:k}),el("div",{class:"v"},[node])]; }
+
+/* Set-plan modal (loads plans for the dropdown) */
+function setPlanModal(u,onDone){
+  var sub=u.subscription||{};
+  var planSel=el("select",{class:"input"},[el("option",{value:"",text:"Loading plans…"})]);
+  var statusSel=el("select",{class:"input"},[
+    optEl("active","Active"),optEl("pending","Pending"),optEl("expired","Expired"),optEl("rejected","Rejected"),optEl("none","None")
+  ]);
+  statusSel.value=sub.status&&sub.status!=="none"?(["active","pending","expired","rejected","none"].indexOf(sub.status)>=0?sub.status:"active"):"active";
+  var errBox=el("div");
+  var saveBtn=el("button",{class:"btn",text:"Save",onclick:function(){
+    var code=planSel.value;
+    if(!code){ clear(errBox); errBox.appendChild(el("div",{class:"alert err",text:"Choose a plan."})); return; }
+    saveBtn.disabled=true; clear(saveBtn); saveBtn.appendChild(el("span",{class:"spin white"}));
+    API.setPlan(u.id,code,statusSel.value).then(function(){
+      toast("Plan updated","ok"); closeModal(); if(onDone) onDone();
+    }).catch(function(err){
+      saveBtn.disabled=false; clear(saveBtn); saveBtn.textContent="Save";
+      clear(errBox); errBox.appendChild(el("div",{class:"alert err",text:err.message}));
+    });
+  }});
+
+  modal({
+    title:"Set plan",
+    body:el("div",[
+      errBox,
+      el("div",{class:"field"},[el("label",{text:"Plan"}),planSel]),
+      el("div",{class:"field"},[el("label",{text:"Status"}),statusSel])
+    ]),
+    footer:[el("button",{class:"btn neutral",text:"Cancel",onclick:closeModal}),saveBtn]
+  });
+
+  API.plans().then(function(res){
+    var plans=normalizeList(res,"plans");
+    clear(planSel);
+    if(!plans.length){ planSel.appendChild(el("option",{value:"",text:"No plans available"})); return; }
+    plans.forEach(function(p){
+      planSel.appendChild(el("option",{value:p.code,text:p.name?(p.name+" ("+p.code+")"):p.code}));
+    });
+    if(sub.planCode) planSel.value=sub.planCode;
+  }).catch(function(err){
+    clear(planSel); planSel.appendChild(el("option",{value:"",text:"Failed to load plans"}));
+    clear(errBox); errBox.appendChild(el("div",{class:"alert err",text:err.message}));
+  });
+}
+
+/* ============================================================
+   Create user modal
+   ============================================================ */
+function openCreateUser(onDone){
+  var name=el("input",{class:"input",type:"text",placeholder:"Owner name"});
+  var username=el("input",{class:"input",type:"text",placeholder:"unique username",autocomplete:"off"});
+  var phone=el("input",{class:"input",type:"text",placeholder:"optional"});
+  var pass=el("input",{class:"input",type:"password",placeholder:"password",autocomplete:"new-password"});
+  var roleSel=el("select",{class:"input"},[optEl("owner","Owner"),optEl("admin","Admin")]);
+  var errBox=el("div");
+  var saveBtn=el("button",{class:"btn",text:"Create",onclick:function(){
+    clear(errBox);
+    var body={
+      name:name.value.trim(), username:username.value.trim(),
+      password:pass.value, role:roleSel.value
+    };
+    if(phone.value.trim()) body.phone=phone.value.trim();
+    if(!body.name||!body.username||!body.password){
+      errBox.appendChild(el("div",{class:"alert err",text:"Name, username and password are required."})); return;
+    }
+    saveBtn.disabled=true; clear(saveBtn); saveBtn.appendChild(el("span",{class:"spin white"}));
+    API.createUser(body).then(function(){
+      toast("User created","ok"); closeModal(); if(onDone) onDone();
+    }).catch(function(err){
+      saveBtn.disabled=false; clear(saveBtn); saveBtn.textContent="Create";
+      errBox.appendChild(el("div",{class:"alert err",text:err.message}));
+    });
+  }});
+  modal({
+    title:"Create user", wide:true,
+    body:el("div",[
+      errBox,
+      el("div",{class:"row"},[
+        el("div",{class:"field"},[el("label",{text:"Name"}),name]),
+        el("div",{class:"field"},[el("label",{text:"Username"}),username])
+      ]),
+      el("div",{class:"row"},[
+        el("div",{class:"field"},[el("label",{text:"Phone"}),phone]),
+        el("div",{class:"field"},[el("label",{text:"Role"}),roleSel])
+      ]),
+      el("div",{class:"field"},[el("label",{text:"Password"}),pass])
+    ]),
+    footer:[el("button",{class:"btn neutral",text:"Cancel",onclick:closeModal}),saveBtn]
+  });
+}
+
+/* ============================================================
+   View: Plans
+   ============================================================ */
+function viewPlans(){
+  shell("#/plans",loadingBlock("Loading plans…"));
+  API.plans().then(function(res){
+    var plans=normalizeList(res,"plans");
+    renderPlans(plans);
+  }).catch(function(err){
+    if(err.status===401) return;
+    shell("#/plans",errorBlock(err,viewPlans));
+  });
+
+  function renderPlans(plans){
+    var content=el("div");
+    content.appendChild(pageHead("Plans",[
+      el("button",{class:"btn",onclick:function(){ openPlanModal(null,viewPlans); }},["+ New plan"])
+    ]));
+
+    var card=el("div",{class:"card"});
+    var b=el("div",{class:"card-b flush"});
+    if(!plans.length){
+      b.className="card-b";
+      b.appendChild(el("div",{class:"empty"},[el("div",{class:"big",text:"📦"}),"No plans yet. Create your first plan."]));
+    } else {
+      var tw=el("div",{class:"tbl-wrap"});
+      var tbl=el("table");
+      tbl.appendChild(el("thead",[el("tr",[th("Code"),th("Name"),th("Duration"),th("Max devices"),th("Price"),th("Active"),th("")])]));
+      var tb=el("tbody");
+      plans.forEach(function(p){
+        tb.appendChild(el("tr",[
+          el("td",[el("span",{class:"badge blue",text:p.code})]),
+          el("td",{style:"font-weight:700"},[p.name||"—"]),
+          el("td",{class:"muted",text:(p.durationDays!=null?p.durationDays+" days":"—")}),
+          el("td",{class:"muted",text:(p.maxDevices!=null?String(p.maxDevices):"—")}),
+          el("td",{class:"muted nowrap",text:fmtPrice(p.price)}),
+          el("td",[p.active!==false?el("span",{class:"badge green",text:"Active"}):el("span",{class:"badge gray",text:"Inactive"})]),
+          el("td",{class:"right"},[el("div",{class:"acts",style:"justify-content:flex-end"},[
+            el("button",{class:"btn sm ghost",onclick:function(){ openPlanModal(p,viewPlans); }},["Edit"]),
+            el("button",{class:"btn sm danger ghost",onclick:function(){ deletePlan(p); }},["Delete"])
+          ])])
+        ]));
+      });
+      tbl.appendChild(tb); tw.appendChild(tbl); b.appendChild(tw);
+    }
+    card.appendChild(b);
+    content.appendChild(card);
+    shell("#/plans",content);
+  }
+
+  function deletePlan(p){
+    confirmModal({
+      title:"Delete plan", danger:true, confirmText:"Delete",
+      message:"Delete plan <b>"+esc(p.name||p.code)+"</b> (<code>"+esc(p.code)+"</code>)?",
+      onConfirm:function(){ return API.deletePlan(p.code).then(function(){ toast("Plan deleted","ok"); viewPlans(); }); }
+    });
+  }
+}
+
+function openPlanModal(existing,onDone){
+  var isEdit=!!existing;
+  var p=existing||{};
+  var code=el("input",{class:"input",type:"text",placeholder:"e.g. monthly",value:p.code||""});
+  if(isEdit){ code.disabled=true; code.style.background="#f4f6fa"; }
+  var name=el("input",{class:"input",type:"text",placeholder:"e.g. Monthly",value:p.name||""});
+  var duration=el("input",{class:"input",type:"number",min:"0",placeholder:"30",value:(p.durationDays!=null?p.durationDays:"")});
+  var maxDev=el("input",{class:"input",type:"number",min:"1",placeholder:"1",value:(p.maxDevices!=null?p.maxDevices:"")});
+  var price=el("input",{class:"input",type:"number",min:"0",placeholder:"0",value:(p.price!=null?p.price:"")});
+  var desc=el("textarea",{class:"input",placeholder:"Optional description"});
+  desc.value=p.description||"";
+  var activeChk=el("input",{type:"checkbox"});
+  activeChk.checked=p.active!==false;
+  var errBox=el("div");
+
+  var saveBtn=el("button",{class:"btn",text:isEdit?"Save changes":"Create plan",onclick:function(){
+    clear(errBox);
+    var body={
+      code:(code.value||"").trim(),
+      name:(name.value||"").trim(),
+      durationDays:duration.value!==""?Number(duration.value):0,
+      maxDevices:maxDev.value!==""?Number(maxDev.value):1,
+      price:price.value!==""?Number(price.value):0,
+      description:(desc.value||"").trim(),
+      active:activeChk.checked
+    };
+    if(!body.code){ errBox.appendChild(el("div",{class:"alert err",text:"Code is required."})); return; }
+    if(!body.name){ errBox.appendChild(el("div",{class:"alert err",text:"Name is required."})); return; }
+    saveBtn.disabled=true; clear(saveBtn); saveBtn.appendChild(el("span",{class:"spin white"}));
+    API.upsertPlan(body).then(function(){
+      toast(isEdit?"Plan updated":"Plan created","ok"); closeModal(); if(onDone) onDone();
+    }).catch(function(err){
+      saveBtn.disabled=false; clear(saveBtn); saveBtn.textContent=isEdit?"Save changes":"Create plan";
+      errBox.appendChild(el("div",{class:"alert err",text:err.message}));
+    });
+  }});
+
+  modal({
+    title:isEdit?("Edit plan: "+(p.code||"")):"New plan", wide:true,
+    body:el("div",[
+      errBox,
+      el("div",{class:"row"},[
+        el("div",{class:"field"},[el("label",{text:"Code"+(isEdit?" (locked)":"")}),code]),
+        el("div",{class:"field"},[el("label",{text:"Name"}),name])
+      ]),
+      el("div",{class:"row"},[
+        el("div",{class:"field"},[el("label",{text:"Duration (days)"}),duration]),
+        el("div",{class:"field"},[el("label",{text:"Max devices"}),maxDev]),
+        el("div",{class:"field"},[el("label",{text:"Price (IQD)"}),price])
+      ]),
+      el("div",{class:"field"},[el("label",{text:"Description"}),desc]),
+      el("div",{class:"field"},[el("label",{class:"check"},[activeChk,el("span",{text:"Active (visible to users)"})])])
+    ]),
+    footer:[el("button",{class:"btn neutral",text:"Cancel",onclick:closeModal}),saveBtn]
+  });
+}
+
+/* ============================================================
+   Shared: error / list helpers
+   ============================================================ */
+function errorBlock(err,retry){
+  var content=el("div");
+  content.appendChild(pageHead("Something went wrong"));
+  content.appendChild(el("div",{class:"card"},[el("div",{class:"card-b"},[
+    el("div",{class:"alert err",text:err.message||"Unexpected error."}),
+    retry?el("button",{class:"btn ghost",onclick:retry},["Retry"]):null
+  ])]));
+  return content;
+}
+function normalizeList(res,key){
+  if(!res) return [];
+  if(Array.isArray(res)) return res;
+  if(Array.isArray(res[key])) return res[key];
+  if(Array.isArray(res.data)) return res.data;
+  return [];
+}
+
+/* ============================================================
+   Boot
+   ============================================================ */
+function boot(){
+  // Validate existing token against /me so a stale token doesn't show a broken UI.
+  if(state.token && (!location.hash || location.hash==="#/login")){
+    location.hash="#/dashboard";
+  }
+  render();
+  if(state.token){
+    API.me().then(function(res){
+      var acc=(res&&res.account)||res;
+      if(acc){
+        if(acc.role && acc.role!=="admin"){ toast("Not an admin account","err"); doLogout(true); return; }
+        setSession(state.token,acc);
+      }
+    }).catch(function(){ /* 401 handled inside api() */ });
+  }
+}
+boot();
+
+/* expose a couple of helpers for debugging */
+window.__moldatiAdmin={state:state,API:API};
+})();
+</script>
+</body>
+</html>

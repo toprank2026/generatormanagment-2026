@@ -18,13 +18,27 @@ class CoreController extends GetxController {
   var subscribers = <Subscriber>[].obs;
   var isLoading = false.obs;
 
-  // Pagination
+  // Pagination (subscribers)
   static const int itemsPerPage = 6;
   var currentPage = 1.obs;
   var hasNextPage = false.obs;
   var isMoreLoading = false.obs;
   // Keep track of current query to maintain state across pages
   String? _currentQuery;
+
+  // Pagination (boards)
+  static const int boardsPerPage = 6;
+  var boardsPage = 1.obs;
+  var boardsHasNext = false.obs;
+  var isBoardsMoreLoading = false.obs;
+
+  // Pagination (circuits)
+  static const int circuitsPerPage = 10;
+  var circuitsPage = 1.obs;
+  var circuitsHasNext = false.obs;
+  var isCircuitsMoreLoading = false.obs;
+  // Keep track of current board to maintain state across pages
+  String? _currentCircuitsBoardId;
 
   @override
   void onInit() {
@@ -45,14 +59,50 @@ class CoreController extends GetxController {
   }
 
   // --- Boards ---
-  Future<void> loadBoards() async {
-    isLoading.value = true;
+  Future<void> loadBoards({int page = 1}) async {
+    if (page == 1) {
+      isLoading.value = true;
+      boards.clear();
+    } else {
+      isBoardsMoreLoading.value = true;
+    }
+
+    boardsPage.value = page;
+
     try {
-      boards.value = await _boardRepo.getAll();
+      // Fetch one extra item to check if there is a next page
+      final result = await _boardRepo.getAll(
+        limit: boardsPerPage + 1,
+        offset: (page - 1) * boardsPerPage,
+      );
+
+      List<Board> newItems;
+      if (result.length > boardsPerPage) {
+        boardsHasNext.value = true;
+        newItems = result.sublist(0, boardsPerPage);
+      } else {
+        boardsHasNext.value = false;
+        newItems = result;
+      }
+
+      if (page == 1) {
+        boards.assignAll(newItems);
+      } else {
+        boards.addAll(newItems);
+      }
     } finally {
       isLoading.value = false;
+      isBoardsMoreLoading.value = false;
     }
     update();
+  }
+
+  void loadMoreBoards() {
+    if (boardsHasNext.value &&
+        !isBoardsMoreLoading.value &&
+        !isLoading.value) {
+      loadBoards(page: boardsPage.value + 1);
+    }
   }
 
   Future<void> addBoard(String name, String? code) async {
@@ -78,14 +128,53 @@ class CoreController extends GetxController {
   }
 
   // --- Circuits ---
-  Future<void> loadCircuits(String boardId) async {
-    isLoading.value = true;
+  Future<void> loadCircuits(String boardId, {int page = 1}) async {
+    if (page == 1) {
+      isLoading.value = true;
+      circuits.clear();
+    } else {
+      isCircuitsMoreLoading.value = true;
+    }
+
+    _currentCircuitsBoardId = boardId;
+    circuitsPage.value = page;
+
     try {
-      circuits.value = await _circuitRepo.getByBoardId(boardId);
+      // Fetch one extra item to check if there is a next page
+      final result = await _circuitRepo.getByBoardId(
+        boardId,
+        limit: circuitsPerPage + 1,
+        offset: (page - 1) * circuitsPerPage,
+      );
+
+      List<Circuit> newItems;
+      if (result.length > circuitsPerPage) {
+        circuitsHasNext.value = true;
+        newItems = result.sublist(0, circuitsPerPage);
+      } else {
+        circuitsHasNext.value = false;
+        newItems = result;
+      }
+
+      if (page == 1) {
+        circuits.assignAll(newItems);
+      } else {
+        circuits.addAll(newItems);
+      }
     } finally {
       isLoading.value = false;
+      isCircuitsMoreLoading.value = false;
     }
     update();
+  }
+
+  void loadMoreCircuits() {
+    if (circuitsHasNext.value &&
+        !isCircuitsMoreLoading.value &&
+        !isLoading.value &&
+        _currentCircuitsBoardId != null) {
+      loadCircuits(_currentCircuitsBoardId!, page: circuitsPage.value + 1);
+    }
   }
 
   Future<void> addCircuit(String boardId, String name, String? phase) async {

@@ -16,6 +16,14 @@ class BillingController extends GetxController {
   var isLoading = false.obs;
   var selectedMonth = DateFormat('yyyy-MM').format(DateTime.now()).obs;
 
+  // --- Receipt history pagination (subscriber detail screen) ---
+  static const int historyItemsPerPage = 10;
+  var receipts = <Receipt>[].obs;
+  var historyPage = 1.obs;
+  var historyHasNext = false.obs;
+  var isHistoryMoreLoading = false.obs;
+  var isHistoryLoading = false.obs;
+
   @override
   void onInit() {
     super.onInit();
@@ -45,6 +53,54 @@ class BillingController extends GetxController {
     await _priceRepo.insert(mp); // Insert or replace
     loadMonthPrice(selectedMonth.value);
     update();
+  }
+
+  // --- Receipt history pagination ---
+  Future<void> loadReceiptHistory(String subscriberId, {int page = 1}) async {
+    if (page == 1) {
+      isHistoryLoading.value = true;
+      receipts.clear();
+    } else {
+      isHistoryMoreLoading.value = true;
+    }
+
+    historyPage.value = page;
+
+    try {
+      // Fetch one extra item to check if there is a next page
+      final result = await _receiptRepo.getBySubscriber(
+        subscriberId,
+        limit: historyItemsPerPage + 1,
+        offset: (page - 1) * historyItemsPerPage,
+      );
+
+      List<Receipt> newItems;
+      if (result.length > historyItemsPerPage) {
+        historyHasNext.value = true;
+        newItems = result.sublist(0, historyItemsPerPage);
+      } else {
+        historyHasNext.value = false;
+        newItems = result;
+      }
+
+      if (page == 1) {
+        receipts.assignAll(newItems);
+      } else {
+        receipts.addAll(newItems);
+      }
+    } finally {
+      isHistoryLoading.value = false;
+      isHistoryMoreLoading.value = false;
+    }
+    update();
+  }
+
+  void loadMoreReceiptHistory(String subscriberId) {
+    if (historyHasNext.value &&
+        !isHistoryMoreLoading.value &&
+        !isHistoryLoading.value) {
+      loadReceiptHistory(subscriberId, page: historyPage.value + 1);
+    }
   }
 
   Future<double> getDueAmount(Subscriber sub, String month) async {
@@ -99,6 +155,9 @@ class BillingController extends GetxController {
     );
 
     await _receiptRepo.insert(r);
+
+    // Refresh receipt history (page 1) for this subscriber
+    await loadReceiptHistory(sub.id);
 
     // Refresh dashboard if it's registered
     if (Get.isRegistered<DashboardController>()) {

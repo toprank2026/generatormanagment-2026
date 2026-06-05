@@ -6,17 +6,43 @@ import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/views/screens/subscribers_screen.dart';
 import 'package:generatormanagment/views/screens/circuits_screen.dart';
 
-class BoardsScreen extends StatelessWidget {
+class BoardsScreen extends StatefulWidget {
   final bool forCircuits;
   const BoardsScreen({super.key, this.forCircuits = false});
 
   @override
-  Widget build(BuildContext context) {
-    // We put the controller if not exists, or find it.
-    // Usually put in binding, but lazy put here is fine for now.
-    final CoreController controller = Get.put(CoreController());
-    final AuthController auth = Get.find<AuthController>();
+  State<BoardsScreen> createState() => _BoardsScreenState();
+}
 
+class _BoardsScreenState extends State<BoardsScreen> {
+  final CoreController controller = Get.find<CoreController>();
+  final AuthController auth = Get.find<AuthController>();
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      controller.loadBoards();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      controller.loadMoreBoards();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFE3F2FD),
       appBar: AppBar(
@@ -70,6 +96,7 @@ class BoardsScreen extends StatelessWidget {
           }
 
           return GridView.builder(
+            controller: _scrollController,
             padding: const EdgeInsets.all(16),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
@@ -77,8 +104,17 @@ class BoardsScreen extends StatelessWidget {
               mainAxisSpacing: 16,
               childAspectRatio: 0.9,
             ),
-            itemCount: ctrl.boards.length,
+            itemCount:
+                ctrl.boards.length + (ctrl.isBoardsMoreLoading.value ? 1 : 0),
             itemBuilder: (context, index) {
+              if (index == ctrl.boards.length) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
               final board = ctrl.boards[index];
               return Card(
                 elevation: 4,
@@ -89,7 +125,7 @@ class BoardsScreen extends StatelessWidget {
                   children: [
                     InkWell(
                       onTap: () {
-                        if (forCircuits) {
+                        if (widget.forCircuits) {
                           Get.to(() => CircuitsScreen(board: board));
                         } else {
                           Get.to(() => SubscribersScreen(boardId: board.id));

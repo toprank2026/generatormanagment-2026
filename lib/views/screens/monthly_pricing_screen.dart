@@ -8,7 +8,7 @@ class MonthlyPricingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final BillingController controller = Get.put(BillingController());
+    final BillingController controller = Get.find<BillingController>();
     final priceCtrl = TextEditingController();
 
     return Scaffold(

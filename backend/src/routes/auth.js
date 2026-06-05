@@ -1,0 +1,37 @@
+'use strict';
+
+const express = require('express');
+const { body } = require('express-validator');
+const { register, login, me } = require('../controllers/authController');
+const { validate } = require('../middleware/validate');
+const { requireAuth } = require('../middleware/auth');
+
+const router = express.Router();
+
+router.post(
+  '/register',
+  [
+    body('name').isString().trim().notEmpty().withMessage('name is required'),
+    body('username').isString().trim().notEmpty().withMessage('username is required'),
+    body('password').isString().isLength({ min: 4 }).withMessage('password must be at least 4 chars'),
+    body('phone').optional({ nullable: true }).isString(),
+    body('device').optional().isObject(),
+  ],
+  validate,
+  register
+);
+
+router.post(
+  '/login',
+  [
+    body('username').isString().trim().notEmpty().withMessage('username is required'),
+    body('password').isString().notEmpty().withMessage('password is required'),
+    body('device').optional().isObject(),
+  ],
+  validate,
+  login
+);
+
+router.get('/me', requireAuth, me);
+
+module.exports = router;

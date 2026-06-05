@@ -5,8 +5,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/core/connectivity_service.dart';
+import 'package:generatormanagment/core/session_cache.dart';
 import 'package:generatormanagment/data/db_helper.dart';
+import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/models/user_model.dart';
+import 'package:generatormanagment/data/repositories/backup_repository.dart';
 import 'package:generatormanagment/data/repositories/user_repository.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
@@ -17,10 +21,22 @@ import 'package:share_plus/share_plus.dart';
 class SettingsController extends GetxController {
   final UserRepository _userRepo = UserRepository();
   final DbHelper _dbHelper = DbHelper();
+  final BackupRepository _backupRepo = BackupRepository();
   final AuthController auth = Get.find();
 
   var users = <User>[].obs;
   var isLoading = false.obs;
+
+  // --- Users pagination ---
+  static const int usersPerPage = 10;
+  var usersPage = 1.obs;
+  var usersHasNext = false.obs;
+  var isUsersMoreLoading = false.obs;
+
+  // --- Cloud backup ---
+  var cloudBackups = <BackupEntry>[].obs;
+  var isCloudBusy = false.obs;
+  var lastCloudBackupAt = Rxn<String>();
 
   // Printer Settings
   var printerName = "".obs;
@@ -57,9 +73,14 @@ class SettingsController extends GetxController {
   void onReady() {
     super.onReady();
     loadPrinterSettings();
+    _loadLastBackupAt();
     if (auth.currentUser.value?.role == 'admin') {
       loadUsers();
     }
+  }
+
+  Future<void> _loadLastBackupAt() async {
+    lastCloudBackupAt.value = await SessionCache().getLastBackupAt();
   }
 
   Future<void> loadPrinterSettings() async {
@@ -78,11 +99,50 @@ class SettingsController extends GetxController {
     update();
   }
 
-  Future<void> loadUsers() async {
-    isLoading.value = true;
-    users.value = await _userRepo.getAllUsers();
-    isLoading.value = false;
+  Future<void> loadUsers({int page = 1}) async {
+    if (page == 1) {
+      isLoading.value = true;
+      users.clear();
+    } else {
+      isUsersMoreLoading.value = true;
+    }
+
+    usersPage.value = page;
+
+    try {
+      // Fetch one extra row to detect whether a next page exists.
+      final result = await _userRepo.getAllUsers(
+        limit: usersPerPage + 1,
+        offset: (page - 1) * usersPerPage,
+      );
+
+      List<User> newItems;
+      if (result.length > usersPerPage) {
+        usersHasNext.value = true;
+        newItems = result.sublist(0, usersPerPage);
+      } else {
+        usersHasNext.value = false;
+        newItems = result;
+      }
+
+      if (page == 1) {
+        users.assignAll(newItems);
+      } else {
+        users.addAll(newItems);
+      }
+    } finally {
+      isLoading.value = false;
+      isUsersMoreLoading.value = false;
+    }
     update();
+  }
+
+  void loadMoreUsers() {
+    if (usersHasNext.value &&
+        !isUsersMoreLoading.value &&
+        !isLoading.value) {
+      loadUsers(page: usersPage.value + 1);
+    }
   }
 
   Future<void> addUser(String username, String password, String role) async {
@@ -225,5 +285,98 @@ class SettingsController extends GetxController {
     } finally {
       isLoading.value = false;
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // CLOUD BACKUP (server-side DB snapshots) — distinct from local export/import
+  // --------------------------------------------------------------------------
+
+  Future<void> refreshCloudBackups() async {
+    // Silent no-op when offline (this runs on screen open; the UI shows an
+    // 'online_only' hint instead of nagging with a snackbar each time).
+    if (!await ConnectivityService().isOnline()) return;
+    isCloudBusy.value = true;
+    try {
+      cloudBackups.assignAll(await _backupRepo.list());
+    } catch (e) {
+      Get.snackbar("Error", "${'cloud_backup'.tr}: $e");
+    } finally {
+      isCloudBusy.value = false;
+    }
+    update();
+  }
+
+  Future<void> uploadCloudBackup({String? note}) async {
+    final online = await ConnectivityService().isOnline();
+    if (!online) {
+      Get.snackbar('cloud_backup'.tr, 'online_only'.tr);
+      return;
+    }
+
+    isCloudBusy.value = true;
+    try {
+      await _backupRepo.upload(note: note);
+      final iso = DateTime.now().toIso8601String();
+      await SessionCache().setLastBackupAt(iso);
+      lastCloudBackupAt.value = iso;
+      Get.snackbar('cloud_backup'.tr, 'backup_uploaded'.tr);
+      await refreshCloudBackups();
+    } catch (e) {
+      Get.snackbar("Error", "${'cloud_backup'.tr}: $e");
+    } finally {
+      isCloudBusy.value = false;
+    }
+    update();
+  }
+
+  Future<void> deleteCloudBackup(String id) async {
+    if (!await ConnectivityService().isOnline()) {
+      Get.snackbar('cloud_backup'.tr, 'online_only'.tr);
+      return;
+    }
+    isCloudBusy.value = true;
+    try {
+      await _backupRepo.delete(id);
+      cloudBackups.removeWhere((b) => b.id == id);
+    } catch (e) {
+      Get.snackbar("Error", "${'cloud_backup'.tr}: $e");
+    } finally {
+      isCloudBusy.value = false;
+    }
+    update();
+  }
+
+  void restoreCloudBackup(String id) {
+    Get.defaultDialog(
+      title: 'cloud_backup'.tr,
+      middleText: 'restore_overwrite_warning'.tr,
+      textConfirm: 'restore'.tr,
+      textCancel: 'cancel'.tr,
+      confirmTextColor: Colors.white,
+      buttonColor: Colors.red,
+      onConfirm: () {
+        Get.back();
+        _performCloudRestore(id);
+      },
+    );
+  }
+
+  Future<void> _performCloudRestore(String id) async {
+    if (!await ConnectivityService().isOnline()) {
+      Get.snackbar('cloud_backup'.tr, 'online_only'.tr);
+      return;
+    }
+    isCloudBusy.value = true;
+    try {
+      await _backupRepo.restore(id);
+      Get.snackbar('cloud_backup'.tr, 'backup_restored'.tr);
+      // Force a restart-like reload so the freshly restored DB is picked up.
+      Get.find<AuthController>().logout();
+    } catch (e) {
+      Get.snackbar("Error", "${'cloud_backup'.tr}: $e");
+    } finally {
+      isCloudBusy.value = false;
+    }
+    update();
   }
 }
