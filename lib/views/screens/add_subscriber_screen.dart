@@ -263,13 +263,26 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
 
   void _save() {
     if (_formKey.currentState!.validate()) {
+      final amps = double.tryParse(_ampsCtrl.text.trim());
+      if (amps == null) {
+        Get.snackbar(
+          "error".tr,
+          "amps".tr,
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+        return;
+      }
       final sub = Subscriber(
         id: isEdit ? widget.subscriber!.id : const Uuid().v4(),
         name: _nameCtrl.text,
         phone: _phoneCtrl.text,
-        amps: double.parse(_ampsCtrl.text),
+        amps: amps,
         boardId: selectedBoard!.id,
         circuitId: selectedCircuit!.id,
+        // Preserve original status/createdAt when editing.
+        status: isEdit ? widget.subscriber!.status : 'active',
+        createdAt: isEdit ? widget.subscriber!.createdAt : null,
       );
 
       if (isEdit) {

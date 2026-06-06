@@ -641,6 +641,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       buttonColor: Colors.red,
       onConfirm: () async {
         if (!await ConnectivityService().isOnline()) {
+          Get.back(); // close dialog
           Get.snackbar('manage_devices'.tr, 'online_only'.tr);
           return;
         }
@@ -650,6 +651,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Get.back(); // close bottom sheet
           Get.snackbar('manage_devices'.tr, 'device_unbound'.tr);
         } catch (e) {
+          Get.back(); // close dialog
           Get.snackbar("Error", "${'manage_devices'.tr}: $e");
         }
       },

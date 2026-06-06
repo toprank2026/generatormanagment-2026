@@ -21,8 +21,8 @@ class Plan {
   factory Plan.fromJson(Map<String, dynamic> j) => Plan(
         code: (j['code'] ?? '').toString(),
         name: (j['name'] ?? j['code'] ?? '').toString(),
-        durationDays: (j['durationDays'] ?? 0) as int,
-        maxDevices: (j['maxDevices'] ?? 1) as int,
+        durationDays: ((j['durationDays'] ?? 0) as num).toInt(),
+        maxDevices: ((j['maxDevices'] ?? 1) as num).toInt(),
         price: (j['price'] ?? 0) as num,
         description: j['description'] as String?,
         active: (j['active'] ?? true) as bool,

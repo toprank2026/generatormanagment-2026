@@ -121,7 +121,10 @@ class BillingController extends GetxController {
   }
 
   Future<Receipt?> collectPayment(Subscriber sub, double amount) async {
-    if (amount <= 0) return null;
+    if (amount <= 0) {
+      Get.snackbar("Error", "Enter a valid amount");
+      return null;
+    }
 
     MonthlyPrice? mp = await _priceRepo.getByMonth(selectedMonth.value);
     if (mp == null) return null;

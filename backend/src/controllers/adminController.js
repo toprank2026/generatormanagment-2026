@@ -111,11 +111,15 @@ const approvePlan = asyncHandler(async (req, res) => {
   }
 
   const dates = await planExpiry(sub.planCode);
+  if (!dates) {
+    // The requested plan was deleted after the request was made.
+    throw new HttpError(404, 'Requested plan no longer exists', 'PLAN_NOT_FOUND');
+  }
   user.subscription = {
     planCode: sub.planCode,
     status: 'active',
-    startedAt: dates ? dates.started : new Date(),
-    expiresAt: dates ? dates.expires : null,
+    startedAt: dates.started,
+    expiresAt: dates.expires,
   };
   await user.save();
   res.status(200).json({ user: serializeAccount(user) });

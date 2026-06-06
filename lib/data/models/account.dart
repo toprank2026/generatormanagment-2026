@@ -108,8 +108,12 @@ class Account {
         role: (j['role'] ?? 'owner').toString(),
         blocked: (j['blocked'] ?? false) as bool,
         createdAt: j['createdAt'] as String?,
-        subscription: Subscription.fromJson(j['subscription'] as Map<String, dynamic>?),
-        devices: ((j['devices'] ?? const []) as List)
+        subscription: Subscription.fromJson(
+          j['subscription'] is Map
+              ? (j['subscription'] as Map).cast<String, dynamic>()
+              : null,
+        ),
+        devices: (j['devices'] is List ? j['devices'] as List : const [])
             .whereType<Map<String, dynamic>>()
             .map(DeviceBinding.fromJson)
             .toList(),

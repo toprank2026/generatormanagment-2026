@@ -24,9 +24,20 @@ class BoardRepository {
     );
   }
 
+  /// Cascades manually (SQLite FK enforcement is off): removes the board's
+  /// circuits, subscribers and their receipts so no orphan rows remain.
   Future<int> delete(String id) async {
     final db = await _dbHelper.database;
-    return await db.delete('boards', where: 'id = ?', whereArgs: [id]);
+    return await db.transaction((txn) async {
+      await txn.delete(
+        'receipts',
+        where: 'subscriber_id IN (SELECT id FROM subscribers WHERE board_id = ?)',
+        whereArgs: [id],
+      );
+      await txn.delete('subscribers', where: 'board_id = ?', whereArgs: [id]);
+      await txn.delete('circuits', where: 'board_id = ?', whereArgs: [id]);
+      return await txn.delete('boards', where: 'id = ?', whereArgs: [id]);
+    });
   }
 
   Future<List<Board>> getAll({int limit = -1, int offset = 0}) async {
@@ -63,9 +74,18 @@ class CircuitRepository {
     );
   }
 
+  /// Cascades manually: removes the circuit's subscribers and their receipts.
   Future<int> delete(String id) async {
     final db = await _dbHelper.database;
-    return await db.delete('circuits', where: 'id = ?', whereArgs: [id]);
+    return await db.transaction((txn) async {
+      await txn.delete(
+        'receipts',
+        where: 'subscriber_id IN (SELECT id FROM subscribers WHERE circuit_id = ?)',
+        whereArgs: [id],
+      );
+      await txn.delete('subscribers', where: 'circuit_id = ?', whereArgs: [id]);
+      return await txn.delete('circuits', where: 'id = ?', whereArgs: [id]);
+    });
   }
 
   Future<List<Circuit>> getByBoardId(
@@ -108,9 +128,18 @@ class SubscriberRepository {
     );
   }
 
+  /// Cascades manually: removes the subscriber's receipts (and their refunds).
   Future<int> delete(String id) async {
     final db = await _dbHelper.database;
-    return await db.delete('subscribers', where: 'id = ?', whereArgs: [id]);
+    return await db.transaction((txn) async {
+      await txn.delete(
+        'refunds',
+        where: 'receipt_uuid IN (SELECT uuid FROM receipts WHERE subscriber_id = ?)',
+        whereArgs: [id],
+      );
+      await txn.delete('receipts', where: 'subscriber_id = ?', whereArgs: [id]);
+      return await txn.delete('subscribers', where: 'id = ?', whereArgs: [id]);
+    });
   }
 
   Future<List<Subscriber>> getAll({
@@ -172,9 +201,9 @@ class SubscriberRepository {
         """
       SELECT s.* FROM subscribers s
       LEFT JOIN (
-        SELECT subscriber_id, SUM(paid_amount) as total_paid 
-        FROM receipts 
-        WHERE month = ?
+        SELECT subscriber_id, SUM(paid_amount) as total_paid
+        FROM receipts
+        WHERE month = ? AND status = 'valid'
         GROUP BY subscriber_id
       ) r ON s.id = r.subscriber_id
       WHERE COALESCE(r.total_paid, 0) $operator (s.amps * ?)

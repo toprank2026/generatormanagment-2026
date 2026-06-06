@@ -38,6 +38,7 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    searchCtrl.dispose();
     super.dispose();
   }
 

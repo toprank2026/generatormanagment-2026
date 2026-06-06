@@ -53,7 +53,7 @@ class Messages extends Translations {
       'subscriber_deleted': 'Subscriber Deleted Successfully',
       'delete_subscriber_title': 'Delete Subscriber',
       'delete_subscriber_confirm':
-          'Are you sure you want to delete this subscriber?',
+          'Deleting this subscriber also removes their receipts. Continue?',
       'board_filter_active': 'Board Filter Active',
       // Subscribers Screen
       'subscribers_title': 'Subscribers',
@@ -88,7 +88,8 @@ class Messages extends Translations {
       'board_updated': 'Board Updated Successfully',
       'board_deleted': 'Board Deleted Successfully',
       'delete_board_title': 'Delete Board',
-      'delete_board_confirm': 'Are you sure you want to delete this board?',
+      'delete_board_confirm':
+          'Deleting this board also removes its circuits, subscribers and their receipts. Continue?',
       'board_name_hint': 'Enter board name...',
       'board_code_hint': 'Enter board code (optional)...',
       'no_boards': 'No boards found. Add one!',
@@ -97,7 +98,8 @@ class Messages extends Translations {
       'circuit_added': 'Circuit Added Successfully',
       'circuit_deleted': 'Circuit Deleted Successfully',
       'delete_circuit_title': 'Delete Circuit',
-      'delete_circuit_confirm': 'Are you sure you want to delete this circuit?',
+      'delete_circuit_confirm':
+          'Deleting this circuit also removes its subscribers and their receipts. Continue?',
       'total_circuits': 'Total Circuits',
       'circuits': 'Circuits',
       // Accounts / Auth
@@ -200,7 +202,8 @@ class Messages extends Translations {
       'subscriber_updated': 'تم تحديث المشترك بنجاح',
       'subscriber_deleted': 'تم حذف المشترك بنجاح',
       'delete_subscriber_title': 'حذف مشترك',
-      'delete_subscriber_confirm': 'هل أنت متأكد من رغبتك في حذف هذا المشترك؟',
+      'delete_subscriber_confirm':
+          'سيؤدي حذف هذا المشترك إلى حذف إيصالاته أيضاً. هل تريد المتابعة؟',
       'board_filter_active': 'فلتر البورد نشط',
       // Subscribers Screen
       'subscribers_title': 'المشتركين',
@@ -235,7 +238,8 @@ class Messages extends Translations {
       'board_updated': 'تم تحديث البورد بنجاح',
       'board_deleted': 'تم حذف البورد بنجاح',
       'delete_board_title': 'حذف بورد',
-      'delete_board_confirm': 'هل أنت متأكد من رغبتك في حذف هذا البورد؟',
+      'delete_board_confirm':
+          'سيؤدي حذف هذا البورد إلى حذف جوزاته ومشتركيه وإيصالاتهم أيضاً. هل تريد المتابعة؟',
       'board_name_hint': 'أدخل اسم البورد...',
       'board_code_hint': 'أدخل كود البورد (اختياري)...',
       'no_boards': 'لا يوجد بوردات. أضف واحداً!',
@@ -244,7 +248,8 @@ class Messages extends Translations {
       'circuit_added': 'تم إضافة الجوزة بنجاح',
       'circuit_deleted': 'تم حذف الجوزة بنجاح',
       'delete_circuit_title': 'حذف جوزة',
-      'delete_circuit_confirm': 'هل أنت متأكد من رغبتك في حذف هذه الجوزة؟',
+      'delete_circuit_confirm':
+          'سيؤدي حذف هذه الجوزة إلى حذف مشتركيها وإيصالاتهم أيضاً. هل تريد المتابعة؟',
       'total_circuits': 'إجمالي الجوزات',
       'circuits': 'الجوزات',
       // Accounts / Auth

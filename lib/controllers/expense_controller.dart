@@ -44,11 +44,13 @@ class ExpenseController extends GetxController {
     }
 
     expensesCurrentPage.value = page;
+    // Capture the month so a mid-load month change can't mismatch list/total.
+    final String month = selectedMonth.value;
 
     try {
       // Fetch one extra item to check if there is a next page
       final result = await _repo.getExpensesByMonth(
-        selectedMonth.value,
+        month,
         limit: expensesPerPage + 1,
         offset: (page - 1) * expensesPerPage,
       );
@@ -65,7 +67,7 @@ class ExpenseController extends GetxController {
       if (page == 1) {
         expenses.assignAll(newItems);
         // Month total must reflect ALL expenses, not just the page
-        totalExpenses.value = await _repo.getTotalExpenses(selectedMonth.value);
+        totalExpenses.value = await _repo.getTotalExpenses(month);
       } else {
         expenses.addAll(newItems);
       }

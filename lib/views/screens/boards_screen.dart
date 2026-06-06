@@ -255,7 +255,12 @@ class _BoardsScreenState extends State<BoardsScreen> {
         if (nameCtrl.text.isNotEmpty) {
           if (isEdit) {
             controller.updateBoard(
-              Board(id: board.id, name: nameCtrl.text, code: codeCtrl.text),
+              Board(
+                id: board.id,
+                name: nameCtrl.text,
+                code: codeCtrl.text,
+                createdAt: board.createdAt,
+              ),
             );
           } else {
             controller.addBoard(nameCtrl.text, codeCtrl.text);
