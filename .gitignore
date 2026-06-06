@@ -54,5 +54,6 @@ backend/*.db
 
 # --- Local test / dev artifacts ---
 .device_shot.png
+.shot.png
 .smoke_test.mjs
 *.smoke_backups/

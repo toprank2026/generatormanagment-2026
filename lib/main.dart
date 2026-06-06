@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/core/app_binding.dart';
+import 'package:generatormanagment/core/dev_seed.dart';
 import 'package:generatormanagment/views/auth/signup_screen.dart';
 import 'package:generatormanagment/views/screens/login_screen.dart';
 import 'package:generatormanagment/views/screens/home_screen.dart';
@@ -15,6 +16,13 @@ import 'package:intl/date_symbol_data_local.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting();
+
+  // DEBUG-ONLY scale seeder (off unless --dart-define=DEV_SEED=true).
+  if (const bool.fromEnvironment('DEV_SEED')) {
+    await DevSeed.run(
+      count: const int.fromEnvironment('DEV_SEED_COUNT', defaultValue: 1000),
+    );
+  }
 
   // Load saved language directly from preferences
   final prefs = await SharedPreferences.getInstance();

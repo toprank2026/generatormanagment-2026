@@ -38,8 +38,12 @@ class AuthController extends GetxController {
 
   Subscription? get subscription => account.value?.subscription;
   bool get hasActiveSubscription => account.value?.subscription.isActive ?? false;
-  bool get isAdmin =>
-      (currentUser.value?.role ?? account.value?.role ?? '') == 'admin';
+  bool get isAdmin {
+    // Read the observable FIRST so this getter stays reactive when used inside
+    // Obx (the DEV_ADMIN test override must not short-circuit the .value read).
+    final role = currentUser.value?.role ?? account.value?.role ?? '';
+    return role == 'admin' || const bool.fromEnvironment('DEV_ADMIN');
+  }
 
   @override
   void onInit() {
