@@ -1,30 +1,68 @@
-// This is a basic Flutter widget test.
+// A plugin-free widget test.
 //
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// We deliberately do NOT pump the real MyApp/RootHandler, because that boots
+// AuthController which depends on SharedPreferences / secure_storage /
+// connectivity plugins that are unavailable in the test environment.
+//
+// Instead we pump a tiny self-contained GetMaterialApp wired with the real
+// Messages() translations and assert that '.tr' keys render their translated
+// values for both locales. The translated subtree is built inside a Builder so
+// that '.tr' is evaluated during the widget build (after GetMaterialApp has
+// installed the translations/locale) rather than eagerly at construction time.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get/get.dart';
 
-import 'package:generatormanagment/main.dart';
+import 'package:generatormanagment/utils/translations.dart';
+
+Widget _buildApp(Locale locale) {
+  return GetMaterialApp(
+    translations: Messages(),
+    locale: locale,
+    fallbackLocale: const Locale('en', 'US'),
+    home: Builder(
+      builder: (_) => Scaffold(
+        appBar: AppBar(title: Text('app_name'.tr)),
+        body: Column(
+          children: [
+            Text('settings'.tr),
+            Text('dashboard'.tr),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp(initialLocale: Locale('en', 'US')));
+  test('Messages exposes en_US and ar_AR keys', () {
+    final keys = Messages().keys;
+    expect(keys.keys, containsAll(<String>['en_US', 'ar_AR']));
+    expect(keys['en_US'], isNotEmpty);
+    expect(keys['ar_AR'], isNotEmpty);
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  testWidgets('renders English translations via .tr', (tester) async {
+    await tester.pumpWidget(_buildApp(const Locale('en', 'US')));
+    await tester.pumpAndSettle();
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    expect(find.text('Moldati Owner'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Dashboard'), findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // The raw key must never leak into the UI.
+    expect(find.text('app_name'), findsNothing);
+  });
+
+  testWidgets('renders Arabic translations via .tr', (tester) async {
+    await tester.pumpWidget(_buildApp(const Locale('ar', 'AR')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('مالك مولداتي'), findsOneWidget);
+    expect(find.text('الإعدادات'), findsOneWidget);
+    expect(find.text('لوحة التحكم'), findsOneWidget);
+
+    expect(find.text('app_name'), findsNothing);
   });
 }

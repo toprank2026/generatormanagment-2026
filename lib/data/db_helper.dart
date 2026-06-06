@@ -7,6 +7,10 @@ class DbHelper {
   static final DbHelper _instance = DbHelper._internal();
   static Database? _database;
 
+  /// When set (tests), the DB opens at this path instead of the app documents
+  /// dir — lets host tests point at an ffi in-memory DB without path_provider.
+  static String? testPath;
+
   factory DbHelper() {
     return _instance;
   }
@@ -20,9 +24,21 @@ class DbHelper {
   }
 
   Future<Database> _initDatabase() async {
-    Directory documentsDirectory = await getApplicationDocumentsDirectory();
-    String path = join(documentsDirectory.path, "moldati.db");
+    final String path = testPath ?? await _defaultPath();
     return await openDatabase(path, version: 1, onCreate: _onCreate);
+  }
+
+  Future<String> _defaultPath() async {
+    Directory documentsDirectory = await getApplicationDocumentsDirectory();
+    return join(documentsDirectory.path, "moldati.db");
+  }
+
+  /// Closes + clears the cached connection (used between tests).
+  static Future<void> resetForTest() async {
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
   }
 
   Future _onCreate(Database db, int version) async {
@@ -148,7 +164,6 @@ class DbHelper {
   }
 
   Future<String> getDbPath() async {
-    Directory documentsDirectory = await getApplicationDocumentsDirectory();
-    return join(documentsDirectory.path, "moldati.db");
+    return testPath ?? await _defaultPath();
   }
 }

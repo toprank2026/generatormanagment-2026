@@ -102,7 +102,7 @@ class Account {
 
   factory Account.fromJson(Map<String, dynamic> j) => Account(
         id: (j['id'] ?? j['_id'] ?? '').toString(),
-        name: (j['name'] ?? j['username'] ?? '').toString(),
+        name: (j['name'] ?? j['username'] ?? j['email'] ?? '').toString(),
         phone: j['phone'] as String?,
         username: (j['username'] ?? j['email'] ?? '').toString(),
         role: (j['role'] ?? 'owner').toString(),
