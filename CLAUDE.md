@@ -76,7 +76,8 @@ Every scrollable list screen paginates via the canonical pattern (reference: `Co
 - New user-facing strings go in **both** language maps in `lib/utils/translations.dart`, used via `'key'.tr`.
 
 ## Gotchas
-- ⚠️ **`test/widget_test.dart` is still the default counter template and fails** (`flutter test` is red out of the box) — replace it before relying on the suite.
-- ⚠️ **SQLite is `version: 1` with `_onCreate` only — no `onUpgrade` migration path** (`lib/data/db_helper.dart`). Any schema change needs a version bump + `onUpgrade`, or it diverges across installs.
+- The suite is green: `flutter test` (52) + `cd backend && npm test` (38). `test/widget_test.dart` now holds real translation-parity tests (no longer the counter template).
+- ⚠️ **SQLite is `version: 2`** (`lib/data/db_helper.dart`); `_onCreate` builds the schema and `_onUpgrade` (v1→v2) adds the sync change-capture (`sync_outbox` + AFTER INSERT/UPDATE/DELETE triggers on the business tables). Any further schema change needs a version bump + an `onUpgrade` branch, or it diverges across installs.
+- ⚠️ **Sync captures only changes made after the v2 migration** — rows that already existed when a device upgraded are not in `sync_outbox`, so they don't appear in the admin mirror until they're next edited. (A one-time backfill that enqueues existing rows is not yet built.)
 - ⚠️ **When running parallel file-editing agents, forbid `git` commands** — a prior multi-agent run executed `git reset/stash` during lint cleanup and reverted uncommitted edits to tracked files. Keep editing agents read-only on git, or commit a checkpoint first.
 - Android needs cleartext HTTP (already set) for the dev backend; permissions for the device-id attempt are in `AndroidManifest.xml`.
