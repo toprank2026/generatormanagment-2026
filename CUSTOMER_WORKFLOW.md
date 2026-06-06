@@ -1,15 +1,16 @@
 # Customer Workflow — Moldati Owner
 
 How a real generator-business **owner** uses the app, step by step. The app UI is
-in **Arabic (RTL)**; key screen labels are shown in parentheses. After sign-in
-the app works **fully offline** — internet is only needed for sign-up/sign-in,
-subscription checks and cloud backup.
+in **Arabic (RTL)** with the **Cairo** font; key screen labels are shown in
+parentheses. After sign-in the app works **fully offline** — internet is only
+needed for sign-up/sign-in, subscription checks, cloud backup, and **syncing your
+data to the server** (so the office/admin can view it).
 
 ---
 
 ## A. First-time setup (online)
 1. **Open the app.** It launches in Arabic.
-2. **Create an account** — on the login screen tap *“ليس لديك حساب؟ أنشئ حساباً”* (Sign up), then enter full name, phone, username, password. → Your account is created and **this device is registered** to it (a plan allows a limited number of devices).
+2. **Create an account** — on the login screen tap *“ليس لديك حساب؟ أنشئ حساباً”* (Sign up), then enter **full name, phone, and password** (you sign in with your **phone**). → Your account is created and **this device is registered** to it (a plan allows a limited number of devices).
 3. **Choose a subscription plan** (الاشتراك) — pick Trial / Monthly / Yearly. The request goes **pending** until it’s approved.
 4. **Wait for approval**, then pull-to-refresh (or *تحقق من حالة الاشتراك*). Once **active (فعّال)** you enter the app.
 
@@ -30,13 +31,13 @@ subscription checks and cloud backup.
 
 ## E. Account & data
 14. **Subscription** (الإعدادات → الاشتراك والخطة) — see your current plan, status and dates, and **upgrade / change plan** (ترقية / تغيير الخطة).
-15. **Cloud backup** (الإعدادات → النسخ الاحتياطي السحابي) — back up your database to the cloud and restore it on a device (online).
-16. **Local backup** — also export/import the database file directly (offline).
+15. **Backup** (الإعدادات → النسخ الاحتياطي) — one screen for everything: **cloud backup** (upload / restore / delete, online) and **local export/import** of the database file (offline).
+16. **Sync** (الإعدادات → المزامنة) — see sync status, pending changes and last sync, and force **مزامنة الآن (Sync now)**. Data also auto-syncs in the background when online; the dashboard header shows the pending count + a quick Sync-now.
 17. **Staff** — the owner can add staff users; **language** (العربية/English) and **printer** are set in Settings.
 
 ---
 
 ### Notes for the customer
-- Your subscribers, billing and expenses stay **on your phone** (private) — only your account, plan and device list live on the server.
+- Your subscribers, billing and expenses live **on your phone** (the source of truth — fully usable offline) and are also **synced to your account on the server** so the office/admin can view them.
 - Keep at least one **cloud or local backup** before changing devices.
 - Deleting a board/circuit also deletes everything under it (you’ll be warned).

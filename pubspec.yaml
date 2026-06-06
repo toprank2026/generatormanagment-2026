@@ -95,6 +95,12 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # Cairo (Arabic-first variable font, OFL) bundled for offline use.
+  fonts:
+    - family: Cairo
+      fonts:
+        - asset: assets/fonts/Cairo.ttf
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

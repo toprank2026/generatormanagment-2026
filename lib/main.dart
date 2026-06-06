@@ -47,6 +47,7 @@ class MyApp extends StatelessWidget {
       locale: initialLocale, // default locale, or use Get.deviceLocale
       fallbackLocale: const Locale('en', 'US'),
       theme: ThemeData(
+        fontFamily: 'Cairo',
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF2196F3), // Blue
           primary: const Color(0xFF2196F3),
