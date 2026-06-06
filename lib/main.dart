@@ -24,12 +24,12 @@ Future<void> main() async {
     );
   }
 
-  // Load saved language directly from preferences
+  // Load saved language; default to Arabic when the user hasn't chosen one.
   final prefs = await SharedPreferences.getInstance();
   final langCode = prefs.getString('lang_code');
-  final locale = langCode == 'ar'
-      ? const Locale('ar', 'AR')
-      : const Locale('en', 'US');
+  final locale = langCode == 'en'
+      ? const Locale('en', 'US')
+      : const Locale('ar', 'AR');
 
   runApp(MyApp(initialLocale: locale));
 }

@@ -63,10 +63,11 @@ class SettingsController extends GetxController {
     final prefs = await SharedPreferences.getInstance();
     final String? langCode = prefs.getString(_keyLang);
 
-    if (langCode == 'ar') {
-      return const Locale('ar', 'AR');
+    // Default to Arabic when no language has been chosen yet.
+    if (langCode == 'en') {
+      return const Locale('en', 'US');
     }
-    return const Locale('en', 'US');
+    return const Locale('ar', 'AR');
   }
 
   @override
