@@ -3,8 +3,9 @@ import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/views/root_handler.dart';
 
-/// Creates a backend account. The device fingerprint is attached automatically
-/// by [AuthController.register] → AuthRepository (anti-abuse device binding).
+/// Creates a backend account with just name + phone + password. The **phone**
+/// is used as the unique login identifier. The device fingerprint is attached
+/// automatically by [AuthController.register] (anti-abuse device binding).
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
 
@@ -15,9 +16,7 @@ class SignupScreen extends StatefulWidget {
 class _SignupScreenState extends State<SignupScreen> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
-  final _username = TextEditingController();
   final _password = TextEditingController();
-  final _confirm = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   final AuthController _auth = Get.find();
   bool _loading = false;
@@ -26,23 +25,18 @@ class _SignupScreenState extends State<SignupScreen> {
   void dispose() {
     _name.dispose();
     _phone.dispose();
-    _username.dispose();
     _password.dispose();
-    _confirm.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_password.text != _confirm.text) {
-      Get.snackbar('error'.tr, 'passwords_no_match'.tr);
-      return;
-    }
     setState(() => _loading = true);
+    final phone = _phone.text.trim();
     final result = await _auth.register(
       name: _name.text.trim(),
-      phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
-      username: _username.text.trim(),
+      phone: phone,
+      username: phone, // phone is the login identifier
       password: _password.text,
     );
     if (mounted) setState(() => _loading = false);
@@ -90,22 +84,18 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                   const SizedBox(height: 32),
                   _field(_name, 'full_name'.tr, Icons.badge,
-                      validator: (v) => v!.trim().isEmpty ? 'required'.tr : null),
+                      validator: (v) =>
+                          v!.trim().isEmpty ? 'required'.tr : null),
                   const SizedBox(height: 16),
                   _field(_phone, 'phone'.tr, Icons.phone,
-                      keyboardType: TextInputType.phone),
-                  const SizedBox(height: 16),
-                  _field(_username, 'username'.tr, Icons.person,
-                      validator: (v) => v!.trim().isEmpty ? 'required'.tr : null),
+                      keyboardType: TextInputType.phone,
+                      validator: (v) =>
+                          v!.trim().isEmpty ? 'required'.tr : null),
                   const SizedBox(height: 16),
                   _field(_password, 'password'.tr, Icons.lock,
                       obscure: true,
                       validator: (v) =>
                           (v ?? '').length < 4 ? 'password_too_short'.tr : null),
-                  const SizedBox(height: 16),
-                  _field(_confirm, 'confirm_password'.tr, Icons.lock_outline,
-                      obscure: true,
-                      validator: (v) => v!.isEmpty ? 'required'.tr : null),
                   const SizedBox(height: 28),
                   FilledButton(
                     onPressed: _loading ? null : _submit,

@@ -63,11 +63,23 @@ class PlanSelectionScreen extends StatelessWidget {
                   child: Center(child: Text('no_plans'.tr)),
                 )
               else
-                ...controller.plans.map((p) => _PlanCard(
-                      plan: p,
-                      isCurrent: sub?.planCode == p.code,
-                      onSelect: () => _confirm(controller, p),
-                    )),
+                SizedBox(
+                  height: 330,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    itemCount: controller.plans.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 14),
+                    itemBuilder: (context, i) {
+                      final p = controller.plans[i];
+                      return _PlanCard(
+                        plan: p,
+                        isCurrent: sub?.planCode == p.code,
+                        onSelect: () => _confirm(controller, p),
+                      );
+                    },
+                  ),
+                ),
               const SizedBox(height: 24),
               TextButton.icon(
                 onPressed: () async {
@@ -164,17 +176,22 @@ class _PlanCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const blue = Color(0xFF1565C0);
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(20),
+      width: 250,
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isCurrent ? blue : Colors.transparent,
+          width: 2,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.blue.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: Colors.blue.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -183,36 +200,48 @@ class _PlanCard extends StatelessWidget {
         children: [
           Row(
             children: [
+              const Icon(Icons.workspace_premium, color: blue),
+              const SizedBox(width: 8),
               Expanded(
-                child: Text(plan.name,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.bold)),
+                child: Text(
+                  plan.name,
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              if (plan.price > 0)
-                Text('${plan.price}',
-                    style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1565C0))),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            '${plan.durationDays} ${'days'.tr} • ${plan.maxDevices} ${'devices'.tr}',
-            style: TextStyle(color: Colors.grey[600], fontSize: 13),
-          ),
-          if (plan.description != null && plan.description!.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(plan.description!,
-                style: TextStyle(color: Colors.grey[700], fontSize: 13)),
-          ],
           const SizedBox(height: 14),
+          Text(
+            plan.price > 0 ? '${plan.price}' : '0',
+            style: const TextStyle(
+                fontSize: 30, fontWeight: FontWeight.bold, color: blue),
+          ),
+          Text('iqd'.tr, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          const SizedBox(height: 14),
+          _feature(Icons.calendar_today, '${plan.durationDays} ${'days'.tr}'),
+          const SizedBox(height: 6),
+          _feature(Icons.devices, '${plan.maxDevices} ${'devices'.tr}'),
+          if (plan.description != null && plan.description!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Expanded(
+              child: Text(
+                plan.description!,
+                style: TextStyle(color: Colors.grey[700], fontSize: 12),
+                overflow: TextOverflow.fade,
+              ),
+            ),
+          ] else
+            const Spacer(),
           SizedBox(
             width: double.infinity,
             child: FilledButton(
               onPressed: onSelect,
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF1565C0),
+                backgroundColor: blue,
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
               ),
@@ -221,6 +250,16 @@ class _PlanCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _feature(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: Colors.grey[500]),
+        const SizedBox(width: 8),
+        Text(text, style: TextStyle(color: Colors.grey[700], fontSize: 13)),
+      ],
     );
   }
 }

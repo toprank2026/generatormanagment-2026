@@ -79,10 +79,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 48),
                   TextFormField(
                     controller: _usernameController,
+                    keyboardType: TextInputType.phone,
                     decoration: InputDecoration(
-                      labelText: 'username'.tr,
+                      labelText: 'phone'.tr,
                       prefixIcon: const Icon(
-                        Icons.person,
+                        Icons.phone,
                         color: Color(0xFF1565C0),
                       ),
                       border: OutlineInputBorder(
