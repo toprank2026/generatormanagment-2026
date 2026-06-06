@@ -3,6 +3,7 @@
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const Plan = require('../models/Plan');
+const SyncRecord = require('../models/SyncRecord');
 const asyncHandler = require('../utils/asyncHandler');
 const { serializeAccount, serializePlan } = require('../utils/serialize');
 const { HttpError } = require('../middleware/error');
@@ -160,6 +161,38 @@ const unbindDevice = asyncHandler(async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
+// ---- Synced business data (per-account mirror) ----
+
+/**
+ * GET /api/admin/users/:id/data?entity=subscribers[&includeDeleted=true]
+ *
+ * Lists the mirrored business rows an owner pushed for a single entity. Deleted
+ * tombstones are excluded unless includeDeleted=true.
+ */
+const getUserData = asyncHandler(async (req, res) => {
+  const { entity } = req.query;
+  if (!entity || typeof entity !== 'string') {
+    throw new HttpError(400, 'entity query param is required', 'ENTITY_REQUIRED');
+  }
+
+  const user = await User.findById(req.params.id);
+  if (!user) throw new HttpError(404, 'User not found', 'USER_NOT_FOUND');
+
+  const filter = { user: user._id, entity };
+  const includeDeleted = req.query.includeDeleted === 'true';
+  if (!includeDeleted) filter.deleted = false;
+
+  const docs = await SyncRecord.find(filter).sort({ updatedAt: 1 });
+  const records = docs.map((d) => ({
+    localId: d.localId,
+    data: d.data,
+    deleted: d.deleted,
+    updatedAt: d.updatedAt ? d.updatedAt.toISOString() : null,
+  }));
+
+  res.status(200).json({ entity, records });
+});
+
 // ---- Plans ----
 
 /** GET /api/admin/plans — all plans (active + inactive). */
@@ -209,6 +242,7 @@ module.exports = {
   approvePlan,
   rejectPlan,
   unbindDevice,
+  getUserData,
   listPlans,
   upsertPlan,
   deletePlan,

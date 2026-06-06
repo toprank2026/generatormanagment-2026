@@ -343,6 +343,11 @@ var API={
   me:function(){ return api("GET","/api/auth/me"); },
   users:function(){ return api("GET","/api/admin/users"); },
   user:function(id){ return api("GET","/api/admin/users/"+encodeURIComponent(id)); },
+  userData:function(id,entity,includeDeleted){
+    var q="?entity="+encodeURIComponent(entity);
+    if(includeDeleted) q+="&includeDeleted=true";
+    return api("GET","/api/admin/users/"+encodeURIComponent(id)+"/data"+q);
+  },
   createUser:function(body){ return api("POST","/api/admin/users",body); },
   deleteUser:function(id){ return api("DELETE","/api/admin/users/"+encodeURIComponent(id)); },
   setBlocked:function(id,blocked){ return api("PUT","/api/admin/users/"+encodeURIComponent(id)+"/blocked",{blocked:blocked}); },
@@ -798,6 +803,9 @@ function viewUserDetail(id){
     devCard.appendChild(devBody);
     content.appendChild(devCard);
 
+    // synced (mirrored) business data card
+    content.appendChild(syncedDataCard(u));
+
     shell("#/users",content);
   }
 
@@ -851,6 +859,130 @@ function viewUserDetail(id){
 // kv()/kvNode() each return an array of two nodes ([key, value]); el() flattens nested arrays.
 function kv(k,v){ return [el("div",{class:"k",text:k}),el("div",{class:"v",text:v})]; }
 function kvNode(k,node){ return [el("div",{class:"k",text:k}),el("div",{class:"v"},[node])]; }
+
+/* ============================================================
+   Synced data (mirrored business data) — user detail card
+   ============================================================ */
+// Per-entity column definitions: each col = {label, get(data)->node|string}.
+// Falls back to a generic localId + JSON view for unknown entities.
+var SYNC_ENTITIES=[
+  {value:"subscribers",label:"Subscribers"},
+  {value:"boards",label:"Boards"},
+  {value:"circuits",label:"Circuits"},
+  {value:"receipts",label:"Receipts"},
+  {value:"expenses",label:"Expenses"},
+  {value:"monthly_prices",label:"Monthly prices"}
+];
+function syncText(v){ return (v==null||v==="")?"—":String(v); }
+var SYNC_COLUMNS={
+  subscribers:[
+    {label:"Name",get:function(d){ return syncText(d.name); }},
+    {label:"Phone",get:function(d){ return syncText(d.phone); }},
+    {label:"Amps",get:function(d){ return syncText(d.amps); }}
+  ],
+  boards:[
+    {label:"Name",get:function(d){ return syncText(d.name); }},
+    {label:"Location",get:function(d){ return syncText(d.location); }}
+  ],
+  circuits:[
+    {label:"Name",get:function(d){ return syncText(d.name); }},
+    {label:"Board",get:function(d){ return syncText(d.board_id); }},
+    {label:"Amps",get:function(d){ return syncText(d.amps); }}
+  ],
+  receipts:[
+    {label:"Receipt #",get:function(d){ return syncText(d.receipt_no); }},
+    {label:"Month",get:function(d){ return syncText(d.month); }},
+    {label:"Paid",get:function(d){ return d.paid_amount!=null?fmtPrice(d.paid_amount):"—"; }}
+  ],
+  expenses:[
+    {label:"Title",get:function(d){ return syncText(d.title||d.name||d.description); }},
+    {label:"Amount",get:function(d){ return d.amount!=null?fmtPrice(d.amount):"—"; }},
+    {label:"Date",get:function(d){ return d.date?fmtDateShort(d.date):"—"; }}
+  ],
+  monthly_prices:[
+    {label:"Month",get:function(d){ return syncText(d.month); }},
+    {label:"Price / amp",get:function(d){ return (d.price_per_amp!=null?fmtPrice(d.price_per_amp):(d.price!=null?fmtPrice(d.price):"—")); }}
+  ]
+};
+
+function syncedDataCard(u){
+  var card=el("div",{class:"card"});
+  var entitySel=el("select",{class:"input",style:"max-width:200px"},
+    SYNC_ENTITIES.map(function(e){ return optEl(e.value,e.label); }));
+  var countSpan=el("span",{class:"sub"});
+  var refreshBtn=el("button",{class:"btn sm ghost",text:"Refresh"});
+  card.appendChild(el("div",{class:"card-h"},[
+    el("span",{text:"Synced data"}),
+    countSpan,
+    el("div",{style:"margin-left:auto"},[el("div",{class:"pill-actions"},[entitySel,refreshBtn])])
+  ]));
+  var body=el("div",{class:"card-b flush"});
+  card.appendChild(body);
+
+  function load(){
+    var entity=entitySel.value;
+    countSpan.textContent="";
+    clear(body);
+    body.className="card-b";
+    body.appendChild(loadingBlock("Loading "+entity.replace(/_/g," ")+"…"));
+    API.userData(u.id,entity).then(function(res){
+      var records=normalizeList(res,"records");
+      renderRecords(entity,records);
+    }).catch(function(err){
+      if(err.status===401) return;
+      clear(body);
+      body.className="card-b";
+      body.appendChild(el("div",{class:"alert err",text:err.message||"Failed to load synced data."}));
+      body.appendChild(el("button",{class:"btn ghost",onclick:load},["Retry"]));
+    });
+  }
+
+  function renderRecords(entity,records){
+    clear(body);
+    countSpan.textContent=records.length+" record"+(records.length===1?"":"s");
+    if(!records.length){
+      body.className="card-b";
+      body.appendChild(el("div",{class:"empty"},[el("div",{class:"big",text:"🗂️"}),"No "+entity.replace(/_/g," ")+" synced yet."]));
+      return;
+    }
+    body.className="card-b flush";
+    var cols=SYNC_COLUMNS[entity];
+    var tw=el("div",{class:"tbl-wrap"});
+    var tbl=el("table");
+    var tb=el("tbody");
+    if(cols){
+      var head=cols.map(function(c){ return th(c.label); });
+      head.push(th("Updated"));
+      tbl.appendChild(el("thead",[el("tr",head)]));
+      records.forEach(function(r){
+        var data=r.data||{};
+        var cells=cols.map(function(c){
+          var v=c.get(data);
+          return (v&&v.nodeType)?el("td",[v]):el("td",{text:(v==null?"—":String(v))});
+        });
+        cells.push(el("td",{class:"muted nowrap",text:fmtDate(r.updatedAt)}));
+        tb.appendChild(el("tr",cells));
+      });
+    } else {
+      // generic fallback: localId + raw JSON of data
+      tbl.appendChild(el("thead",[el("tr",[th("Local ID"),th("Data"),th("Updated")])]));
+      records.forEach(function(r){
+        tb.appendChild(el("tr",[
+          el("td",{class:"mono",text:r.localId||"—"}),
+          el("td",[el("div",{class:"mono",style:"max-width:520px;white-space:pre-wrap;word-break:break-word",text:JSON.stringify(r.data||{})})]),
+          el("td",{class:"muted nowrap",text:fmtDate(r.updatedAt)})
+        ]));
+      });
+    }
+    tbl.appendChild(tb); tw.appendChild(tbl); body.appendChild(tw);
+  }
+
+  entitySel.addEventListener("change",load);
+  refreshBtn.addEventListener("click",load);
+  // initial load
+  load();
+  return card;
+}
 
 /* Set-plan modal (loads plans for the dropdown) */
 function setPlanModal(u,onDone){

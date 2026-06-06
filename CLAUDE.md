@@ -6,10 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 "Moldati Owner" (`generatormanagment`) — a Flutter app for managing a private **electricity generator** business: subscribers, electrical **boards** and **circuits** (جوزة), monthly per-amp **billing**, **expenses**, and **receipts** printed on Bluetooth thermal printers. UI is bilingual (Arabic `ar_AR` / English `en_US`).
 
-The system is split by a hard boundary (see `STRUCTURE.md`, which is accurate):
-- **All business data** (boards, circuits, subscribers, monthly prices, receipts, refunds, expenses, local staff users) lives **only** in the device's local SQLite DB (`moldati.db`) and never leaves the phone.
-- A separate **accounts-only backend** (`backend/`, Node/Express/MongoDB) owns authentication, subscription/plans, device binding, and opaque **cloud DB backups**. There is intentionally **no server API for business data**.
-- The app is **offline-first**: the network is only needed for register / sign-in, subscription checks, and cloud backup.
+The system is offline-first with a server mirror (see `STRUCTURE.md`, which is accurate):
+- **All business data** (boards, circuits, subscribers, monthly prices, receipts, refunds, expenses) has the device's local SQLite DB (`moldati.db`) as its **source of truth** — the app works fully offline. Those changes are now also **pushed (synced) to a per-account server mirror** via `/api/sync` so the **admin panel can view each owner's data**; local staff users stay device-only.
+- The **backend** (`backend/`, Node/Express/MongoDB) owns authentication, subscription/plans, device binding, opaque **cloud DB backups**, and the **sync mirror** (a read-only copy for admins — the app never reads business data back from it in normal use).
+- **Sync engine** (already built — do not change it): SQLite triggers write every change to a local `sync_outbox` table; `lib/core/sync_service.dart` (`SyncService`) drains it and POSTs to `/api/sync/push`; `lib/controllers/sync_controller.dart` (`SyncController`) auto-syncs on connectivity/timer and asks before large uploads.
+- The app is **offline-first**: the network is only needed for register / sign-in, subscription checks, cloud backup, and pushing pending changes to the mirror.
 
 ## Commands
 

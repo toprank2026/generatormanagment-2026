@@ -6,6 +6,7 @@ import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/expense_controller.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
 import 'package:generatormanagment/controllers/subscription_controller.dart';
+import 'package:generatormanagment/controllers/sync_controller.dart';
 
 /// Central dependency injection — replaces the scattered per-screen `Get.put`.
 /// Screens use `Get.find<XController>()`.
@@ -17,6 +18,7 @@ class AppBinding extends Bindings {
   @override
   void dependencies() {
     Get.put<AuthController>(AuthController(), permanent: true);
+    Get.put<SyncController>(SyncController(), permanent: true);
 
     Get.lazyPut<CoreController>(() => CoreController(), fenix: true);
     Get.lazyPut<DashboardController>(() => DashboardController(), fenix: true);

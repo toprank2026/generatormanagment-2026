@@ -32,4 +32,8 @@ class ApiConfig {
   static const String backup = '/api/backup';
   static String backupById(String id) => '/api/backup/$id';
   static String backupDownload(String id) => '/api/backup/$id/download';
+
+  // --- Offline sync (push local business data to the server mirror) ---
+  static const String syncPush = '/api/sync/push';
+  static const String syncPull = '/api/sync/pull';
 }

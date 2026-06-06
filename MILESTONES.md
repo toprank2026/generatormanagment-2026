@@ -24,6 +24,7 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **GetX + pagination on every list screen** (subscribers, boards, circuits, expenses, users, receipt history, payment history).
 - ✅ **Separate paginated Paid-Bills History** screen per subscriber.
 - ✅ **Backup feature** — cloud upload/list/restore/delete (verified: upload 201, 92 KB, timestamp) + local export/import.
+- ✅ **Offline sync** — local SQLite source of truth, changes pushed to server mirror (`sync_outbox` triggers → `SyncService` → `/api/sync`); admin views synced data; ask-before-large-upload.
 - ✅ Billing (per-amp monthly price, receipts, Bluetooth print), expenses, dashboard.
 - ✅ **Arabic everywhere** (default Arabic RTL; all text via `.tr`).
 - ✅ App launcher icon = `spark.png`.

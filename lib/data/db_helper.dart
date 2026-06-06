@@ -25,7 +25,63 @@ class DbHelper {
 
   Future<Database> _initDatabase() async {
     final String path = testPath ?? await _defaultPath();
-    return await openDatabase(path, version: 1, onCreate: _onCreate);
+    return await openDatabase(
+      path,
+      version: 2,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
+  }
+
+  // Business tables that are mirrored to the server, with their primary keys.
+  static const Map<String, String> syncedTables = {
+    'boards': 'id',
+    'circuits': 'id',
+    'subscribers': 'id',
+    'monthly_prices': 'month',
+    'receipts': 'uuid',
+    'refunds': 'uuid',
+    'expenses': 'id',
+  };
+
+  /// Creates the change-capture outbox + AFTER INSERT/UPDATE/DELETE triggers so
+  /// every local mutation is recorded for the sync engine — without touching the
+  /// repositories. Idempotent (IF NOT EXISTS).
+  Future<void> _createSyncInfra(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_outbox (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity TEXT NOT NULL,
+        op TEXT NOT NULL,          -- 'upsert' | 'delete'
+        local_id TEXT NOT NULL,
+        ts TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    ''');
+    for (final entry in syncedTables.entries) {
+      final t = entry.key;
+      final pk = entry.value;
+      await db.execute('''
+        CREATE TRIGGER IF NOT EXISTS ${t}_sync_ai AFTER INSERT ON $t BEGIN
+          INSERT INTO sync_outbox(entity, op, local_id) VALUES('$t', 'upsert', NEW.$pk);
+        END;
+      ''');
+      await db.execute('''
+        CREATE TRIGGER IF NOT EXISTS ${t}_sync_au AFTER UPDATE ON $t BEGIN
+          INSERT INTO sync_outbox(entity, op, local_id) VALUES('$t', 'upsert', NEW.$pk);
+        END;
+      ''');
+      await db.execute('''
+        CREATE TRIGGER IF NOT EXISTS ${t}_sync_ad AFTER DELETE ON $t BEGIN
+          INSERT INTO sync_outbox(entity, op, local_id) VALUES('$t', 'delete', OLD.$pk);
+        END;
+      ''');
+    }
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await _createSyncInfra(db);
+    }
   }
 
   Future<String> _defaultPath() async {
@@ -153,6 +209,9 @@ class DbHelper {
     await db.execute(
       'CREATE INDEX idx_receipts_subscriber ON receipts(subscriber_id)',
     );
+
+    // Sync change-capture (outbox + triggers).
+    await _createSyncInfra(db);
   }
 
   Future<void> close() async {

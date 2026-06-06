@@ -42,17 +42,20 @@ flowchart TB
   class SQLITE,MONGO db;
 ```
 
-**The boundary that defines the system:** all **generator business data**
-(boards, circuits, subscribers, monthly prices, receipts, refunds, expenses,
-local staff users) lives **only** in the device-local SQLite database and never
-leaves the phone. The backend is **accounts-only** — authentication,
-subscription/plan, device binding, and opaque **cloud DB backups** — backed by
-MongoDB. There is intentionally **no server API for business data**.
+**The boundary that defines the system:** the device-local SQLite database is
+the **source of truth** for all **generator business data** (boards, circuits,
+subscribers, monthly prices, receipts, refunds, expenses) — the app reads and
+writes it and works **fully offline**. Those changes are now also **synced
+(pushed) to a server mirror** (`/api/sync`) so the **admin panel can view each
+owner's data**; the mirror is a read-only copy for admins, never the app's
+source of truth. Local staff users stay device-only. The backend owns
+authentication, subscription/plan, device binding, opaque **cloud DB backups**,
+and the **sync mirror** — backed by MongoDB.
 
 **Offline-first:** the network is needed only for register / sign-in,
-subscription checks (when online), and cloud backup. Everything else works
-offline; the account is cached locally after first sign-in and only a `401/403`
-from `/auth/me` ends the session.
+subscription checks (when online), cloud backup, and **pushing pending changes
+to the mirror**. Everything else works offline; the account is cached locally
+after first sign-in and only a `401/403` from `/auth/me` ends the session.
 
 ---
 
@@ -173,11 +176,13 @@ Full request/response detail: [backend/API_CONTRACT.md](backend/API_CONTRACT.md)
 
 | Data | Where it lives | Reachable by |
 |---|---|---|
-| Boards, circuits, subscribers, monthly prices, receipts, refunds, expenses, local staff users | **Device SQLite** (`moldati.db`) | the app only — never sent to the server |
+| Boards, circuits, subscribers, monthly prices, receipts, refunds, expenses | **Device SQLite** (`moldati.db`) — source of truth | the app + a **synced mirror** in MongoDB the admin panel reads |
+| Local staff users | **Device SQLite** (`moldati.db`) | the app only |
 | JWT + install-id | Device **secure storage** | the app only |
 | Cached account + subscription | Device **SharedPreferences** (`session_cache`) | the app only |
 | Accounts, roles, subscription, bound devices | **MongoDB** (backend) | app (own account) + admin panel |
 | Plans | **MongoDB** | app (active list) + admin (full CRUD) |
+| Synced business data (per-account mirror) | **MongoDB** (backend, via `/api/sync`) | the owning account + admin (read-only view) |
 | Cloud DB backups (opaque `.db` snapshots) | **Backend disk** (`BACKUP_DIR/<userId>`) | the owning account + admin |
 
 ---
@@ -215,3 +220,33 @@ sequenceDiagram
 The admin panel ([backend/public/admin/index.html](backend/public/admin/index.html))
 is a hash-routed SPA with a screen per entity/action (Dashboard, Users,
 User-detail, Plans) driving the `/api/admin/*` endpoints with a Bearer JWT.
+
+---
+
+## 6. Sync (device → server mirror)
+
+The app stays offline-first, but local business changes are now **pushed** to a
+per-account server mirror so admins can view each owner's data. The flow is
+**push-only** — the device SQLite is the source of truth and is never written by
+sync:
+
+```
+SQLite triggers → sync_outbox table → SyncService (drains, builds records)
+   → SyncRepository → POST /api/sync/push → per-account mirror in MongoDB
+                                          → admin reads via /api/admin/users/:id/data
+```
+
+- **Capture:** SQLite triggers record every insert/update/delete to a local
+  `sync_outbox` table (entity + local_id + op). Sync never modifies the device
+  rows, so triggers don't recurse.
+- **Drain & push:** `lib/core/sync_service.dart` collapses the outbox to the
+  latest op per row, reads the current SQLite row as `data`, and POSTs batches to
+  `/api/sync/push`; drained entries are cleared only after the push succeeds.
+- **Orchestration:** `lib/controllers/sync_controller.dart` auto-syncs on
+  connectivity regained and on a periodic tick (online-gated). A small backlog
+  uploads silently; above the large threshold it **asks before uploading**.
+- **Entities synced:** `subscribers, boards, circuits, monthly_prices, receipts,
+  refunds, expenses` (local staff users are not synced). Each record is
+  `{ entity, localId, deleted, updatedAt, data }`.
+- **Restore path:** `GET /api/sync/pull?since=ISO` lets a new device pull the
+  mirror back; day-to-day operation is push-only.

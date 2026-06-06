@@ -15,6 +15,7 @@ const authRoutes = require('./routes/auth');
 const subscriptionRoutes = require('./routes/subscription');
 const deviceRoutes = require('./routes/device');
 const backupRoutes = require('./routes/backup');
+const syncRoutes = require('./routes/sync');
 const adminRoutes = require('./routes/admin');
 
 function buildApp() {
@@ -33,6 +34,7 @@ function buildApp() {
   app.use('/api/subscription', subscriptionRoutes);
   app.use('/api/device', deviceRoutes);
   app.use('/api/backup', backupRoutes);
+  app.use('/api/sync', syncRoutes);
   app.use('/api/admin', adminRoutes);
 
   // Static assets served to the app (images) and the admin SPA.

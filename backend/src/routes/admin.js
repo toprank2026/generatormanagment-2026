@@ -27,6 +27,9 @@ router.post(
 router.get('/users/:id', ctrl.getUser);
 router.delete('/users/:id', ctrl.deleteUser);
 
+// Synced business data mirror for one owner (?entity=subscribers).
+router.get('/users/:id/data', ctrl.getUserData);
+
 router.put(
   '/users/:id/blocked',
   [body('blocked').isBoolean().withMessage('blocked must be boolean')],

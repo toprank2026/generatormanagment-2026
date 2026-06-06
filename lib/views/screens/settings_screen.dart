@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
+import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/views/screens/subscription_screen.dart';
 import 'package:generatormanagment/data/models/account.dart';
@@ -20,6 +21,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final SettingsController controller = Get.find<SettingsController>();
   final AuthController auth = Get.find<AuthController>();
+  final SyncController syncController = Get.find<SyncController>();
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -363,8 +365,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
 
-            // Cloud Backup + Manage Devices (online account features)
+            // Sync + Cloud Backup + Manage Devices (online account features)
             if (auth.isLoggedIn.value) ...[
+              const SizedBox(height: 24),
+              _buildSyncSection(),
               const SizedBox(height: 24),
               _buildCloudBackupSection(),
               const SizedBox(height: 24),
@@ -401,6 +405,114 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  // SYNC
+  // --------------------------------------------------------------------------
+  Widget _buildSyncSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 8, bottom: 8),
+          child: Text(
+            'sync'.tr,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.blueGrey,
+            ),
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            children: [
+              // Sync status + pending count
+              Obx(() {
+                final String subtitle;
+                if (syncController.isSyncing.value) {
+                  subtitle = 'syncing'.tr;
+                } else if (syncController.pendingCount.value == 0) {
+                  subtitle = 'all_synced'.tr;
+                } else {
+                  subtitle =
+                      '${syncController.pendingCount.value} ${'sync_pending'.tr}';
+                }
+                return ListTile(
+                  leading: const Icon(
+                    Icons.sync,
+                    color: Color(0xFF1565C0),
+                  ),
+                  title: Text('sync'.tr),
+                  subtitle: Text(subtitle),
+                );
+              }),
+              const Divider(height: 1),
+              // Last sync timestamp
+              Obx(
+                () => ListTile(
+                  leading: const Icon(
+                    Icons.schedule,
+                    color: Color(0xFF1565C0),
+                  ),
+                  title: Text(
+                    '${'last_sync'.tr}: '
+                    '${_formatTimestamp(syncController.lastSyncAt.value)}',
+                  ),
+                  subtitle: Text(
+                    'online_only'.tr,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              // Sync now button
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Obx(
+                  () => SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: syncController.isSyncing.value
+                          ? null
+                          : () => syncController.syncNow(),
+                      icon: syncController.isSyncing.value
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.sync, color: Colors.white),
+                      label: Text(
+                        'sync_now'.tr,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1565C0),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
