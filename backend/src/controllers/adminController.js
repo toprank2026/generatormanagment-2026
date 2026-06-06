@@ -164,10 +164,30 @@ const unbindDevice = asyncHandler(async (req, res) => {
 // ---- Synced business data (per-account mirror) ----
 
 /**
- * GET /api/admin/users/:id/data?entity=subscribers[&includeDeleted=true]
+ * Per-entity `data.*` paths a free-text search (q) matches against. Unknown
+ * entities fall back to matching the record's localId only.
+ */
+const SEARCH_FIELDS = {
+  subscribers: ['name', 'phone'],
+  boards: ['name', 'code'],
+  circuits: ['name', 'phase'],
+  receipts: ['receipt_no', 'month'],
+  expenses: ['category', 'note'],
+  monthly_prices: ['month'],
+};
+
+/** Escape regex metacharacters so q is treated as a literal substring. */
+function escapeRegex(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * GET /api/admin/users/:id/data?entity=E&q=&page=1&limit=25[&includeDeleted=true]
  *
- * Lists the mirrored business rows an owner pushed for a single entity. Deleted
- * tombstones are excluded unless includeDeleted=true.
+ * Lists the mirrored business rows an owner pushed for a single entity, newest
+ * first. Optional case-insensitive substring search (q) is applied (over the
+ * entity's SEARCH_FIELDS, or localId for unknown entities) before pagination.
+ * Deleted tombstones are excluded unless includeDeleted=true.
  */
 const getUserData = asyncHandler(async (req, res) => {
   const { entity } = req.query;
@@ -182,7 +202,35 @@ const getUserData = asyncHandler(async (req, res) => {
   const includeDeleted = req.query.includeDeleted === 'true';
   if (!includeDeleted) filter.deleted = false;
 
-  const docs = await SyncRecord.find(filter).sort({ updatedAt: 1 });
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (q) {
+    const regex = { $regex: escapeRegex(q), $options: 'i' };
+    const fields = SEARCH_FIELDS[entity] || [];
+    const or = fields.map((f) => ({ [`data.${f}`]: regex }));
+    // Unknown entity (or no fields): fall back to matching the localId.
+    if (or.length === 0) or.push({ localId: regex });
+    filter.$or = or;
+  }
+
+  // Optional relationship filter (admin drill-down). Whitelisted fields only.
+  const REL_FIELDS = ['subscriber_id', 'board_id', 'circuit_id'];
+  const relField = typeof req.query.relField === 'string' ? req.query.relField : '';
+  const relValue = req.query.relValue;
+  if (relField && REL_FIELDS.includes(relField) && typeof relValue === 'string' && relValue) {
+    filter[`data.${relField}`] = relValue;
+  }
+
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  let limit = parseInt(req.query.limit, 10);
+  if (!Number.isFinite(limit) || limit < 1) limit = 25;
+  limit = Math.min(200, Math.max(1, limit));
+
+  const total = await SyncRecord.countDocuments(filter);
+  const docs = await SyncRecord.find(filter)
+    .sort({ updatedAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit);
+
   const records = docs.map((d) => ({
     localId: d.localId,
     data: d.data,
@@ -190,7 +238,25 @@ const getUserData = asyncHandler(async (req, res) => {
     updatedAt: d.updatedAt ? d.updatedAt.toISOString() : null,
   }));
 
-  res.status(200).json({ entity, records });
+  res.status(200).json({ entity, records, total, page, limit });
+});
+
+/**
+ * DELETE /api/admin/users/:id/data/:entity/:localId
+ *
+ * Hard-deletes a single mirrored row for the owner. The mirror is otherwise
+ * read-only (sync is push-only device->server); delete is the lone exception.
+ */
+const deleteUserData = asyncHandler(async (req, res) => {
+  const { id, entity, localId } = req.params;
+
+  const user = await User.findById(id);
+  if (!user) throw new HttpError(404, 'User not found', 'USER_NOT_FOUND');
+
+  const deleted = await SyncRecord.findOneAndDelete({ user: user._id, entity, localId });
+  if (!deleted) throw new HttpError(404, 'Record not found', 'RECORD_NOT_FOUND');
+
+  res.status(200).json({ ok: true });
 });
 
 // ---- Plans ----
@@ -243,6 +309,7 @@ module.exports = {
   rejectPlan,
   unbindDevice,
   getUserData,
+  deleteUserData,
   listPlans,
   upsertPlan,
   deletePlan,

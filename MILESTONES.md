@@ -26,6 +26,7 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Backup feature** — cloud upload/list/restore/delete (verified: upload 201, 92 KB, timestamp) + local export/import.
 - ✅ **Offline sync** — local SQLite source of truth, changes pushed to server mirror (`sync_outbox` triggers → `SyncService` → `/api/sync`); auto-sync on connectivity + 30s heartbeat; **ask-before-large-upload** (>100 pending) else silent.
 - ✅ **Admin panel: separate screen per synced entity** (Subscribers / Boards / Circuits / Receipts / Expenses / Monthly prices) at `#/users/:id/data/:entity`.
+- ✅ **Admin synced-data screens: search + server-side pagination + delete on all 6 entity screens** (read-only mirror; sync stays push-only). `GET /api/admin/users/:id/data` takes `q,page,limit` and returns `total,page,limit`; `DELETE /api/admin/users/:id/data/:entity/:localId` hard-deletes one mirrored record.
 - ✅ **Verified live (RMX3085 + Chrome MCP):** small change auto-synced (board → admin Boards screen); 150-record seed → confirm dialog "253 changes pending — upload now?" → uploaded only on confirm → admin Subscribers (150).
 - ✅ Billing (per-amp monthly price, receipts, Bluetooth print), expenses, dashboard.
 - ✅ **Arabic everywhere** (default Arabic RTL; all text via `.tr`).

@@ -343,10 +343,18 @@ var API={
   me:function(){ return api("GET","/api/auth/me"); },
   users:function(){ return api("GET","/api/admin/users"); },
   user:function(id){ return api("GET","/api/admin/users/"+encodeURIComponent(id)); },
-  userData:function(id,entity,includeDeleted){
+  userData:function(id,entity,opts){
+    opts=opts||{};
     var q="?entity="+encodeURIComponent(entity);
-    if(includeDeleted) q+="&includeDeleted=true";
+    if(opts.q) q+="&q="+encodeURIComponent(opts.q);
+    if(opts.page) q+="&page="+encodeURIComponent(opts.page);
+    if(opts.limit) q+="&limit="+encodeURIComponent(opts.limit);
+    if(opts.includeDeleted) q+="&includeDeleted=true";
+    if(opts.relField&&opts.relValue){ q+="&relField="+encodeURIComponent(opts.relField)+"&relValue="+encodeURIComponent(opts.relValue); }
     return api("GET","/api/admin/users/"+encodeURIComponent(id)+"/data"+q);
+  },
+  deleteUserData:function(id,entity,localId){
+    return api("DELETE","/api/admin/users/"+encodeURIComponent(id)+"/data/"+encodeURIComponent(entity)+"/"+encodeURIComponent(localId));
   },
   createUser:function(body){ return api("POST","/api/admin/users",body); },
   deleteUser:function(id){ return api("DELETE","/api/admin/users/"+encodeURIComponent(id)); },
@@ -480,6 +488,7 @@ var routes=[
   {re:/^#\/login$/, view:viewLogin, public:true},
   {re:/^#\/dashboard$/, view:viewDashboard},
   {re:/^#\/users$/, view:viewUsers},
+  {re:/^#\/users\/([^\/]+)\/data\/([^\/]+)\/by\/([^\/]+)\/([^\/]+)$/, view:viewUserEntity},
   {re:/^#\/users\/([^\/]+)\/data\/([^\/]+)$/, view:viewUserEntity},
   {re:/^#\/users\/([^\/]+)$/, view:viewUserDetail},
   {re:/^#\/plans$/, view:viewPlans}
@@ -932,12 +941,20 @@ function syncedDataCard(u){
   return card;
 }
 
-/* Shared renderer: a card/table of a user's synced records for one entity. */
-function renderSyncTable(entity,records){
+/* Shared renderer: a card/table of a user's synced records for one entity.
+   `onDelete(record)` adds a trailing per-row Delete (danger ghost) action. */
+function renderSyncTable(entity,records,onDelete,drill){
   if(!records.length){
     return el("div",{class:"card"},[el("div",{class:"card-b"},[
       el("div",{class:"empty"},[el("div",{class:"big",text:"🗂️"}),"No "+entity.replace(/_/g," ")+" synced yet."])
     ])]);
+  }
+  var hasActions=!!(onDelete||drill);
+  function actionsCell(r){
+    var btns=[];
+    if(drill) btns.push(el("button",{class:"btn sm ghost",onclick:function(){ drill.onClick(r); }},[drill.label+" ›"]));
+    if(onDelete) btns.push(el("button",{class:"btn sm danger ghost",onclick:function(){ onDelete(r); }},["Delete"]));
+    return el("td",{class:"right"},[el("div",{class:"acts"},btns)]);
   }
   var cols=SYNC_COLUMNS[entity];
   var tw=el("div",{class:"tbl-wrap"});
@@ -946,6 +963,7 @@ function renderSyncTable(entity,records){
   if(cols){
     var head=cols.map(function(c){ return th(c.label); });
     head.push(th("Updated"));
+    if(hasActions) head.push(th("Actions"));
     tbl.appendChild(el("thead",[el("tr",head)]));
     records.forEach(function(r){
       var data=r.data||{};
@@ -954,48 +972,157 @@ function renderSyncTable(entity,records){
         return (v&&v.nodeType)?el("td",[v]):el("td",{text:(v==null?"—":String(v))});
       });
       cells.push(el("td",{class:"muted nowrap",text:fmtDate(r.updatedAt)}));
+      if(hasActions) cells.push(actionsCell(r));
       tb.appendChild(el("tr",cells));
     });
   } else {
-    tbl.appendChild(el("thead",[el("tr",[th("Local ID"),th("Data"),th("Updated")])]));
+    var ghead=[th("Local ID"),th("Data"),th("Updated")];
+    if(hasActions) ghead.push(th("Actions"));
+    tbl.appendChild(el("thead",[el("tr",ghead)]));
     records.forEach(function(r){
-      tb.appendChild(el("tr",[
+      var gcells=[
         el("td",{class:"mono",text:r.localId||"—"}),
         el("td",[el("div",{class:"mono",style:"max-width:520px;white-space:pre-wrap;word-break:break-word",text:JSON.stringify(r.data||{})})]),
         el("td",{class:"muted nowrap",text:fmtDate(r.updatedAt)})
-      ]));
+      ];
+      if(hasActions) gcells.push(actionsCell(r));
+      tb.appendChild(el("tr",gcells));
     });
   }
   tbl.appendChild(tb); tw.appendChild(tbl);
   return el("div",{class:"card"},[el("div",{class:"card-b flush"},[tw])]);
 }
 
-/* Separate full screen for ONE user's synced entity (#/users/:id/data/:entity). */
-function viewUserEntity(id,entity){
-  shell("#/users",loadingBlock("Loading…"));
+/* Drill-down: from a row of one entity to the related child entity, filtered by
+   the parent's id. Subscriber→its receipts, board→its circuits, circuit→its subscribers. */
+var SYNC_DRILL={
+  subscribers:{label:"Receipts",entity:"receipts",field:"subscriber_id"},
+  boards:{label:"Circuits",entity:"circuits",field:"board_id"},
+  circuits:{label:"Subscribers",entity:"subscribers",field:"circuit_id"}
+};
+
+/* Separate full screen for ONE user's synced entity (#/users/:id/data/:entity).
+   Server-side SEARCH + PAGINATION + per-row DELETE over the read-only mirror. */
+var SYNC_PAGE_LIMIT=25;
+function viewUserEntity(id,entity,relField,relValue){
   var cfg=null;
   for(var i=0;i<SYNC_ENTITIES.length;i++){ if(SYNC_ENTITIES[i].value===entity){ cfg=SYNC_ENTITIES[i]; break; } }
   var label=cfg?cfg.label:entity;
-  Promise.all([
-    API.user(id).catch(function(){ return {user:{}}; }),
-    API.userData(id,entity)
-  ]).then(function(res){
-    var u=(res[0]&&res[0].user)||res[0]||{};
-    var records=normalizeList(res[1],"records");
-    var content=el("div");
-    content.appendChild(el("div",{class:"crumb"},[
+  relField=relField||""; relValue=relValue||"";
+  var drillCfg=SYNC_DRILL[entity];
+  var drill=drillCfg?{
+    label:drillCfg.label,
+    onClick:function(r){ location.hash="#/users/"+id+"/data/"+drillCfg.entity+"/by/"+drillCfg.field+"/"+encodeURIComponent(r.localId); }
+  }:null;
+
+  // Screen-local state (persists across in-screen reloads; resets when the
+  // search query changes back to page 1).
+  var query="";
+  var page=1;
+  var user={};
+
+  // Stable DOM regions we repaint without rebuilding the whole screen.
+  var headWrap=el("div");        // pageHead (title + count)
+  var tableWrap=el("div");       // table card
+  var pagerWrap=el("div");       // pagination controls
+  var searchIn=el("input",{class:"input",type:"text",placeholder:"Search "+label+"…",value:""});
+
+  function crumb(){
+    return el("div",{class:"crumb"},[
       el("a",{href:"#/users",text:"Users"}),el("span",{text:" / "}),
-      el("a",{href:"#/users/"+id,text:(u.name||u.username||"user")}),el("span",{text:" / "+label})
-    ]));
-    content.appendChild(pageHead(label+" ("+records.length+")",[
-      el("button",{class:"btn ghost",onclick:function(){ viewUserEntity(id,entity); }},["Refresh"])
-    ]));
-    content.appendChild(renderSyncTable(entity,records));
+      el("a",{href:"#/users/"+id,text:(user.name||user.username||"user")}),
+      el("span",{text:" / "+label+(relField?" (filtered)":"")})
+    ]);
+  }
+
+  function buildShell(){
+    var content=el("div");
+    content.appendChild(crumb());
+    content.appendChild(headWrap);
+    var toolbarKids=[
+      el("div",{class:"search"},[el("span",{class:"ic",text:"🔍"}),searchIn]),
+      el("div",{class:"grow"})
+    ];
+    if(relField){
+      toolbarKids.push(el("a",{class:"btn neutral sm",href:"#/users/"+id+"/data/"+entity},["‹ All "+label]));
+    }
+    toolbarKids.push(el("button",{class:"btn ghost",onclick:function(){ load(); }},["Refresh"]));
+    content.appendChild(el("div",{class:"toolbar"},toolbarKids));
+    content.appendChild(tableWrap);
+    content.appendChild(pagerWrap);
     shell("#/users",content);
-  }).catch(function(err){
-    if(err.status===401) return;
-    shell("#/users",errorBlock(err,function(){ viewUserEntity(id,entity); }));
+  }
+
+  function paintHead(total){
+    clear(headWrap);
+    headWrap.appendChild(el("div",{class:"page-head"},[el("h1",{text:label+" ("+(total!=null?total:0)+")"})]));
+  }
+
+  function paintPager(total){
+    clear(pagerWrap);
+    var pages=Math.max(1,Math.ceil((total||0)/SYNC_PAGE_LIMIT));
+    if(!total) return;
+    pagerWrap.appendChild(el("div",{class:"toolbar",style:"justify-content:center;margin-top:6px"},[
+      el("button",{class:"btn neutral sm",disabled:page<=1?"":false,onclick:function(){ if(page>1){ page--; load(); } }},["‹ Prev"]),
+      el("span",{class:"muted",style:"min-width:120px;text-align:center",text:"Page "+page+" / "+pages}),
+      el("button",{class:"btn neutral sm",disabled:page>=pages?"":false,onclick:function(){ if(page<pages){ page++; load(); } }},["Next ›"])
+    ]));
+  }
+
+  function doDelete(r){
+    confirmModal({
+      title:"Delete record", danger:true, confirmText:"Delete",
+      alert:"This removes the record from the synced mirror only (read-only copy).", alertType:"err",
+      message:"Delete this "+label.replace(/s$/,"").toLowerCase()+" record (<code>"+esc(r.localId||"")+"</code>)?",
+      onConfirm:function(){
+        return API.deleteUserData(id,entity,r.localId).then(function(){
+          toast("Record deleted","ok");
+          load();
+        });
+      }
+    });
+  }
+
+  function load(){
+    clear(tableWrap); tableWrap.appendChild(loadingBlock("Loading…"));
+    clear(pagerWrap);
+    API.userData(id,entity,{q:query,page:page,limit:SYNC_PAGE_LIMIT,relField:relField,relValue:relValue}).then(function(res){
+      var records=normalizeList(res,"records");
+      var total=(res&&typeof res.total==="number")?res.total:records.length;
+      if(res&&res.page) page=res.page;
+      // If a delete emptied the last page, step back and refetch.
+      if(!records.length && total>0 && page>1){ page--; load(); return; }
+      paintHead(total);
+      paintPager(total);
+      clear(tableWrap);
+      tableWrap.appendChild(renderSyncTable(entity,records,doDelete,drill));
+    }).catch(function(err){
+      if(err.status===401) return;
+      clear(tableWrap); tableWrap.appendChild(errorBlock(err,load));
+    });
+  }
+
+  // debounced search -> reset to page 1
+  var debTimer=null;
+  searchIn.addEventListener("input",function(){
+    if(debTimer) clearTimeout(debTimer);
+    debTimer=setTimeout(function(){
+      query=searchIn.value.trim();
+      page=1;
+      load();
+    },300);
   });
+
+  // Initial render: build shell with a loading placeholder, fetch the user for
+  // the breadcrumb, then load the first page of records.
+  paintHead(0);
+  buildShell();
+  clear(tableWrap); tableWrap.appendChild(loadingBlock("Loading…"));
+  API.user(id).then(function(res){
+    user=(res&&res.user)||res||{};
+    buildShell();   // re-render crumb with the real user name
+  }).catch(function(){ /* keep placeholder crumb */ })
+    .then(function(){ load(); });
 }
 
 /* Set-plan modal (loads plans for the dropdown) */

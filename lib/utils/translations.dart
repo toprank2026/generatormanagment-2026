@@ -271,6 +271,7 @@ class Messages extends Translations {
       'sync_confirm_large': 'Upload them now?',
       'sync_failed': 'Sync failed',
       'all_synced': 'All data synced',
+      'no_plan': 'No plan',
     },
     'ar_AR': {
       'app_name': 'مالك مولداتي',
@@ -540,6 +541,7 @@ class Messages extends Translations {
       'sync_confirm_large': 'هل تريد رفعها الآن؟',
       'sync_failed': 'فشلت المزامنة',
       'all_synced': 'تمت مزامنة جميع البيانات',
+      'no_plan': 'لا توجد خطة',
     },
   };
 }

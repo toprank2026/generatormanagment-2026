@@ -162,6 +162,7 @@ flowchart LR
   subgraph Admin["Admin SPA (role=admin)"]
     B1["/admin/users (+/blocked ·/plan ·/approve-plan ·/reject-plan ·/devices/:id)"]
     B2["/admin/plans (GET·PUT·DELETE)"]
+    B3["/admin/users/:id/data (q·page·limit search+paginate)\nDELETE /admin/users/:id/data/:entity/:localId"]
   end
   App --> SRV["Express /api"]
   Admin --> SRV
@@ -182,7 +183,7 @@ Full request/response detail: [backend/API_CONTRACT.md](backend/API_CONTRACT.md)
 | Cached account + subscription | Device **SharedPreferences** (`session_cache`) | the app only |
 | Accounts, roles, subscription, bound devices | **MongoDB** (backend) | app (own account) + admin panel |
 | Plans | **MongoDB** | app (active list) + admin (full CRUD) |
-| Synced business data (per-account mirror) | **MongoDB** (backend, via `/api/sync`) | the owning account + admin (read-only view) |
+| Synced business data (per-account mirror) | **MongoDB** (backend, via `/api/sync`) | the owning account + admin (read-only view — search + server-side pagination; **delete** is the only admin write) |
 | Cloud DB backups (opaque `.db` snapshots) | **Backend disk** (`BACKUP_DIR/<userId>`) | the owning account + admin |
 
 ---
@@ -250,3 +251,9 @@ SQLite triggers → sync_outbox table → SyncService (drains, builds records)
   `{ entity, localId, deleted, updatedAt, data }`.
 - **Restore path:** `GET /api/sync/pull?since=ISO` lets a new device pull the
   mirror back; day-to-day operation is push-only.
+- **Admin view:** the admin SPA's per-entity screens read the mirror via
+  `GET /api/admin/users/:id/data?entity=&q=&page=&limit=` (case-insensitive
+  search over per-entity fields, applied before server-side pagination; returns
+  `{ records, total, page, limit }`). The mirror stays push-only otherwise — the
+  only admin write is `DELETE /api/admin/users/:id/data/:entity/:localId`, which
+  hard-deletes a single mirrored record.

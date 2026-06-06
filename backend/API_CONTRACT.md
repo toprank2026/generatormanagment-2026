@@ -125,12 +125,53 @@ Backups are stored per-account (quota: keep last N, default 10).
 - `POST   /api/admin/users/:id/approve-plan`        approve pending request
 - `POST   /api/admin/users/:id/reject-plan`         reject pending request
 - `DELETE /api/admin/users/:id/devices/:deviceId`   unbind a device
+- `GET    /api/admin/users/:id/data`                 list an owner's synced mirror rows (search + paginate, see below)
+- `DELETE /api/admin/users/:id/data/:entity/:localId` hard-delete one mirrored record
 - `GET    /api/admin/plans`                          list all plans
 - `PUT    /api/admin/plans`                          upsert a plan (body = Plan)
 - `DELETE /api/admin/plans/:code`                    delete a plan
 
 The admin SPA (`backend/public/admin/index.html`) is a hash-routed single-file
 app driving exactly these endpoints with a Bearer JWT.
+
+### GET `/api/admin/users/:id/data`  (admin) — synced-data mirror, read-only
+
+Lists the business rows an owner pushed for one entity. The mirror is **push-only**
+(device → server via `/api/sync`); admins can search/paginate and **delete**, but
+never create or edit.
+
+Query params:
+- `entity` (required): one of `subscribers · boards · circuits · receipts · expenses · monthly_prices · refunds`.
+- `q` (optional): case-insensitive substring filter over per-entity search fields,
+  applied **before** pagination. Search fields:
+  `subscribers→name,phone · boards→name,code · circuits→name,phase ·
+  receipts→receipt_no,month · expenses→category,note · monthly_prices→month`
+  (unknown entity falls back to matching `localId`).
+- `page` (optional, 1-based, default `1`).
+- `limit` (optional, default `25`, clamped to `1..200`).
+- `includeDeleted=true` (optional): include deleted tombstones (excluded by default).
+
+Records are sorted `updatedAt` **desc** (newest first).
+```jsonc
+// 200 response
+{
+  "entity": "subscribers",
+  "records": [ { "localId": "uuid", "data": { /* the row */ }, "deleted": false, "updatedAt": "ISO" } ],
+  "total": 150,   // matching records after `q`, before the page slice
+  "page": 1,
+  "limit": 25
+}
+```
+Errors: `400` missing `entity`, `404` user not found.
+
+### DELETE `/api/admin/users/:id/data/:entity/:localId`  (admin)
+Hard-deletes that one mirrored `SyncRecord` for the user (the only admin write to
+the mirror). Does not touch the device's local SQLite source of truth.
+```jsonc
+// 200 response
+{ "ok": true }
+```
+Errors: `404` record not found.
 
 ---
 

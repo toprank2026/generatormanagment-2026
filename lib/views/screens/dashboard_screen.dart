@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/views/widgets/shimmer_loading.dart';
 import 'package:generatormanagment/views/screens/subscribers_screen.dart';
 import 'package:generatormanagment/views/screens/boards_screen.dart';
@@ -13,6 +14,7 @@ class DashboardScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final DashboardController controller = Get.find<DashboardController>();
     final AuthController authController = Get.find<AuthController>();
+    final SyncController syncController = Get.find<SyncController>();
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -32,7 +34,7 @@ class DashboardScreen extends StatelessWidget {
             children: [
               // Banner / Carousel Placeholder
               Container(
-                height: 180,
+                height: 210,
                 width: double.infinity,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
@@ -84,37 +86,127 @@ class DashboardScreen extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Obx(
-                                  () => Text(
-                                    authController.currentUser.value?.username
-                                            .toUpperCase() ??
-                                        'ADMIN',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 1.1,
+                                // Account (icon + data)
+                                _bannerRow(
+                                  Icons.phone_android,
+                                  Obx(
+                                    () => Text(
+                                      authController
+                                              .currentUser.value?.username
+                                              .toUpperCase() ??
+                                          'ADMIN',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1.0,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    'system_administrator'.tr,
-                                    style: const TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 12,
-                                    ),
-                                  ),
+                                const SizedBox(height: 10),
+                                // Current plan name (icon + data)
+                                _bannerRow(
+                                  Icons.workspace_premium,
+                                  Obx(() {
+                                    final plan = authController.account.value
+                                        ?.subscription.planCode;
+                                    return Text(
+                                      (plan == null || plan.isEmpty)
+                                          ? 'no_plan'.tr
+                                          : plan.toUpperCase(),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    );
+                                  }),
                                 ),
+                                const SizedBox(height: 10),
+                                // Unsynced count + immediate sync button
+                                Obx(() {
+                                  final pending =
+                                      syncController.pendingCount.value;
+                                  final syncing =
+                                      syncController.isSyncing.value;
+                                  return Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.2),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child: Icon(
+                                          syncing
+                                              ? Icons.sync
+                                              : (pending == 0
+                                                  ? Icons.cloud_done
+                                                  : Icons.cloud_upload),
+                                          color: Colors.white,
+                                          size: 16,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          syncing
+                                              ? 'syncing'.tr
+                                              : (pending == 0
+                                                  ? 'all_synced'.tr
+                                                  : '$pending ${'sync_pending'.tr}'),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      SizedBox(
+                                        height: 30,
+                                        child: ElevatedButton.icon(
+                                          onPressed: syncing
+                                              ? null
+                                              : () => syncController.syncNow(),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.white,
+                                            foregroundColor:
+                                                const Color(0xFF1565C0),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 12),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            textStyle: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold),
+                                          ),
+                                          icon: syncing
+                                              ? const SizedBox(
+                                                  width: 14,
+                                                  height: 14,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    valueColor:
+                                                        AlwaysStoppedAnimation(
+                                                            Color(0xFF1565C0)),
+                                                  ),
+                                                )
+                                              : const Icon(Icons.sync, size: 16),
+                                          label: Text('sync_now'.tr),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }),
                               ],
                             ),
                           ),
@@ -216,6 +308,24 @@ class DashboardScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  /// One "icon + data" row for the dashboard header column.
+  Widget _bannerRow(IconData icon, Widget data) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: Colors.white, size: 16),
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: data),
+      ],
     );
   }
 

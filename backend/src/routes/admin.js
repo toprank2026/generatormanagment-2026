@@ -29,6 +29,8 @@ router.delete('/users/:id', ctrl.deleteUser);
 
 // Synced business data mirror for one owner (?entity=subscribers).
 router.get('/users/:id/data', ctrl.getUserData);
+// Hard-delete a single mirrored row (the mirror is otherwise read-only).
+router.delete('/users/:id/data/:entity/:localId', ctrl.deleteUserData);
 
 router.put(
   '/users/:id/blocked',
