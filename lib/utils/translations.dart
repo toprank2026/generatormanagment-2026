@@ -272,6 +272,9 @@ class Messages extends Translations {
       'sync_failed': 'Sync failed',
       'all_synced': 'All data synced',
       'no_plan': 'No plan',
+      'backup': 'Backup',
+      'backup_subtitle': 'Export, restore & cloud backup',
+      'sync_subtitle': 'Status, pending changes & sync now',
     },
     'ar_AR': {
       'app_name': 'مالك مولداتي',
@@ -542,6 +545,9 @@ class Messages extends Translations {
       'sync_failed': 'فشلت المزامنة',
       'all_synced': 'تمت مزامنة جميع البيانات',
       'no_plan': 'لا توجد خطة',
+      'backup': 'النسخ الاحتياطي',
+      'backup_subtitle': 'تصدير واستعادة ونسخ سحابي',
+      'sync_subtitle': 'الحالة والتغييرات المعلّقة والمزامنة الآن',
     },
   };
 }

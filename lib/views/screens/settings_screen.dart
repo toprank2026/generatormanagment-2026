@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
-import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/views/screens/subscription_screen.dart';
+import 'package:generatormanagment/views/screens/backup_screen.dart';
+import 'package:generatormanagment/views/screens/sync_screen.dart';
 import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/repositories/device_repository.dart';
 import 'package:generatormanagment/utils/bluetooth_print_service.dart';
@@ -21,7 +21,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final SettingsController controller = Get.find<SettingsController>();
   final AuthController auth = Get.find<AuthController>();
-  final SyncController syncController = Get.find<SyncController>();
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -330,7 +329,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Padding(
                 padding: const EdgeInsets.only(left: 8, bottom: 8),
                 child: Text(
-                  'data_management'.tr,
+                  'backup'.tr,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     color: Colors.blueGrey,
@@ -343,34 +342,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(
-                      Icons.download,
-                      color: Color(0xFF43A047),
-                    ),
-                    title: Text('backup_data'.tr),
-                    subtitle: Text('backup_data_subtitle'.tr),
-                    onTap: () => controller.exportData(),
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(Icons.upload, color: Color(0xFFEF5350)),
-                    title: Text('restore_data'.tr),
-                    subtitle: Text('restore_warning'.tr),
-                    onTap: () => _confirmRestore(controller),
-                  ),
-                ],
+              child: ListTile(
+                leading: const Icon(Icons.backup, color: Color(0xFF1565C0)),
+                title: Text('backup'.tr),
+                subtitle: Text('backup_subtitle'.tr),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Get.to(() => const BackupScreen()),
               ),
             ),
 
-            // Sync + Cloud Backup + Manage Devices (online account features)
+            // Sync + Manage Devices (online account features)
             if (auth.isLoggedIn.value) ...[
               const SizedBox(height: 24),
-              _buildSyncSection(),
-              const SizedBox(height: 24),
-              _buildCloudBackupSection(),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8, bottom: 8),
+                  child: Text(
+                    'sync'.tr,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blueGrey,
+                    ),
+                  ),
+                ),
+              ),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: ListTile(
+                  leading: const Icon(Icons.sync, color: Color(0xFF1565C0)),
+                  title: Text('sync'.tr),
+                  subtitle: Text('sync_subtitle'.tr),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Get.to(() => const SyncScreen()),
+                ),
+              ),
               const SizedBox(height: 24),
               _buildManageDevicesSection(),
             ],
@@ -411,260 +420,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // --------------------------------------------------------------------------
   // SYNC
   // --------------------------------------------------------------------------
-  Widget _buildSyncSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 8, bottom: 8),
-          child: Text(
-            'sync'.tr,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.blueGrey,
-            ),
-          ),
-        ),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            children: [
-              // Sync status + pending count
-              Obx(() {
-                final String subtitle;
-                if (syncController.isSyncing.value) {
-                  subtitle = 'syncing'.tr;
-                } else if (syncController.pendingCount.value == 0) {
-                  subtitle = 'all_synced'.tr;
-                } else {
-                  subtitle =
-                      '${syncController.pendingCount.value} ${'sync_pending'.tr}';
-                }
-                return ListTile(
-                  leading: const Icon(
-                    Icons.sync,
-                    color: Color(0xFF1565C0),
-                  ),
-                  title: Text('sync'.tr),
-                  subtitle: Text(subtitle),
-                );
-              }),
-              const Divider(height: 1),
-              // Last sync timestamp
-              Obx(
-                () => ListTile(
-                  leading: const Icon(
-                    Icons.schedule,
-                    color: Color(0xFF1565C0),
-                  ),
-                  title: Text(
-                    '${'last_sync'.tr}: '
-                    '${_formatTimestamp(syncController.lastSyncAt.value)}',
-                  ),
-                  subtitle: Text(
-                    'online_only'.tr,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ),
-              const Divider(height: 1),
-              // Sync now button
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                child: Obx(
-                  () => SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: syncController.isSyncing.value
-                          ? null
-                          : () => syncController.syncNow(),
-                      icon: syncController.isSyncing.value
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.sync, color: Colors.white),
-                      label: Text(
-                        'sync_now'.tr,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1565C0),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // --------------------------------------------------------------------------
-  // CLOUD BACKUP
-  // --------------------------------------------------------------------------
-  Widget _buildCloudBackupSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 8, bottom: 8),
-          child: Text(
-            'cloud_backup'.tr,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.blueGrey,
-            ),
-          ),
-        ),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            children: [
-              // Last backup timestamp + online-only hint
-              Obx(() {
-                final last = controller.lastCloudBackupAt.value;
-                return ListTile(
-                  leading: const Icon(
-                    Icons.cloud_outlined,
-                    color: Color(0xFF1565C0),
-                  ),
-                  title: Text(
-                    '${'last_backup'.tr}: ${_formatTimestamp(last)}',
-                  ),
-                  subtitle: Text(
-                    'online_only'.tr,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                );
-              }),
-              const Divider(height: 1),
-              // Backup now button
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                child: Obx(
-                  () => SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: controller.isCloudBusy.value
-                          ? null
-                          : () => controller.uploadCloudBackup(),
-                      icon: controller.isCloudBusy.value
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.backup, color: Colors.white),
-                      label: Text(
-                        'backup_now'.tr,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1565C0),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const Divider(height: 1),
-              // Cloud backup list
-              Obx(() {
-                if (controller.isCloudBusy.value &&
-                    controller.cloudBackups.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                if (controller.cloudBackups.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(
-                      'no_backups'.tr,
-                      style: const TextStyle(color: Colors.grey),
-                    ),
-                  );
-                }
-                return ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: controller.cloudBackups.length,
-                  separatorBuilder: (c, i) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final BackupEntry b = controller.cloudBackups[index];
-                    return ListTile(
-                      leading: const Icon(
-                        Icons.cloud_done,
-                        color: Color(0xFF43A047),
-                      ),
-                      title: Text(_formatTimestamp(b.createdAt)),
-                      subtitle: Text(
-                        '${_formatSize(b.size)}'
-                        '${(b.note != null && b.note!.isNotEmpty) ? ' · ${b.note}' : ''}',
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.restore,
-                              color: Color(0xFF1565C0),
-                            ),
-                            tooltip: 'restore'.tr,
-                            onPressed: () =>
-                                controller.restoreCloudBackup(b.id),
-                          ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.delete,
-                              color: Colors.redAccent,
-                            ),
-                            onPressed: () =>
-                                _confirmDeleteCloudBackup(b.id),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              }),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   // --------------------------------------------------------------------------
   // MANAGE DEVICES
   // --------------------------------------------------------------------------
@@ -810,36 +565,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _confirmDeleteCloudBackup(String id) {
-    Get.defaultDialog(
-      title: 'cloud_backup'.tr,
-      middleText: 'delete_backup_confirm'.tr,
-      textConfirm: 'delete'.tr,
-      textCancel: 'cancel'.tr,
-      confirmTextColor: Colors.white,
-      buttonColor: Colors.red,
-      onConfirm: () {
-        Get.back();
-        controller.deleteCloudBackup(id);
-      },
-    );
-  }
-
-  String _formatTimestamp(String? iso) {
-    if (iso == null || iso.isEmpty) return 'never'.tr;
-    final dt = DateTime.tryParse(iso);
-    if (dt == null) return iso;
-    return DateFormat('yyyy-MM-dd HH:mm').format(dt.toLocal());
-  }
-
-  String _formatSize(int bytes) {
-    if (bytes <= 0) return '0 KB';
-    if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(0)} KB';
-    }
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-  }
-
   void _showAddUserDialog(SettingsController controller) {
     final userCtrl = TextEditingController();
     final passCtrl = TextEditingController();
@@ -912,21 +637,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       onConfirm: () {
         controller.deleteUser(userId);
         Get.back();
-      },
-    );
-  }
-
-  void _confirmRestore(SettingsController controller) {
-    Get.defaultDialog(
-      title: 'restore_create_backup_first'.tr,
-      middleText: 'restore_import_warning'.tr,
-      textConfirm: 'restore'.tr,
-      textCancel: 'cancel'.tr,
-      confirmTextColor: Colors.white,
-      buttonColor: Colors.red,
-      onConfirm: () {
-        Get.back();
-        controller.importData();
       },
     );
   }
