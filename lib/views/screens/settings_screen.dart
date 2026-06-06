@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
+import 'package:generatormanagment/views/screens/subscription_screen.dart';
 import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/repositories/device_repository.dart';
 import 'package:generatormanagment/utils/bluetooth_print_service.dart';
@@ -127,6 +128,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                 ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Subscription Section
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8, bottom: 8),
+                child: Text(
+                  'subscription'.tr,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blueGrey,
+                  ),
+                ),
+              ),
+            ),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: ListTile(
+                leading: const Icon(
+                  Icons.workspace_premium,
+                  color: Color(0xFF1565C0),
+                ),
+                title: Text('manage_subscription'.tr),
+                subtitle: Obx(
+                  () => Text(
+                    auth.subscription?.planCode ?? 'no_active_plan'.tr,
+                  ),
+                ),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => Get.to(() => const SubscriptionScreen()),
               ),
             ),
             const SizedBox(height: 24),
