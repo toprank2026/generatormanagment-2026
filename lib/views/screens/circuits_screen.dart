@@ -59,7 +59,7 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
         if (controller.isLoading.value)
           return const Center(child: CircularProgressIndicator());
         if (controller.circuits.isEmpty)
-          return const Center(child: Text("No circuits. Add one!"));
+          return Center(child: Text("no_circuits".tr));
 
         return ListView.builder(
           controller: _scrollController,
@@ -79,7 +79,7 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
             return ListTile(
               leading: const Icon(Icons.flash_on),
               title: Text(circuit.name),
-              subtitle: Text(circuit.phase ?? "Phase ?"),
+              subtitle: Text(circuit.phase ?? "phase_unknown".tr),
               trailing: Obx(
                 () => auth.isAdmin
                     ? IconButton(
@@ -100,21 +100,21 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
     final phaseCtrl = TextEditingController();
 
     Get.defaultDialog(
-      title: "Add Circuit",
+      title: "add_circuit".tr,
       content: Column(
         children: [
           TextField(
             controller: nameCtrl,
-            decoration: const InputDecoration(labelText: "Name"),
+            decoration: InputDecoration(labelText: "circuit_name".tr),
           ),
           TextField(
             controller: phaseCtrl,
-            decoration: const InputDecoration(labelText: "Phase (optional)"),
+            decoration: InputDecoration(labelText: "phase_optional".tr),
           ),
         ],
       ),
-      textConfirm: "Add",
-      textCancel: "Cancel",
+      textConfirm: "add".tr,
+      textCancel: "cancel".tr,
       onConfirm: () {
         if (nameCtrl.text.isNotEmpty) {
           controller.addCircuit(widget.board.id, nameCtrl.text, phaseCtrl.text);

@@ -99,7 +99,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        auth.currentUser.value?.username ?? "User",
+                        auth.currentUser.value?.username ?? 'user_default'.tr,
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
@@ -158,7 +158,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Icons.person_add,
                         color: Color(0xFF1565C0),
                       ),
-                      title: const Text("Create New User"),
+                      title: Text('create_new_user'.tr),
                       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                       onTap: () => _showAddUserDialog(controller),
                     ),
@@ -238,13 +238,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
 
-            const Align(
+            Align(
               alignment: Alignment.centerLeft,
               child: Padding(
-                padding: EdgeInsets.only(left: 8, bottom: 8),
+                padding: const EdgeInsets.only(left: 8, bottom: 8),
                 child: Text(
-                  "Printer Settings",
-                  style: TextStyle(
+                  'printer_settings'.tr,
+                  style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     color: Colors.blueGrey,
                   ),
@@ -267,12 +267,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: Text(
                     hasPrinter
                         ? controller.printerName.value
-                        : "No Printer Selected",
+                        : 'no_printer_selected'.tr,
                   ),
                   subtitle: Text(
                     hasPrinter
                         ? controller.printerAddress.value
-                        : "Select a Bluetooth printer",
+                        : 'select_bluetooth_printer'.tr,
                   ),
                   trailing: IconButton(
                     icon: const Icon(
@@ -286,13 +286,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               }),
             ),
 
-            const Align(
+            Align(
               alignment: Alignment.centerLeft,
               child: Padding(
-                padding: EdgeInsets.only(left: 8, bottom: 8),
+                padding: const EdgeInsets.only(left: 8, bottom: 8),
                 child: Text(
-                  "Data Management",
-                  style: TextStyle(
+                  'data_management'.tr,
+                  style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     color: Colors.blueGrey,
                   ),
@@ -311,15 +311,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Icons.download,
                       color: Color(0xFF43A047),
                     ),
-                    title: const Text("Backup Data (Export)"),
-                    subtitle: const Text("Save a copy of your database"),
+                    title: Text('backup_data'.tr),
+                    subtitle: Text('backup_data_subtitle'.tr),
                     onTap: () => controller.exportData(),
                   ),
                   const Divider(height: 1),
                   ListTile(
                     leading: const Icon(Icons.upload, color: Color(0xFFEF5350)),
-                    title: const Text("Restore Data (Import)"),
-                    subtitle: const Text("Warning: Overwrites current data"),
+                    title: Text('restore_data'.tr),
+                    subtitle: Text('restore_warning'.tr),
                     onTap: () => _confirmRestore(controller),
                   ),
                 ],
@@ -342,9 +342,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: OutlinedButton.icon(
                 onPressed: () => auth.logout(),
                 icon: const Icon(Icons.logout, color: Colors.redAccent),
-                label: const Text(
-                  "Log Out",
-                  style: TextStyle(color: Colors.redAccent),
+                label: Text(
+                  'logout'.tr,
+                  style: const TextStyle(color: Colors.redAccent),
                 ),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -357,7 +357,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text("Version 1.0.0", style: TextStyle(color: Colors.grey)),
+            Text(
+              '${'version'.tr} 1.0.0',
+              style: const TextStyle(color: Colors.grey),
+            ),
           ],
         ),
       ),
@@ -652,7 +655,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Get.snackbar('manage_devices'.tr, 'device_unbound'.tr);
         } catch (e) {
           Get.back(); // close dialog
-          Get.snackbar("Error", "${'manage_devices'.tr}: $e");
+          Get.snackbar('error'.tr, "${'manage_devices'.tr}: $e");
         }
       },
     );
@@ -694,47 +697,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String role = 'accountant';
 
     Get.defaultDialog(
-      title: "Add User",
+      title: 'add_user'.tr,
       content: Column(
         children: [
           TextField(
             controller: userCtrl,
-            decoration: const InputDecoration(
-              labelText: "Username",
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: 'username'.tr,
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: passCtrl,
-            decoration: const InputDecoration(
-              labelText: "Password",
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: 'password'.tr,
+              border: const OutlineInputBorder(),
             ),
             obscureText: true,
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             value: role,
-            items: const [
-              DropdownMenuItem(value: 'accountant', child: Text("Accountant")),
-              DropdownMenuItem(value: 'admin', child: Text("Admin")),
+            items: [
+              DropdownMenuItem(
+                value: 'accountant',
+                child: Text('role_accountant'.tr),
+              ),
+              DropdownMenuItem(value: 'admin', child: Text('role_admin'.tr)),
             ],
             onChanged: (v) => role = v!,
-            decoration: const InputDecoration(
-              labelText: "Role",
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: 'role'.tr,
+              border: const OutlineInputBorder(),
             ),
           ),
         ],
       ),
-      textConfirm: "Create",
-      textCancel: "Cancel",
+      textConfirm: 'create'.tr,
+      textCancel: 'cancel'.tr,
       onConfirm: () {
         if (userCtrl.text.trim().isEmpty || passCtrl.text.trim().isEmpty) {
           Get.snackbar(
-            "Error",
-            "Please fill all fields",
+            'error'.tr,
+            'fill_all_fields'.tr,
             backgroundColor: Colors.redAccent,
             colorText: Colors.white,
           );
@@ -748,10 +754,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _confirmDelete(SettingsController controller, String userId) {
     Get.defaultDialog(
-      title: "Delete User",
-      middleText: "Are you sure you want to delete this user?",
-      textConfirm: "Yes, Delete",
-      textCancel: "Cancel",
+      title: 'delete_title'.tr,
+      middleText: 'delete_confirm'.tr,
+      textConfirm: 'delete'.tr,
+      textCancel: 'cancel'.tr,
       confirmTextColor: Colors.white,
       buttonColor: Colors.red,
       onConfirm: () {
@@ -763,11 +769,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _confirmRestore(SettingsController controller) {
     Get.defaultDialog(
-      title: "Create Backup First!",
-      middleText:
-          "Importing will DELETE all current data and replace it with the backup file. Are you sure?",
-      textConfirm: "Yes, Restore",
-      textCancel: "Cancel",
+      title: 'restore_create_backup_first'.tr,
+      middleText: 'restore_import_warning'.tr,
+      textConfirm: 'restore'.tr,
+      textCancel: 'cancel'.tr,
       confirmTextColor: Colors.white,
       buttonColor: Colors.red,
       onConfirm: () {
@@ -790,9 +795,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              "Select Bluetooth Printer",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Text(
+              'select_bluetooth_printer_title'.tr,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 16),
             FutureBuilder<List<BluetoothDevice>>(
@@ -802,15 +810,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
-                  return Text("Error: ${snapshot.error}");
+                  return Text("${'error'.tr}: ${snapshot.error}");
                 }
                 final devices = snapshot.data ?? [];
                 if (devices.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Text(
-                      "No paired devices found. Please pair your printer in phone settings first.",
-                    ),
+                  return Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text('no_paired_devices'.tr),
                   );
                 }
                 return ListView.builder(
@@ -820,17 +826,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     final d = devices[i];
                     return ListTile(
                       leading: const Icon(Icons.print, color: Colors.blue),
-                      title: Text(d.name ?? "Unknown Device"),
+                      title: Text(d.name ?? 'unknown_device'.tr),
                       subtitle: Text(d.address ?? ""),
                       onTap: () {
                         controller.savePrinterSettings(
-                          d.name ?? "Printer",
+                          d.name ?? 'printer'.tr,
                           d.address ?? "",
                         );
                         Get.back();
                         Get.snackbar(
-                          "Printer Selected",
-                          "${d.name} is now your default printer.",
+                          'printer_selected'.tr,
+                          '${d.name} ${'printer_selected_message'.tr}',
                         );
                       },
                     );

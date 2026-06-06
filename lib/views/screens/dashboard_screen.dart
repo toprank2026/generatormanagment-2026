@@ -107,9 +107,9 @@ class DashboardScreen extends StatelessWidget {
                                     color: Colors.white.withOpacity(0.2),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: const Text(
-                                    "System Administrator",
-                                    style: TextStyle(
+                                  child: Text(
+                                    'system_administrator'.tr,
+                                    style: const TextStyle(
                                       color: Colors.white70,
                                       fontSize: 12,
                                     ),

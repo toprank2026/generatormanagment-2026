@@ -38,11 +38,16 @@ class AuthController extends GetxController {
 
   Subscription? get subscription => account.value?.subscription;
   bool get hasActiveSubscription => account.value?.subscription.isActive ?? false;
+  /// In-app management rights (create/edit/delete boards, circuits, subscribers,
+  /// staff). The account holder is either the business `owner` or an `admin`;
+  /// both manage their own data. (Local 'accountant' staff are restricted.)
   bool get isAdmin {
     // Read the observable FIRST so this getter stays reactive when used inside
     // Obx (the DEV_ADMIN test override must not short-circuit the .value read).
     final role = currentUser.value?.role ?? account.value?.role ?? '';
-    return role == 'admin' || const bool.fromEnvironment('DEV_ADMIN');
+    return role == 'admin' ||
+        role == 'owner' ||
+        const bool.fromEnvironment('DEV_ADMIN');
   }
 
   @override
@@ -117,7 +122,7 @@ class AuthController extends GetxController {
       if (!await _net.isOnline()) {
         return {
           'success': false,
-          'message': 'No internet connection. Sign-in requires being online.',
+          'message': 'no_internet_sign_in'.tr,
         };
       }
       final result = await _auth.login(username: username, password: password);
@@ -143,7 +148,7 @@ class AuthController extends GetxController {
       if (!await _net.isOnline()) {
         return {
           'success': false,
-          'message': 'No internet connection. Sign-up requires being online.',
+          'message': 'no_internet_sign_up'.tr,
         };
       }
       final result = await _auth.register(

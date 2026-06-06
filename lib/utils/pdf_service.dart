@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:get/get.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -17,26 +18,26 @@ class PdfService {
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Text(
-                "MOLDATI GENERATOR",
+                'receipt_header'.tr,
                 style: pw.TextStyle(
                   fontWeight: pw.FontWeight.bold,
                   fontSize: 18,
                 ),
               ),
               pw.SizedBox(height: 10),
-              pw.Text("Receipt #: ${receipt.receiptNo}"),
-              pw.Text("Date: ${receipt.issuedAt}"),
+              pw.Text("${'receipt_no'.tr}: ${receipt.receiptNo}"),
+              pw.Text("${'receipt_date'.tr}: ${receipt.issuedAt}"),
               pw.Divider(),
-              pw.Text("Customer: ${sub.name}"),
-              pw.Text("Month: ${receipt.month}"),
-              pw.Text("Amps: ${receipt.ampsSnapshot}"),
-              pw.Text("Price/Amp: ${receipt.priceSnapshot}"),
+              pw.Text("${'receipt_customer'.tr}: ${sub.name}"),
+              pw.Text("${'receipt_month'.tr}: ${receipt.month}"),
+              pw.Text("${'amps'.tr}: ${receipt.ampsSnapshot}"),
+              pw.Text("${'receipt_price_per_amp'.tr}: ${receipt.priceSnapshot}"),
               pw.Divider(),
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text(
-                    "PAID:",
+                    "${'receipt_paid'.tr}:",
                     style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                   ),
                   pw.Text(
@@ -48,7 +49,7 @@ class PdfService {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text("Remaining:"),
+                  pw.Text("${'receipt_remaining'.tr}:"),
                   pw.Text("${receipt.remainingAfter}"),
                 ],
               ),
@@ -63,7 +64,7 @@ class PdfService {
                 ),
               ),
               pw.SizedBox(height: 10),
-              pw.Center(child: pw.Text("Thank you!")),
+              pw.Center(child: pw.Text('receipt_thank_you'.tr)),
             ],
           );
         },

@@ -247,7 +247,7 @@ class _BoardsScreenState extends State<BoardsScreen> {
           ],
         ),
       ),
-      textConfirm: isEdit ? "save_changes".tr : "add".tr,
+      textConfirm: isEdit ? "save_changes".tr : "add_new".tr,
       textCancel: "cancel".tr,
       confirmTextColor: Colors.white,
       buttonColor: const Color(0xFF1565C0),

@@ -157,13 +157,13 @@ class SettingsController extends GetxController {
     await _userRepo.insertUser(u);
     loadUsers();
     Get.back();
-    Get.snackbar("Success", "User added");
+    Get.snackbar('success'.tr, 'user_added'.tr);
     update();
   }
 
   Future<void> deleteUser(String id) async {
     if (id == auth.currentUser.value?.id) {
-      Get.snackbar("Error", "Cannot delete yourself");
+      Get.snackbar('error'.tr, 'cannot_delete_self'.tr);
       return;
     }
     await _userRepo.deleteUser(id);
@@ -178,7 +178,7 @@ class SettingsController extends GetxController {
       File dbFile = File(dbPath);
 
       if (!dbFile.existsSync()) {
-        Get.snackbar("Error", "Database file not found");
+        Get.snackbar('error'.tr, 'db_file_not_found'.tr);
         return;
       }
 
@@ -198,7 +198,7 @@ class SettingsController extends GetxController {
             'Moldati Database Backup ${DateTime.now().toString().split('.')[0]}',
       );
     } catch (e) {
-      Get.snackbar("Error", "Export failed: $e");
+      Get.snackbar('error'.tr, "${'export_failed'.tr}: $e");
     } finally {
       isLoading.value = false;
     }
@@ -208,7 +208,7 @@ class SettingsController extends GetxController {
     try {
       // Pick a file
       FilePickerResult? result = await FilePicker.platform.pickFiles(
-        dialogTitle: 'Select Backup File',
+        dialogTitle: 'select_backup_file'.tr,
       ); // Any extension, as we can't strictly enforce .db on all android versions reliably or user might have renamed it
 
       if (result != null && result.files.single.path != null) {
@@ -220,11 +220,10 @@ class SettingsController extends GetxController {
             !path.toLowerCase().endsWith('.sqlite')) {
           // We can warn but maybe proceed if user insists? For now let's just warn
           Get.defaultDialog(
-            title: "Warning",
-            middleText:
-                "The selected file does not look like a database file (.db). Try anyway?",
-            textConfirm: "Yes, Try",
-            textCancel: "Cancel",
+            title: 'warning'.tr,
+            middleText: 'not_db_file_warning'.tr,
+            textConfirm: 'yes_try'.tr,
+            textCancel: 'cancel'.tr,
             onConfirm: () {
               Get.back();
               _confirmImportProcess(file);
@@ -236,17 +235,16 @@ class SettingsController extends GetxController {
         _confirmImportProcess(file);
       }
     } catch (e) {
-      Get.snackbar("Error", "Import failed: $e");
+      Get.snackbar('error'.tr, "${'import_failed'.tr}: $e");
     }
   }
 
   void _confirmImportProcess(File file) {
     Get.defaultDialog(
-      title: "Confirm Restore",
-      middleText:
-          "Warning: This will OVERWRITE all current data with the backup.\nThe app will restart/logout after import.",
-      textConfirm: "Restore",
-      textCancel: "Cancel",
+      title: 'confirm_restore'.tr,
+      middleText: 'import_overwrite_warning'.tr,
+      textConfirm: 'restore'.tr,
+      textCancel: 'cancel'.tr,
       confirmTextColor: Colors.white,
       buttonColor: Colors.red,
       onConfirm: () {
@@ -268,10 +266,9 @@ class SettingsController extends GetxController {
       await sourceFile.copy(dbPath);
 
       Get.defaultDialog(
-        title: "Success",
-        middleText:
-            "Data imported successfully.\nPlease restart the app to ensure data consistency.",
-        textConfirm: "Logout & Restart",
+        title: 'success'.tr,
+        middleText: 'import_success_restart'.tr,
+        textConfirm: 'logout_restart'.tr,
         barrierDismissible: false,
         onConfirm: () {
           auth.logout();
@@ -281,7 +278,7 @@ class SettingsController extends GetxController {
         },
       );
     } catch (e) {
-      Get.snackbar("Error", "Import execution failed: $e");
+      Get.snackbar('error'.tr, "${'import_execution_failed'.tr}: $e");
       // Try to reopen db if failed?
     } finally {
       isLoading.value = false;
@@ -300,7 +297,7 @@ class SettingsController extends GetxController {
     try {
       cloudBackups.assignAll(await _backupRepo.list());
     } catch (e) {
-      Get.snackbar("Error", "${'cloud_backup'.tr}: $e");
+      Get.snackbar('error'.tr, "${'cloud_backup'.tr}: $e");
     } finally {
       isCloudBusy.value = false;
     }
@@ -323,7 +320,7 @@ class SettingsController extends GetxController {
       Get.snackbar('cloud_backup'.tr, 'backup_uploaded'.tr);
       await refreshCloudBackups();
     } catch (e) {
-      Get.snackbar("Error", "${'cloud_backup'.tr}: $e");
+      Get.snackbar('error'.tr, "${'cloud_backup'.tr}: $e");
     } finally {
       isCloudBusy.value = false;
     }
@@ -340,7 +337,7 @@ class SettingsController extends GetxController {
       await _backupRepo.delete(id);
       cloudBackups.removeWhere((b) => b.id == id);
     } catch (e) {
-      Get.snackbar("Error", "${'cloud_backup'.tr}: $e");
+      Get.snackbar('error'.tr, "${'cloud_backup'.tr}: $e");
     } finally {
       isCloudBusy.value = false;
     }
@@ -374,7 +371,7 @@ class SettingsController extends GetxController {
       // Force a restart-like reload so the freshly restored DB is picked up.
       Get.find<AuthController>().logout();
     } catch (e) {
-      Get.snackbar("Error", "${'cloud_backup'.tr}: $e");
+      Get.snackbar('error'.tr, "${'cloud_backup'.tr}: $e");
     } finally {
       isCloudBusy.value = false;
     }

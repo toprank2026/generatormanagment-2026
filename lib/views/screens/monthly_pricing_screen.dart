@@ -14,9 +14,12 @@ class MonthlyPricingScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFFE3F2FD), // Light blue background
       appBar: AppBar(
-        title: const Text(
-          "Monthly Pricing",
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        title: Text(
+          'monthly_pricing'.tr,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
         backgroundColor: const Color(0xFF1565C0),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -44,9 +47,9 @@ class MonthlyPricingScreen extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    "Billing Month",
-                    style: TextStyle(color: Colors.grey),
+                  Text(
+                    'billing_month'.tr,
+                    style: const TextStyle(color: Colors.grey),
                   ),
                   Row(
                     children: [
@@ -111,13 +114,16 @@ class MonthlyPricingScreen extends StatelessWidget {
                     ),
                     child: Column(
                       children: [
-                        const Text(
-                          "Current Price Per Amp",
-                          style: TextStyle(fontSize: 16, color: Colors.grey),
+                        Text(
+                          'current_price_per_amp'.tr,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey,
+                          ),
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          price?.pricePerAmp.toString() ?? "NOT SET",
+                          price?.pricePerAmp.toString() ?? 'not_set'.tr,
                           style: TextStyle(
                             fontSize: 48,
                             fontWeight: FontWeight.bold,
@@ -137,18 +143,18 @@ class MonthlyPricingScreen extends StatelessWidget {
                               color: const Color(0xFFFFEBEE),
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            child: const Row(
+                            child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(
+                                const Icon(
                                   Icons.lock,
                                   size: 14,
                                   color: Color(0xFFD32F2F),
                                 ),
-                                SizedBox(width: 4),
+                                const SizedBox(width: 4),
                                 Text(
-                                  "LOCKED",
-                                  style: TextStyle(
+                                  'price_locked_badge'.tr,
+                                  style: const TextStyle(
                                     color: Color(0xFFD32F2F),
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12,
@@ -158,9 +164,9 @@ class MonthlyPricingScreen extends StatelessWidget {
                             ),
                           )
                         else
-                          const Text(
-                            "IQD / Ampere",
-                            style: TextStyle(color: Colors.grey),
+                          Text(
+                            'iqd_per_ampere'.tr,
+                            style: const TextStyle(color: Colors.grey),
                           ),
                       ],
                     ),
@@ -186,9 +192,9 @@ class MonthlyPricingScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            "Update Price",
-                            style: TextStyle(
+                          Text(
+                            'update_price'.tr,
+                            style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                               color: Color(0xFF1565C0),
@@ -203,7 +209,7 @@ class MonthlyPricingScreen extends StatelessWidget {
                               fontWeight: FontWeight.bold,
                             ),
                             decoration: InputDecoration(
-                              hintText: "Enter New Price",
+                              hintText: 'enter_new_price'.tr,
                               prefixText: "IQD ",
                               filled: true,
                               fillColor: Colors.grey[50],
@@ -228,8 +234,8 @@ class MonthlyPricingScreen extends StatelessWidget {
                                     controller.setPrice(p);
                                     priceCtrl.clear();
                                     Get.snackbar(
-                                      "Success",
-                                      "Price updated successfully",
+                                      'success'.tr,
+                                      'price_updated'.tr,
                                       backgroundColor: Colors.green,
                                       colorText: Colors.white,
                                     );
@@ -245,9 +251,9 @@ class MonthlyPricingScreen extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              child: const Text(
-                                "SAVE PRICE",
-                                style: TextStyle(
+                              child: Text(
+                                'save_price'.tr,
+                                style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -267,14 +273,16 @@ class MonthlyPricingScreen extends StatelessWidget {
                           color: Colors.orange.withOpacity(0.3),
                         ),
                       ),
-                      child: const Row(
+                      child: Row(
                         children: [
-                          Icon(Icons.info_outline, color: Colors.orange),
-                          SizedBox(width: 12),
+                          const Icon(Icons.info_outline, color: Colors.orange),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              "Pricing for this month is locked and cannot be changed.",
-                              style: TextStyle(color: Colors.orangeAccent),
+                              'pricing_locked_message'.tr,
+                              style: const TextStyle(
+                                color: Colors.orangeAccent,
+                              ),
                             ),
                           ),
                         ],

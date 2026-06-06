@@ -20,7 +20,7 @@ class _SetupScreenState extends State<SetupScreen> {
   void _setup() async {
     if (_formKey.currentState!.validate()) {
       if (_passwordController.text != _confirmPasswordController.text) {
-        Get.snackbar("Error", "Passwords do not match");
+        Get.snackbar('error'.tr, 'passwords_no_match'.tr);
         return;
       }
       await _authController.createInitialAdmin(
@@ -38,7 +38,7 @@ class _SetupScreenState extends State<SetupScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Create Account"),
+        title: Text('create_account'.tr),
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
@@ -63,9 +63,9 @@ class _SetupScreenState extends State<SetupScreen> {
                     color: Color(0xFF1565C0),
                   ),
                   const SizedBox(height: 24),
-                  const Text(
-                    "Admin Registration",
-                    style: TextStyle(
+                  Text(
+                    'admin_registration'.tr,
+                    style: const TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF1565C0),
@@ -73,42 +73,42 @@ class _SetupScreenState extends State<SetupScreen> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    "Create a new administrator account",
+                  Text(
+                    'create_admin_subtitle'.tr,
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey, fontSize: 16),
+                    style: const TextStyle(color: Colors.grey, fontSize: 16),
                   ),
                   const SizedBox(height: 32),
                   TextFormField(
                     controller: _usernameController,
-                    decoration: const InputDecoration(
-                      labelText: "Admin Username",
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.person),
+                    decoration: InputDecoration(
+                      labelText: 'admin_username'.tr,
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.person),
                     ),
-                    validator: (v) => v!.isEmpty ? "Required" : null,
+                    validator: (v) => v!.isEmpty ? 'required'.tr : null,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _passwordController,
                     obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: "Password",
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.lock),
+                    decoration: InputDecoration(
+                      labelText: 'password'.tr,
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.lock),
                     ),
-                    validator: (v) => v!.isEmpty ? "Required" : null,
+                    validator: (v) => v!.isEmpty ? 'required'.tr : null,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _confirmPasswordController,
                     obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: "Confirm Password",
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.lock_outline),
+                    decoration: InputDecoration(
+                      labelText: 'confirm_password'.tr,
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.lock_outline),
                     ),
-                    validator: (v) => v!.isEmpty ? "Required" : null,
+                    validator: (v) => v!.isEmpty ? 'required'.tr : null,
                   ),
                   const SizedBox(height: 24),
                   FilledButton(
@@ -116,21 +116,21 @@ class _SetupScreenState extends State<SetupScreen> {
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.all(16),
                     ),
-                    child: const Text("CREATE ADMIN & START"),
+                    child: Text('create_admin_start'.tr),
                   ),
                   const SizedBox(height: 24),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Text(
-                        "Already have an account? ",
-                        style: TextStyle(color: Colors.grey),
+                      Text(
+                        'already_have_account'.tr,
+                        style: const TextStyle(color: Colors.grey),
                       ),
                       TextButton(
                         onPressed: () => Get.offNamed('/login'),
-                        child: const Text(
-                          "Sign In",
-                          style: TextStyle(
+                        child: Text(
+                          'sign_in'.tr,
+                          style: const TextStyle(
                             color: Color(0xFF1565C0),
                             fontWeight: FontWeight.bold,
                           ),

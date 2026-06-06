@@ -60,7 +60,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
       backgroundColor: const Color(0xFFE3F2FD), // Light blue background
       appBar: AppBar(
         title: Text(
-          isEdit ? "Edit Subscriber".tr : "add_subscriber".tr,
+          isEdit ? "edit_subscriber".tr : "add_subscriber".tr,
           style: const TextStyle(
             fontWeight: FontWeight.bold,
             color: Colors.white,
@@ -77,7 +77,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Subscriber Details".tr,
+              "subscriber_details".tr,
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -106,15 +106,15 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
                   children: [
                     _buildTextField(
                       controller: _nameCtrl,
-                      label: "Full Name".tr,
+                      label: "full_name".tr,
                       icon: Icons.person,
-                      validator: (v) => v!.isEmpty ? "Required".tr : null,
+                      validator: (v) => v!.isEmpty ? "required".tr : null,
                     ),
                     const SizedBox(height: 20),
 
                     _buildTextField(
                       controller: _phoneCtrl,
-                      label: "Phone Number".tr + " (Optional)".tr,
+                      label: "${"phone_number".tr} ${"optional".tr}",
                       icon: Icons.phone,
                       keyboardType: TextInputType.phone,
                     ),
@@ -127,7 +127,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
-                      validator: (v) => v!.isEmpty ? "Required".tr : null,
+                      validator: (v) => v!.isEmpty ? "required".tr : null,
                     ),
                     const SizedBox(height: 20),
 
@@ -137,7 +137,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
                     Obx(
                       () => DropdownButtonFormField<Board>(
                         decoration: _inputDecoration(
-                          "Board Name".tr,
+                          "board_name".tr,
                           Icons.developer_board,
                         ),
                         value: selectedBoard,
@@ -158,7 +158,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
                             await controller.loadCircuits(val.id);
                           }
                         },
-                        validator: (v) => v == null ? "Required".tr : null,
+                        validator: (v) => v == null ? "required".tr : null,
                       ),
                     ),
 
@@ -168,7 +168,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
                     Obx(
                       () => DropdownButtonFormField<Circuit>(
                         decoration: _inputDecoration(
-                          "Circuit (Jawza)".tr,
+                          "circuit_jawza".tr,
                           Icons.settings_input_component,
                         ),
                         value: selectedCircuit,
@@ -187,8 +187,8 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
                         },
                         validator: (v) => v == null
                             ? (selectedBoard == null
-                                  ? "Select Board first".tr
-                                  : "Required".tr)
+                                  ? "select_board_first".tr
+                                  : "required".tr)
                             : null,
                       ),
                     ),
@@ -207,7 +207,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
                           ),
                         ),
                         child: Text(
-                          isEdit ? "SAVE CHANGES".tr : "SAVE SUBSCRIBER".tr,
+                          isEdit ? "save_changes".tr : "save_subscriber".tr,
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -267,7 +267,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
       if (amps == null) {
         Get.snackbar(
           "error".tr,
-          "amps".tr,
+          "amps_invalid".tr,
           backgroundColor: Colors.red,
           colorText: Colors.white,
         );

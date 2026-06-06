@@ -35,14 +35,13 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         String message = result['message'];
         if (result['statusCode'] == 403) {
-          message =
-              "Your account is disabled. Please contact the administrator.";
+          message = 'account_disabled'.tr;
         } else if (result['statusCode'] == 401) {
-          message = "Invalid username or password";
+          message = 'invalid_credentials'.tr;
         }
 
         Get.snackbar(
-          "Login Failed",
+          'login_failed'.tr,
           message,
           snackPosition: SnackPosition.BOTTOM,
           backgroundColor: Colors.red.withOpacity(0.1),
@@ -73,7 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const Icon(Icons.bolt, size: 80, color: Color(0xFF1565C0)),
                   const SizedBox(height: 24),
                   Text(
-                    "Sign in to your account",
+                    'sign_in_to_account'.tr,
                     style: const TextStyle(fontSize: 16, color: Colors.grey),
                     textAlign: TextAlign.center,
                   ),
@@ -81,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextFormField(
                     controller: _usernameController,
                     decoration: InputDecoration(
-                      labelText: "Username",
+                      labelText: 'username'.tr,
                       prefixIcon: const Icon(
                         Icons.person,
                         color: Color(0xFF1565C0),
@@ -103,14 +102,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       filled: true,
                       fillColor: Colors.grey[50],
                     ),
-                    validator: (v) => v!.isEmpty ? "Required" : null,
+                    validator: (v) => v!.isEmpty ? 'required'.tr : null,
                   ),
                   const SizedBox(height: 20),
                   TextFormField(
                     controller: _passwordController,
                     obscureText: true,
                     decoration: InputDecoration(
-                      labelText: "Password",
+                      labelText: 'password'.tr,
                       prefixIcon: const Icon(
                         Icons.lock,
                         color: Color(0xFF1565C0),
@@ -132,7 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       filled: true,
                       fillColor: Colors.grey[50],
                     ),
-                    validator: (v) => v!.isEmpty ? "Required" : null,
+                    validator: (v) => v!.isEmpty ? 'required'.tr : null,
                     onFieldSubmitted: (_) => _submit(),
                   ),
                   const SizedBox(height: 32),
@@ -146,7 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     child: Text(
-                      "LOGIN",
+                      'sign_in'.tr,
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,

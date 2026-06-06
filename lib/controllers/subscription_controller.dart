@@ -30,7 +30,7 @@ class SubscriptionController extends GetxController {
     error.value = null;
     try {
       if (!await _net.isOnline()) {
-        error.value = 'You are offline. Connect to load plans.';
+        error.value = 'offline_load_plans'.tr;
       } else {
         plans.assignAll(await _repo.getPlans());
       }

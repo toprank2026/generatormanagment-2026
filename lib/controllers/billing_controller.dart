@@ -122,7 +122,7 @@ class BillingController extends GetxController {
 
   Future<Receipt?> collectPayment(Subscriber sub, double amount) async {
     if (amount <= 0) {
-      Get.snackbar("Error", "Enter a valid amount");
+      Get.snackbar('error'.tr, 'enter_valid_amount'.tr);
       return null;
     }
 
@@ -133,7 +133,7 @@ class BillingController extends GetxController {
     // Allow overpayment? PRD says "validate amount <= remaining".
     // We strictly enforce unless admin allows (flag not implemented).
     if (amount > due) {
-      Get.snackbar("Error", "Amount exceeds due");
+      Get.snackbar('error'.tr, 'amount_exceeds_due'.tr);
       return null;
     }
 

@@ -39,9 +39,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFE3F2FD),
       appBar: AppBar(
-        title: const Text(
-          "Expenses",
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        title: Text(
+          'expenses'.tr,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
         backgroundColor: const Color(0xFF1565C0),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -91,9 +94,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     ),
                   ],
                 ),
-                const Text(
-                  "Total Expenses",
-                  style: TextStyle(color: Colors.white70),
+                Text(
+                  'total_expenses'.tr,
+                  style: const TextStyle(color: Colors.white70),
                 ),
                 const SizedBox(height: 8),
                 Obx(
@@ -121,9 +124,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  "Quick Add",
-                  style: TextStyle(
+                Text(
+                  'quick_add'.tr,
+                  style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     color: Colors.blueGrey,
                   ),
@@ -133,7 +136,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _QuickAddButton(
-                      label: "Fuel",
+                      label: 'expense_cat_fuel'.tr,
                       icon: Icons.local_gas_station,
                       color: Colors.orange,
                       onTap: () => _showAddExpenseDialog(
@@ -143,7 +146,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                       ),
                     ),
                     _QuickAddButton(
-                      label: "Oil",
+                      label: 'expense_cat_oil'.tr,
                       icon: Icons.water_drop,
                       color: Colors.black87,
                       onTap: () => _showAddExpenseDialog(
@@ -153,7 +156,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                       ),
                     ),
                     _QuickAddButton(
-                      label: "Maint.",
+                      label: 'expense_cat_maint_short'.tr,
                       icon: Icons.build,
                       color: Colors.blue,
                       onTap: () => _showAddExpenseDialog(
@@ -163,7 +166,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                       ),
                     ),
                     _QuickAddButton(
-                      label: "Other",
+                      label: 'expense_cat_other'.tr,
                       icon: Icons.more_horiz,
                       color: Colors.purple,
                       onTap: () => _showAddExpenseDialog(
@@ -188,9 +191,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    "Recent Transactions",
-                    style: TextStyle(
+                  Text(
+                    'recent_transactions'.tr,
+                    style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: Colors.blueGrey,
                     ),
@@ -203,7 +206,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                       if (controller.expenses.isEmpty) {
                         return Center(
                           child: Text(
-                            "No expenses for this month",
+                            'no_expenses_month'.tr,
                             style: TextStyle(color: Colors.grey[400]),
                           ),
                         );
@@ -251,7 +254,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                                 ),
                               ),
                               title: Text(
-                                ex.category,
+                                _categoryLabel(ex.category),
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -333,20 +336,28 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                "Add Expense",
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              Text(
+                'add_expense'.tr,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 20),
 
               DropdownButtonFormField<String>(
                 value: selectedCategory,
                 items: categories
-                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .map(
+                      (c) => DropdownMenuItem(
+                        value: c,
+                        child: Text(_categoryLabel(c)),
+                      ),
+                    )
                     .toList(),
                 onChanged: (val) => selectedCategory = val!,
                 decoration: InputDecoration(
-                  labelText: "Category",
+                  labelText: 'expense_category'.tr,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -360,7 +371,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   decimal: true,
                 ),
                 decoration: InputDecoration(
-                  labelText: "Amount",
+                  labelText: 'amount'.tr,
                   prefixText: "IQD ",
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -372,7 +383,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               TextField(
                 controller: noteCtrl,
                 decoration: InputDecoration(
-                  labelText: "Note (Optional)",
+                  labelText: 'note_optional'.tr,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -403,7 +414,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text("SAVE EXPENSE"),
+                  child: Text('save_expense'.tr),
                 ),
               ),
               // Keyboard padding
@@ -418,16 +429,35 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   void _confirmDelete(ExpenseController controller, String id) {
     Get.defaultDialog(
-      title: "Delete Expense?",
-      middleText: "This cannot be undone.",
-      textConfirm: "Delete",
-      textCancel: "Cancel",
+      title: 'delete_expense_title'.tr,
+      middleText: 'delete_expense_confirm'.tr,
+      textConfirm: 'delete'.tr,
+      textCancel: 'cancel'.tr,
       confirmTextColor: Colors.white,
       onConfirm: () {
         controller.deleteExpense(id);
         Get.back();
       },
     );
+  }
+
+  String _categoryLabel(String cat) {
+    switch (cat) {
+      case "Fuel":
+        return 'expense_cat_fuel'.tr;
+      case "Oil":
+        return 'expense_cat_oil'.tr;
+      case "Maintenance":
+        return 'expense_cat_maintenance'.tr;
+      case "Salaries":
+        return 'expense_cat_salaries'.tr;
+      case "Rent":
+        return 'expense_cat_rent'.tr;
+      case "Other":
+        return 'expense_cat_other'.tr;
+      default:
+        return cat;
+    }
   }
 
   Color _getCategoryColor(String cat) {

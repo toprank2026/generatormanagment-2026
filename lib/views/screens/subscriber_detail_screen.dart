@@ -11,6 +11,7 @@ import 'package:generatormanagment/utils/bluetooth_print_service.dart';
 import 'package:generatormanagment/data/repositories/user_repository.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
 import 'package:generatormanagment/views/screens/add_subscriber_screen.dart';
+import 'package:generatormanagment/views/screens/payment_history_screen.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 
 class SubscriberDetailScreen extends StatefulWidget {
@@ -90,6 +91,13 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
         elevation: 0,
         centerTitle: true,
         actions: [
+          IconButton(
+            tooltip: 'payment_history'.tr,
+            icon: const Icon(Icons.history),
+            onPressed: () => Get.to(
+              () => PaymentHistoryScreen(subscriber: widget.subscriber),
+            ),
+          ),
           Obx(
             () => auth.isAdmin
                 ? IconButton(
@@ -140,7 +148,7 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
                   Container(width: 1, height: 40, color: Colors.grey[200]),
                   _buildInfoItem(
                     Icons.phone,
-                    widget.subscriber.phone ?? "N/A",
+                    widget.subscriber.phone ?? 'no_phone'.tr,
                     'phone'.tr,
                   ),
                 ],
@@ -433,7 +441,7 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
-              "Month: ${controller.selectedMonth.value}",
+              "${'billing_month'.tr}: ${controller.selectedMonth.value}",
               style: const TextStyle(
                 color: Colors.blue,
                 fontWeight: FontWeight.bold,
@@ -477,8 +485,8 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
               );
               if (receipt != null) {
                 Get.snackbar(
-                  "Success",
-                  "Payment collected",
+                  'success'.tr,
+                  'payment_collected'.tr,
                   backgroundColor: Colors.green,
                   colorText: Colors.white,
                 );
@@ -518,8 +526,8 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
 
     if (settings.printerAddress.value.isNotEmpty) {
       Get.snackbar(
-        "Printing",
-        "Sending to ${settings.printerName.value}...",
+        'printing'.tr,
+        "${'sending_to'.tr} ${settings.printerName.value}...",
         duration: const Duration(seconds: 2),
       );
       final bluetoothService = BluetoothPrintService();

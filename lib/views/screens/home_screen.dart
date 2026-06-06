@@ -15,7 +15,7 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Dashboard"),
+        title: Text('dashboard'.tr),
         actions: [
           IconButton(
             icon: const Icon(Iconsax.logout),
@@ -27,11 +27,11 @@ class HomeScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text("Welcome to Moldati Owner App"),
+            Text('home_welcome'.tr),
             const SizedBox(height: 20),
             Obx(
               () => Text(
-                "Logged in as: ${auth.currentUser.value?.username ?? 'Unknown'}",
+                "${'home_logged_in_as'.tr} ${auth.currentUser.value?.username ?? 'Unknown'}",
               ),
             ),
           ],
@@ -48,38 +48,38 @@ class HomeScreen extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(Iconsax.home),
-              title: const Text("Home"),
+              title: Text('home'.tr),
               onTap: () => Get.back(),
             ),
             ListTile(
               leading: const Icon(Iconsax.box),
-              title: const Text("Boards"),
+              title: Text('boards'.tr),
               onTap: () {
                 Get.to(() => const BoardsScreen());
               },
             ),
             ListTile(
               leading: const Icon(Iconsax.people),
-              title: const Text("Users"),
+              title: Text('users'.tr),
               onTap: () {
                 Get.to(() => const SubscribersScreen());
               },
             ),
             ListTile(
               leading: const Icon(Iconsax.money),
-              title: const Text("Payment"),
+              title: Text('payments'.tr),
               onTap: () {
                 Get.to(() => const MonthlyPricingScreen());
               },
             ),
             ListTile(
               leading: const Icon(Iconsax.receipt),
-              title: const Text("Expenses"),
+              title: Text('expenses'.tr),
               onTap: () {},
             ),
             ListTile(
               leading: const Icon(Iconsax.setting),
-              title: const Text("Settings"),
+              title: Text('settings'.tr),
               onTap: () {},
             ),
           ],
