@@ -1,3 +1,4 @@
+import 'package:barcode/barcode.dart' as bc;
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
@@ -83,9 +84,10 @@ class BluetoothPrintService {
     await printArabicTable(rows);
     await Future.delayed(const Duration(milliseconds: 150));
 
-    // QR Code → opens this receipt's details in the admin panel.
+    // QR Code → opens this receipt's details in the admin panel. Rendered as an
+    // image (handles long URLs reliably, unlike the native QR command).
     try {
-      bluetooth.printQRcode(_receiptQrUrl(receipt), 220, 220, 1);
+      await _printQrImage(_receiptQrUrl(receipt));
       await Future.delayed(const Duration(milliseconds: 100));
     } catch (e) {
       bluetooth.printCustom("ID: ${receipt.uuid}", 1, 1);
@@ -121,11 +123,64 @@ class BluetoothPrintService {
     return receipt.uuid;
   }
 
-  /// Renders rows of [label, value] as a bordered 2-column table image and
-  /// prints it (Arabic-safe, like [printArabicText]).
+  /// Renders [data] as a QR code image (centred on the paper) and prints it.
+  /// Image path is reliable for long URLs where the native QR command garbles.
+  Future<void> _printQrImage(String data) async {
+    const double paper = 380;
+    const double qr = 240;
+    const double off = (paper - qr) / 2;
+    final code = bc.Barcode.qrCode(
+      errorCorrectLevel: bc.BarcodeQRCorrectionLevel.medium,
+    );
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 0, paper, qr + 8),
+      Paint()..color = Colors.white,
+    );
+    final black = Paint()..color = Colors.black;
+    for (final el in code.make(data, width: qr, height: qr)) {
+      if (el is bc.BarcodeBar && el.black) {
+        canvas.drawRect(
+          Rect.fromLTWH(off + el.left, 4 + el.top, el.width, el.height),
+          black,
+        );
+      }
+    }
+
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(paper.toInt(), (qr + 8).toInt());
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    if (byteData != null) {
+      await bluetooth.printImageBytes(byteData.buffer.asUint8List());
+    }
+  }
+
+  /// Prints rows of [label, value] as a 2-column table. Each ROW is rendered as
+  /// its own small image (same size class as [printArabicText], which prints
+  /// reliably) — a single large image was corrupting output on some printers.
   Future<void> printArabicTable(
     List<List<String>> rows, {
     double fontSize = 22,
+  }) async {
+    for (int i = 0; i < rows.length; i++) {
+      await _printTableRow(
+        rows[i][0],
+        rows[i].length > 1 ? rows[i][1] : '',
+        fontSize: fontSize,
+        top: i == 0,
+      );
+      await Future.delayed(const Duration(milliseconds: 80));
+    }
+  }
+
+  /// Renders one bordered 2-column row (label | value) to a small image.
+  Future<void> _printTableRow(
+    String label,
+    String value, {
+    double fontSize = 22,
+    bool top = false,
   }) async {
     const double width = 380;
     const double pad = 10;
@@ -133,7 +188,7 @@ class BluetoothPrintService {
     final double divX = width * 0.45; // left column (value) width
 
     TextPainter mk(String t, TextAlign align, double maxW) {
-      final tp = TextPainter(
+      return TextPainter(
         text: TextSpan(
           text: t,
           style: TextStyle(
@@ -145,52 +200,35 @@ class BluetoothPrintService {
         textDirection: ui.TextDirection.rtl,
         textAlign: align,
       )..layout(maxWidth: maxW);
-      return tp;
     }
 
-    final List<TextPainter> labels = [];
-    final List<TextPainter> values = [];
-    final List<double> heights = [];
-    for (final r in rows) {
-      final lp = mk(r[0], TextAlign.right, width - divX - pad * 2);
-      final vp = mk(r.length > 1 ? r[1] : '', TextAlign.left, divX - pad * 2);
-      labels.add(lp);
-      values.add(vp);
-      heights.add((lp.height > vp.height ? lp.height : vp.height) + rowGap * 2);
-    }
-    double total = 0;
-    for (final h in heights) {
-      total += h;
-    }
-    final int imgH = total.ceil() + 2;
+    final lp = mk(label, TextAlign.right, width - divX - pad * 2);
+    final vp = mk(value, TextAlign.left, divX - pad * 2);
+    final double rh = (lp.height > vp.height ? lp.height : vp.height) + rowGap * 2;
+    final int h = rh.ceil() + 1;
 
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     canvas.drawRect(
-      Rect.fromLTWH(0, 0, width, imgH.toDouble()),
+      Rect.fromLTWH(0, 0, width, h.toDouble()),
       Paint()..color = Colors.white,
     );
     final line = Paint()
       ..color = Colors.black
       ..strokeWidth = 1.4
       ..style = PaintingStyle.stroke;
-    canvas.drawRect(Rect.fromLTWH(1, 1, width - 2, imgH - 2.0), line);
+    final double hh = h.toDouble();
+    canvas.drawLine(const Offset(1, 0), Offset(1, hh), line); // left
+    canvas.drawLine(Offset(width - 1, 0), Offset(width - 1, hh), line); // right
+    canvas.drawLine(Offset(0, hh - 1), Offset(width, hh - 1), line); // bottom
+    canvas.drawLine(Offset(divX, 0), Offset(divX, hh), line); // divider
+    if (top) canvas.drawLine(const Offset(0, 1), const Offset(width, 1), line);
 
-    double y = 1;
-    for (int i = 0; i < rows.length; i++) {
-      final rh = heights[i];
-      canvas.drawLine(Offset(divX, y), Offset(divX, y + rh), line);
-      // label cell (right), value cell (left)
-      labels[i].paint(canvas, Offset(divX + pad, y + rowGap));
-      values[i].paint(canvas, Offset(pad, y + rowGap));
-      y += rh;
-      if (i < rows.length - 1) {
-        canvas.drawLine(Offset(0, y), Offset(width, y), line);
-      }
-    }
+    lp.paint(canvas, Offset(divX + pad, rowGap));
+    vp.paint(canvas, Offset(pad, rowGap));
 
     final picture = recorder.endRecording();
-    final img = await picture.toImage(width.toInt(), imgH);
+    final img = await picture.toImage(width.toInt(), h);
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
     if (byteData != null) {
       await bluetooth.printImageBytes(byteData.buffer.asUint8List());

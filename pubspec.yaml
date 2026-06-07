@@ -42,6 +42,7 @@ dependencies:
   uuid: ^4.5.1
   pdf: ^3.11.1
   printing: ^5.13.0
+  barcode: ^2.2.9   # render QR to an image for reliable thermal printing
   shared_preferences: ^2.5.1
   intl: ^0.19.0
   path_provider: ^2.1.5
