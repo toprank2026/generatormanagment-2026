@@ -10,7 +10,7 @@ const { HttpError } = require('../middleware/error');
 
 /** POST /api/auth/register (public) */
 const register = asyncHandler(async (req, res) => {
-  const { name, phone, username, password, device } = req.body;
+  const { name, generatorName, phone, username, password, device } = req.body;
 
   const exists = await User.findOne({ username: String(username).toLowerCase() });
   if (exists) {
@@ -20,6 +20,7 @@ const register = asyncHandler(async (req, res) => {
   const passwordHash = await bcrypt.hash(password, 10);
   const user = new User({
     name,
+    generatorName: generatorName || null,
     phone: phone || null,
     username,
     passwordHash,

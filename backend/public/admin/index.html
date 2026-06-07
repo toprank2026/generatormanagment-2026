@@ -488,6 +488,7 @@ var routes=[
   {re:/^#\/login$/, view:viewLogin, public:true},
   {re:/^#\/dashboard$/, view:viewDashboard},
   {re:/^#\/users$/, view:viewUsers},
+  {re:/^#\/users\/([^\/]+)\/data\/receipts\/detail\/([^\/]+)$/, view:viewReceiptDetail},
   {re:/^#\/users\/([^\/]+)\/data\/([^\/]+)\/by\/([^\/]+)\/([^\/]+)$/, view:viewUserEntity},
   {re:/^#\/users\/([^\/]+)\/data\/([^\/]+)$/, view:viewUserEntity},
   {re:/^#\/users\/([^\/]+)$/, view:viewUserDetail},
@@ -1014,6 +1015,10 @@ function viewUserEntity(id,entity,relField,relValue){
     label:drillCfg.label,
     onClick:function(r){ location.hash="#/users/"+id+"/data/"+drillCfg.entity+"/by/"+drillCfg.field+"/"+encodeURIComponent(r.localId); }
   }:null;
+  // Receipts: drill action opens the single-receipt details screen.
+  if(entity==="receipts"){
+    drill={label:"Details",onClick:function(r){ location.hash="#/users/"+id+"/data/receipts/detail/"+encodeURIComponent(r.localId); }};
+  }
 
   // Screen-local state (persists across in-screen reloads; resets when the
   // search query changes back to page 1).
@@ -1123,6 +1128,79 @@ function viewUserEntity(id,entity,relField,relValue){
     buildShell();   // re-render crumb with the real user name
   }).catch(function(){ /* keep placeholder crumb */ })
     .then(function(){ load(); });
+}
+
+/* Single receipt details (#/users/:id/data/receipts/detail/:localId). */
+function viewReceiptDetail(id,localId){
+  shell("#/users",loadingBlock("Loading…"));
+  Promise.all([
+    API.user(id).catch(function(){ return {user:{}}; }),
+    API.userData(id,"receipts",{localId:localId})
+  ]).then(function(res){
+    var u=(res[0]&&res[0].user)||res[0]||{};
+    var rec=normalizeList(res[1],"records")[0];
+    if(!rec){
+      var nf=el("div");
+      nf.appendChild(el("div",{class:"crumb"},[
+        el("a",{href:"#/users",text:"Users"}),el("span",{text:" / "}),
+        el("a",{href:"#/users/"+id+"/data/receipts",text:"Receipts"}),el("span",{text:" / not found"})
+      ]));
+      nf.appendChild(pageHead("Receipt"));
+      nf.appendChild(el("div",{class:"card"},[el("div",{class:"card-b"},[
+        el("div",{class:"empty"},[el("div",{class:"big",text:"🧾"}),"Receipt not found in the mirror."])
+      ])]));
+      shell("#/users",nf);
+      return;
+    }
+    var d=rec.data||{};
+    // Resolve the subscriber name (best-effort) then render.
+    API.userData(id,"subscribers",{localId:d.subscriber_id}).then(function(sres){
+      var sr=normalizeList(sres,"records")[0];
+      renderReceiptDetail(id,u,rec,d,sr?(sr.data||{}).name:null);
+    }).catch(function(){ renderReceiptDetail(id,u,rec,d,null); });
+  }).catch(function(err){
+    if(err.status===401) return;
+    shell("#/users",errorBlock(err,function(){ viewReceiptDetail(id,localId); }));
+  });
+}
+
+function renderReceiptDetail(id,u,rec,d,subName){
+  var content=el("div");
+  content.appendChild(el("div",{class:"crumb"},[
+    el("a",{href:"#/users",text:"Users"}),el("span",{text:" / "}),
+    el("a",{href:"#/users/"+id,text:(u.name||u.username||"user")}),el("span",{text:" / "}),
+    el("a",{href:"#/users/"+id+"/data/receipts",text:"Receipts"}),
+    el("span",{text:" / #"+(d.receipt_no!=null?d.receipt_no:"")})
+  ]));
+  content.appendChild(pageHead("Receipt #"+(d.receipt_no!=null?d.receipt_no:"—")));
+
+  var status=(d.status||"valid");
+  var badge=el("span",{class:"badge "+(status==="valid"?"green":"red")},[status]);
+  if(d.deleted||rec.deleted){ badge=el("span",{class:"badge gray"},["deleted"]); }
+
+  var kv=[];
+  function row(k,v){
+    kv.push(el("div",{class:"k",text:k}));
+    if(v&&v.nodeType) kv.push(el("div",{class:"v"},[v]));
+    else kv.push(el("div",{class:"v",text:(v==null||v==="")?"—":String(v)}));
+  }
+  row("Receipt #", d.receipt_no);
+  row("Status", badge);
+  row("Subscriber", subName||d.subscriber_id||"—");
+  row("Month", d.month);
+  row("Amps", d.amps_snapshot);
+  row("Price / amp", d.price_snapshot!=null?fmtPrice(d.price_snapshot):"—");
+  row("Paid", d.paid_amount!=null?fmtPrice(d.paid_amount):"—");
+  row("Remaining after", d.remaining_after!=null?fmtPrice(d.remaining_after):"—");
+  row("Issued at", d.issued_at?fmtDate(d.issued_at):"—");
+  row("Synced", fmtDate(rec.updatedAt));
+  row("Receipt ID", rec.localId);
+
+  content.appendChild(el("div",{class:"card"},[
+    el("div",{class:"card-h"},[el("span",{text:"Receipt details"})]),
+    el("div",{class:"card-b"},[el("div",{class:"kv"},kv)])
+  ]));
+  shell("#/users",content);
 }
 
 /* Set-plan modal (loads plans for the dropdown) */

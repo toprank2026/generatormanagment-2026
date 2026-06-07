@@ -15,6 +15,7 @@ class SignupScreen extends StatefulWidget {
 
 class _SignupScreenState extends State<SignupScreen> {
   final _name = TextEditingController();
+  final _generatorName = TextEditingController();
   final _phone = TextEditingController();
   final _password = TextEditingController();
   final _formKey = GlobalKey<FormState>();
@@ -24,6 +25,7 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   void dispose() {
     _name.dispose();
+    _generatorName.dispose();
     _phone.dispose();
     _password.dispose();
     super.dispose();
@@ -35,6 +37,7 @@ class _SignupScreenState extends State<SignupScreen> {
     final phone = _phone.text.trim();
     final result = await _auth.register(
       name: _name.text.trim(),
+      generatorName: _generatorName.text.trim(),
       phone: phone,
       username: phone, // phone is the login identifier
       password: _password.text,
@@ -84,6 +87,10 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                   const SizedBox(height: 32),
                   _field(_name, 'full_name'.tr, Icons.badge,
+                      validator: (v) =>
+                          v!.trim().isEmpty ? 'required'.tr : null),
+                  const SizedBox(height: 16),
+                  _field(_generatorName, 'generator_name'.tr, Icons.bolt,
                       validator: (v) =>
                           v!.trim().isEmpty ? 'required'.tr : null),
                   const SizedBox(height: 16),

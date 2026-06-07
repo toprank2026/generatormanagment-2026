@@ -37,6 +37,7 @@ const SubscriptionSchema = new Schema(
 const UserSchema = new Schema(
   {
     name: { type: String, required: true, trim: true },
+    generatorName: { type: String, default: null, trim: true },
     phone: { type: String, default: null, trim: true },
     username: {
       type: String,

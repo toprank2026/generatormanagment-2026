@@ -34,7 +34,7 @@ class DashboardScreen extends StatelessWidget {
             children: [
               // Banner / Carousel Placeholder
               Container(
-                height: 210,
+                height: 235,
                 width: double.infinity,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
@@ -69,20 +69,38 @@ class DashboardScreen extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                // Account (icon + data)
+                                // Generator name (business identity) — headline
+                                Obx(() {
+                                  final g = authController
+                                      .account.value?.generatorName;
+                                  return _bannerRow(
+                                    Icons.bolt,
+                                    Text(
+                                      (g == null || g.isEmpty)
+                                          ? 'generator_name'.tr
+                                          : g,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  );
+                                }),
+                                const SizedBox(height: 10),
+                                // Account / phone (icon + data)
                                 _bannerRow(
                                   Icons.phone_android,
                                   Obx(
                                     () => Text(
                                       authController
-                                              .currentUser.value?.username
-                                              .toUpperCase() ??
-                                          'ADMIN',
+                                              .currentUser.value?.username ??
+                                          '',
                                       style: const TextStyle(
                                         color: Colors.white,
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 1.0,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                       overflow: TextOverflow.ellipsis,
                                     ),

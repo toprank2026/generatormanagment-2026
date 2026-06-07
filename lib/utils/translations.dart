@@ -275,6 +275,7 @@ class Messages extends Translations {
       'backup': 'Backup',
       'backup_subtitle': 'Export, restore & cloud backup',
       'sync_subtitle': 'Status, pending changes & sync now',
+      'generator_name': 'Generator name',
     },
     'ar_AR': {
       'app_name': 'مالك مولداتي',
@@ -548,6 +549,7 @@ class Messages extends Translations {
       'backup': 'النسخ الاحتياطي',
       'backup_subtitle': 'تصدير واستعادة ونسخ سحابي',
       'sync_subtitle': 'الحالة والتغييرات المعلّقة والمزامنة الآن',
+      'generator_name': 'اسم المولدة',
     },
   };
 }

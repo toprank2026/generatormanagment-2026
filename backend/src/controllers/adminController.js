@@ -202,6 +202,10 @@ const getUserData = asyncHandler(async (req, res) => {
   const includeDeleted = req.query.includeDeleted === 'true';
   if (!includeDeleted) filter.deleted = false;
 
+  // Exact single-record fetch by localId (receipt-details screen).
+  const localId = typeof req.query.localId === 'string' ? req.query.localId.trim() : '';
+  if (localId) filter.localId = localId;
+
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   if (q) {
     const regex = { $regex: escapeRegex(q), $options: 'i' };

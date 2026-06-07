@@ -80,6 +80,7 @@ class DeviceBinding {
 class Account {
   final String id;
   final String name;
+  final String? generatorName;
   final String? phone;
   final String username;
   final String role; // owner | admin
@@ -91,6 +92,7 @@ class Account {
   Account({
     required this.id,
     required this.name,
+    this.generatorName,
     this.phone,
     required this.username,
     this.role = 'owner',
@@ -103,6 +105,7 @@ class Account {
   factory Account.fromJson(Map<String, dynamic> j) => Account(
         id: (j['id'] ?? j['_id'] ?? '').toString(),
         name: (j['name'] ?? j['username'] ?? j['email'] ?? '').toString(),
+        generatorName: j['generatorName'] as String?,
         phone: j['phone'] as String?,
         username: (j['username'] ?? j['email'] ?? '').toString(),
         role: (j['role'] ?? 'owner').toString(),
@@ -122,6 +125,7 @@ class Account {
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
+        'generatorName': generatorName,
         'phone': phone,
         'username': username,
         'role': role,

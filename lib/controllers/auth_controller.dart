@@ -140,6 +140,7 @@ class AuthController extends GetxController {
 
   Future<Map<String, dynamic>> register({
     required String name,
+    String? generatorName,
     String? phone,
     required String username,
     required String password,
@@ -153,6 +154,7 @@ class AuthController extends GetxController {
       }
       final result = await _auth.register(
         name: name,
+        generatorName: generatorName,
         phone: phone,
         username: username,
         password: password,

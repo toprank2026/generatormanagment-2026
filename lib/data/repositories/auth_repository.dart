@@ -21,6 +21,7 @@ class AuthRepository {
 
   Future<AuthResult> register({
     required String name,
+    String? generatorName,
     String? phone,
     required String username,
     required String password,
@@ -31,6 +32,7 @@ class AuthRepository {
       auth: false,
       body: {
         'name': name,
+        'generatorName': generatorName,
         'phone': phone,
         'username': username,
         'password': password,

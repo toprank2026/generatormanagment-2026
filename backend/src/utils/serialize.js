@@ -54,6 +54,7 @@ function serializeAccount(user, currentDeviceId) {
   return {
     id: String(user._id || user.id),
     name: user.name,
+    generatorName: user.generatorName || null,
     phone: user.phone || null,
     username: user.username,
     role: user.role || 'owner',
