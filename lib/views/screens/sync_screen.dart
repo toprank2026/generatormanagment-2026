@@ -101,6 +101,46 @@ class SyncScreen extends StatelessWidget {
                   ),
                 ),
               ),
+              const Divider(height: 1),
+              // Pull latest data (server -> device)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Obx(
+                  () => SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: syncController.isPulling.value
+                          ? null
+                          : () => syncController.pull(),
+                      icon: syncController.isPulling.value
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF1565C0),
+                              ),
+                            )
+                          : const Icon(Icons.cloud_download,
+                              color: Color(0xFF1565C0)),
+                      label: Text(
+                        'pull_latest'.tr,
+                        style: const TextStyle(color: Color(0xFF1565C0)),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: const BorderSide(color: Color(0xFF1565C0)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),

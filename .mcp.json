@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "dart": {
+      "type": "stdio",
+      "command": "dart",
+      "args": [
+        "mcp-server"
+      ],
+      "env": {}
+    },
+    "chrome-mcp-server": {
+      "type": "http",
+      "url": "http://127.0.0.1:12306/mcp"
+    }
+  }
+}
