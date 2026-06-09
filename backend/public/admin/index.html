@@ -397,7 +397,8 @@ var API={
   plans:function(){ return api("GET","/api/admin/plans"); },
   upsertPlan:function(body){ return api("PUT","/api/admin/plans",body); },
   deletePlan:function(code){ return api("DELETE","/api/admin/plans/"+encodeURIComponent(code)); },
-  publicReceipt:function(uuid){ return api("GET","/api/public/receipt/"+encodeURIComponent(uuid)); }
+  publicReceipt:function(uuid){ return api("GET","/api/public/receipt/"+encodeURIComponent(uuid)); },
+  publicReceiptHistory:function(uuid){ return api("GET","/api/public/receipt/"+encodeURIComponent(uuid)+"/history"); }
 };
 
 /* ============================================================
@@ -518,6 +519,7 @@ function pageHead(title,actions,crumb){
    ============================================================ */
 var routes=[
   {re:/^#\/login$/, view:viewLogin, public:true},
+  {re:/^#\/r\/([^\/]+)\/history$/, view:viewPublicReceiptHistory, public:true},
   {re:/^#\/r\/([^\/]+)$/, view:viewPublicReceipt, public:true},
   {re:/^#\/dashboard$/, view:viewDashboard},
   {re:/^#\/users$/, view:viewUsers},
@@ -1673,6 +1675,15 @@ function viewPublicReceipt(uuid){
     line("التاريخ", r.issued_at?fmtDate(r.issued_at):"—");
     line("الحالة", stBadge);
     card.appendChild(body);
+
+    // Button → the same subscriber's invoice history (public).
+    card.appendChild(el("div",{class:"r-body",style:"padding-top:0"},[
+      el("a",{
+        class:"btn ghost",
+        style:"width:100%;justify-content:center",
+        href:"#/r/"+encodeURIComponent(uuid)+"/history"
+      },["عرض الفواتير السابقة"])
+    ]));
   }).catch(function(err){
     clear(card);
     card.appendChild(el("div",{class:"r-head"},[
@@ -1683,6 +1694,67 @@ function viewPublicReceipt(uuid){
       el("div",{class:"big",text:"⚠️"}),
       el("div",{style:"font-weight:700;font-size:16px;color:var(--text)",text:"تعذّر التحقق"}),
       el("div",{style:"margin-top:6px",text:err.message||"حدث خطأ أثناء جلب الوصل."})
+    ]));
+  });
+}
+
+/* Public subscriber invoice history (#/r/:uuid/history) — no login. */
+function viewPublicReceiptHistory(uuid){
+  var app=$("#app"); clear(app);
+  var screen=el("div",{class:"receipt-screen"});
+  var card=el("div",{class:"receipt-card"});
+  card.appendChild(el("div",{class:"r-body",style:"padding:48px 22px"},[loadingBlock("جارٍ تحميل الفواتير…")]));
+  screen.appendChild(card);
+  app.appendChild(screen);
+
+  API.publicReceiptHistory(uuid).then(function(res){
+    clear(card);
+    var genName=(res&&res.generatorName)||"المولّدة";
+    card.appendChild(el("div",{class:"r-head"},[
+      el("h1",{class:"gen",text:genName}),
+      el("p",{class:"tag",text:"الفواتير السابقة"+((res&&res.subscriberName)?(" — "+res.subscriberName):"")})
+    ]));
+
+    var recs=(res&&res.receipts)||[];
+    if(!res||!res.found||!recs.length){
+      card.appendChild(el("div",{class:"r-empty"},[
+        el("div",{class:"big",text:"🧾"}),
+        el("div",{style:"font-weight:700;font-size:16px;color:var(--text)",text:"لا توجد فواتير"})
+      ]));
+    } else {
+      var body=el("div",{class:"r-body"});
+      recs.forEach(function(r){
+        var status=(r.status||"valid");
+        var st=el("span",{class:"badge "+(status==="valid"?"green":(status==="deleted"?"gray":"red"))},[
+          status==="valid"?"صالح":(status==="deleted"?"محذوف":status)
+        ]);
+        body.appendChild(el("a",{
+          class:"r-line",
+          style:"text-decoration:none;cursor:pointer;display:flex;align-items:center;gap:10px",
+          href: r.uuid?("#/r/"+encodeURIComponent(r.uuid)):"javascript:void(0)"
+        },[
+          el("span",{class:"k",style:"min-width:58px",text:"#"+(r.receipt_no!=null?r.receipt_no:"—")}),
+          el("span",{class:"v",style:"flex:1",text:(r.month||"—")}),
+          el("span",{class:"v",style:"font-weight:700",text:(r.paid_amount!=null?fmtPrice(r.paid_amount):"—")}),
+          st
+        ]));
+      });
+      card.appendChild(body);
+    }
+
+    card.appendChild(el("div",{class:"r-body",style:"padding-top:0"},[
+      el("a",{class:"btn ghost",style:"width:100%;justify-content:center",href:"#/r/"+encodeURIComponent(uuid)},["‹ رجوع للوصل"])
+    ]));
+  }).catch(function(err){
+    clear(card);
+    card.appendChild(el("div",{class:"r-head"},[
+      el("h1",{class:"gen",text:"المولّدة"}),
+      el("p",{class:"tag",text:"الفواتير السابقة"})
+    ]));
+    card.appendChild(el("div",{class:"r-empty"},[
+      el("div",{class:"big",text:"⚠️"}),
+      el("div",{style:"font-weight:700;font-size:16px;color:var(--text)",text:"تعذّر التحميل"}),
+      el("div",{style:"margin-top:6px",text:err.message||"حدث خطأ."})
     ]));
   });
 }

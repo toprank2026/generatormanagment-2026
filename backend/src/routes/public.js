@@ -7,5 +7,7 @@ const router = express.Router();
 
 // PUBLIC — no requireAuth. A scanned receipt QR is viewable without a login.
 router.get('/receipt/:uuid', ctrl.getPublicReceipt);
+// PUBLIC — the same subscriber's other invoices (history) for a scanned receipt.
+router.get('/receipt/:uuid/history', ctrl.getPublicReceiptHistory);
 
 module.exports = router;
