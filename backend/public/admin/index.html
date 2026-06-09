@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="color-scheme" content="light" />
-<title>Moldati Admin</title>
+<title>لوحة تحكم مولدتي</title>
 <style>
   :root{
     --primary:#1565C0;
@@ -28,7 +28,7 @@
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
   body{
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-family:"Segoe UI","Tahoma","Cairo",-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;
     background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;
     -webkit-font-smoothing:antialiased;
   }
@@ -73,30 +73,44 @@
   .check{display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer}
   .check input{width:16px;height:16px;cursor:pointer}
 
-  /* ---------- layout ---------- */
-  .topbar{
-    position:sticky;top:0;z-index:50;background:var(--primary);color:#fff;
-    display:flex;align-items:center;gap:18px;padding:0 20px;height:58px;box-shadow:var(--shadow);
+  /* ---------- layout (RTL vertical sidebar on the right) ---------- */
+  .sidebar{
+    position:fixed;top:0;right:0;bottom:0;z-index:50;width:248px;
+    background:var(--primary);color:#fff;display:flex;flex-direction:column;
+    box-shadow:var(--shadow);
   }
-  .topbar .brand{font-weight:800;font-size:18px;letter-spacing:.3px;display:flex;align-items:center;gap:9px}
-  .topbar .brand .logo{
-    width:28px;height:28px;border-radius:7px;background:#fff;color:var(--primary);
-    display:grid;place-items:center;font-weight:900;font-size:15px;
+  .sidebar .brand{
+    font-weight:800;font-size:18px;letter-spacing:.3px;display:flex;align-items:center;gap:10px;
+    padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.14);
   }
-  .topbar nav{display:flex;gap:4px;flex:1;flex-wrap:wrap}
-  .topbar nav a{
-    color:#e8f0fb;padding:7px 13px;border-radius:8px;font-weight:600;font-size:14px;
+  .sidebar .brand .logo{
+    width:30px;height:30px;border-radius:8px;background:#fff;color:var(--primary);
+    display:grid;place-items:center;font-weight:900;font-size:16px;
   }
-  .topbar nav a:hover{background:rgba(255,255,255,.14);text-decoration:none}
-  .topbar nav a.active{background:#fff;color:var(--primary)}
-  .topbar .me{font-size:13px;color:#dbe8f9;display:flex;align-items:center;gap:12px}
-  .topbar .me .who{opacity:.95}
-  .topbar .logout{
-    background:rgba(255,255,255,.16);border:none;color:#fff;padding:7px 13px;border-radius:8px;font-weight:600;
+  .sidebar nav{display:flex;flex-direction:column;gap:4px;padding:14px 12px;flex:1;overflow-y:auto}
+  .sidebar nav a{
+    color:#e8f0fb;padding:11px 14px;border-radius:9px;font-weight:600;font-size:14.5px;
+    display:flex;align-items:center;gap:9px;
   }
-  .topbar .logout:hover{background:rgba(255,255,255,.28)}
+  .sidebar nav a:hover{background:rgba(255,255,255,.14);text-decoration:none}
+  .sidebar nav a.active{background:#fff;color:var(--primary)}
+  .sidebar .foot{
+    border-top:1px solid rgba(255,255,255,.14);padding:14px 16px;display:flex;flex-direction:column;gap:10px;
+  }
+  .sidebar .foot .who{font-size:13.5px;color:#eef4fd;font-weight:600;word-break:break-word}
+  .sidebar .logout{
+    background:rgba(255,255,255,.16);border:none;color:#fff;padding:9px 13px;border-radius:8px;font-weight:600;text-align:center;
+  }
+  .sidebar .logout:hover{background:rgba(255,255,255,.28)}
 
-  .wrap{max-width:1080px;margin:0 auto;padding:24px 20px 60px}
+  .wrap{max-width:1080px;margin:0 auto;padding:24px 20px 60px;margin-right:248px}
+  @media(max-width:760px){
+    .sidebar{position:static;width:100%;flex-direction:column}
+    .sidebar nav{flex-direction:row;flex-wrap:wrap;overflow-x:auto}
+    .sidebar nav a{padding:8px 12px}
+    .sidebar .foot{flex-direction:row;align-items:center;justify-content:space-between}
+    .wrap{margin-right:0}
+  }
   .page-head{display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap}
   .page-head h1{font-size:22px;margin:0;font-weight:700;flex:1}
   .crumb{color:var(--muted);font-size:13px;margin-bottom:6px}
@@ -113,12 +127,12 @@
   .stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;position:relative;overflow:hidden}
   .stat .lbl{color:var(--muted);font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
   .stat .val{font-size:34px;font-weight:800;margin-top:6px;color:var(--primary)}
-  .stat .ic{position:absolute;right:14px;top:14px;width:40px;height:40px;border-radius:11px;background:var(--primary-light);display:grid;place-items:center;font-size:20px}
+  .stat .ic{position:absolute;left:14px;top:14px;width:40px;height:40px;border-radius:11px;background:var(--primary-light);display:grid;place-items:center;font-size:20px}
 
   /* ---------- table ---------- */
   .tbl-wrap{overflow-x:auto}
   table{width:100%;border-collapse:collapse}
-  th,td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--border);vertical-align:middle}
+  th,td{padding:12px 16px;text-align:right;border-bottom:1px solid var(--border);vertical-align:middle}
   th{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;background:#fafbfd}
   tbody tr:hover{background:#fafbff}
   tbody tr:last-child td{border-bottom:none}
@@ -142,8 +156,8 @@
   .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
   .toolbar .grow{flex:1}
   .search{position:relative;flex:1;min-width:200px;max-width:340px}
-  .search input{padding-left:36px}
-  .search .ic{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted)}
+  .search input{padding-right:36px}
+  .search .ic{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:var(--muted)}
 
   .empty{padding:48px 20px;text-align:center;color:var(--muted)}
   .empty .big{font-size:40px;margin-bottom:8px;opacity:.6}
@@ -164,13 +178,29 @@
   .login-card .tag{text-align:center;color:var(--muted);margin:0 0 24px;font-size:13px}
   .login-card .btn{width:100%;padding:12px;font-size:15px}
 
+  /* ---------- public receipt (standalone, no sidebar) ---------- */
+  .receipt-screen{min-height:100vh;display:grid;place-items:center;padding:24px;
+    background:linear-gradient(135deg,#1565C0 0%,#0d47a1 100%);}
+  .receipt-card{width:100%;max-width:430px;background:#fff;border-radius:16px;box-shadow:var(--shadow-lg);overflow:hidden}
+  .receipt-card .r-head{background:var(--primary);color:#fff;text-align:center;padding:22px 22px 18px}
+  .receipt-card .r-head .gen{font-size:21px;font-weight:800;margin:0}
+  .receipt-card .r-head .tag{font-size:13px;opacity:.92;margin:6px 0 0}
+  .receipt-card .r-no{text-align:center;font-size:17px;font-weight:800;color:var(--primary);padding:16px 22px 4px}
+  .receipt-card .r-body{padding:8px 22px 22px}
+  .receipt-card .r-line{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px dashed var(--border)}
+  .receipt-card .r-line:last-child{border-bottom:none}
+  .receipt-card .r-line .k{color:var(--muted);font-weight:600}
+  .receipt-card .r-line .v{font-weight:700;text-align:left}
+  .receipt-card .r-empty{padding:40px 22px;text-align:center;color:var(--muted)}
+  .receipt-card .r-empty .big{font-size:46px;margin-bottom:10px;opacity:.6}
+
   /* ---------- toast ---------- */
-  #toasts{position:fixed;right:18px;bottom:18px;z-index:1000;display:flex;flex-direction:column;gap:10px;max-width:340px}
+  #toasts{position:fixed;left:18px;bottom:18px;z-index:1000;display:flex;flex-direction:column;gap:10px;max-width:340px}
   .toast{background:#222b3a;color:#fff;padding:13px 16px;border-radius:10px;box-shadow:var(--shadow-lg);font-weight:600;font-size:13px;display:flex;gap:10px;align-items:flex-start;animation:slidein .25s ease}
   .toast.ok{background:#1b5e20}
   .toast.err{background:#b71c1c}
-  .toast .x{margin-left:auto;cursor:pointer;opacity:.8;font-weight:800}
-  @keyframes slidein{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+  .toast .x{margin-right:auto;cursor:pointer;opacity:.8;font-weight:800}
+  @keyframes slidein{from{transform:translateX(-20px);opacity:0}to{transform:translateX(0);opacity:1}}
 
   /* ---------- modal ---------- */
   .modal-back{position:fixed;inset:0;background:rgba(16,24,40,.5);z-index:500;display:grid;place-items:center;padding:20px;animation:fade .15s}
@@ -179,7 +209,7 @@
   .modal.wide{max-width:560px}
   @keyframes pop{from{transform:translateY(12px) scale(.98);opacity:0}to{transform:none;opacity:1}}
   .modal .m-h{padding:18px 20px;border-bottom:1px solid var(--border);font-weight:700;font-size:17px;display:flex;align-items:center}
-  .modal .m-h .x{margin-left:auto;background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer;line-height:1}
+  .modal .m-h .x{margin-right:auto;background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer;line-height:1}
   .modal .m-b{padding:20px}
   .modal .m-f{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
   .alert{padding:11px 14px;border-radius:9px;font-size:13px;font-weight:600;margin-bottom:14px}
@@ -188,8 +218,9 @@
 
   .muted{color:var(--muted)}
   .nowrap{white-space:nowrap}
-  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
-  .right{text-align:right}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;direction:ltr;text-align:right;unicode-bidi:plaintext}
+  .right{text-align:left}
+  td.right .acts{justify-content:flex-end}
   .mt0{margin-top:0}.mb0{margin-bottom:0}
   hr.sep{border:none;border-top:1px solid var(--border);margin:18px 0}
   .pill-actions{display:flex;gap:8px;flex-wrap:wrap}
@@ -283,24 +314,24 @@ function fmtDateShort(iso){
 function fmtPrice(p){
   if(p==null||p==="") return "—";
   var n=Number(p); if(isNaN(n)) return esc(p);
-  try{ return new Intl.NumberFormat().format(n)+" IQD"; }catch(e){ return n+" IQD"; }
+  try{ return new Intl.NumberFormat().format(n)+" د.ع"; }catch(e){ return n+" د.ع"; }
 }
 function statusBadge(status){
   var map={
-    active:["green","Active"], pending:["orange","Pending"],
-    rejected:["red","Rejected"], expired:["gray","Expired"], none:["gray","None"]
+    active:["green","نشط"], pending:["orange","قيد الانتظار"],
+    rejected:["red","مرفوض"], expired:["gray","منتهٍ"], none:["gray","لا يوجد"]
   };
-  var m=map[status]||["gray",status||"None"];
+  var m=map[status]||["gray",status||"لا يوجد"];
   return el("span",{class:"badge "+m[0]},[el("span",{class:"dot"}),m[1]]);
 }
 function roleBadge(role){
-  if(role==="admin") return el("span",{class:"badge blue"},["Admin"]);
-  return el("span",{class:"badge gray"},["Owner"]);
+  if(role==="admin") return el("span",{class:"badge blue"},["مدير"]);
+  return el("span",{class:"badge gray"},["مالك"]);
 }
 function blockedBadge(blocked){
   return blocked
-    ? el("span",{class:"badge red"},[el("span",{class:"dot"}),"Blocked"])
-    : el("span",{class:"badge green"},[el("span",{class:"dot"}),"Active"]);
+    ? el("span",{class:"badge red"},[el("span",{class:"dot"}),"محظور"])
+    : el("span",{class:"badge green"},[el("span",{class:"dot"}),"نشط"]);
 }
 
 /* ============================================================
@@ -322,7 +353,7 @@ function api(method,path,body,isForm){
     if(res.status===401){
       // session expired -> back to login
       doLogout(true);
-      throw new ApiError("Session expired. Please sign in again.",401);
+      throw new ApiError("انتهت الجلسة. يرجى تسجيل الدخول مرة أخرى.",401);
     }
     var ct=res.headers.get("content-type")||"";
     var pj = ct.indexOf("application/json")>=0 ? res.json().catch(function(){return null;}) : Promise.resolve(null);
@@ -335,7 +366,7 @@ function api(method,path,body,isForm){
     });
   },function(netErr){
     if(netErr instanceof ApiError) throw netErr;
-    throw new ApiError("Network error — could not reach the server.",0);
+    throw new ApiError("خطأ في الشبكة — تعذّر الوصول إلى الخادم.",0);
   });
 }
 var API={
@@ -365,7 +396,8 @@ var API={
   unbindDevice:function(id,deviceId){ return api("DELETE","/api/admin/users/"+encodeURIComponent(id)+"/devices/"+encodeURIComponent(deviceId)); },
   plans:function(){ return api("GET","/api/admin/plans"); },
   upsertPlan:function(body){ return api("PUT","/api/admin/plans",body); },
-  deletePlan:function(code){ return api("DELETE","/api/admin/plans/"+encodeURIComponent(code)); }
+  deletePlan:function(code){ return api("DELETE","/api/admin/plans/"+encodeURIComponent(code)); },
+  publicReceipt:function(uuid){ return api("GET","/api/public/receipt/"+encodeURIComponent(uuid)); }
 };
 
 /* ============================================================
@@ -380,7 +412,7 @@ function doLogout(silent){
   state.token=null; state.me=null;
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(ME_KEY);
-  if(!silent) toast("Signed out","ok");
+  if(!silent) toast("تم تسجيل الخروج","ok");
   if(location.hash!=="#/login") location.hash="#/login";
   else render();
 }
@@ -416,23 +448,23 @@ document.addEventListener("keydown",function(e){ if(e.key==="Escape") closeModal
 
 function confirmModal(opts){
   return new Promise(function(resolve){
-    var btn=el("button",{class:"btn "+(opts.danger?"danger":""),text:opts.confirmText||"Confirm",onclick:function(){
+    var btn=el("button",{class:"btn "+(opts.danger?"danger":""),text:opts.confirmText||"تأكيد",onclick:function(){
       btn.disabled=true; btn.appendChild(el("span",{class:"spin white",style:"margin-left:8px"}));
       Promise.resolve(opts.onConfirm?opts.onConfirm():true).then(function(ok){
         if(ok!==false) closeModal();
         resolve(ok!==false);
       }).catch(function(err){
-        btn.disabled=false; toast(err.message||"Failed","err"); resolve(false);
+        btn.disabled=false; toast(err.message||"فشل العملية","err"); resolve(false);
       });
     }});
     modal({
-      title:opts.title||"Confirm",
+      title:opts.title||"تأكيد",
       body:el("div",[
         opts.alert?el("div",{class:"alert "+(opts.alertType||"info"),text:opts.alert}):null,
         el("div",{html:opts.message||""})
       ]),
       footer:[
-        el("button",{class:"btn neutral",text:"Cancel",onclick:function(){ closeModal(); resolve(false); }}),
+        el("button",{class:"btn neutral",text:"إلغاء",onclick:function(){ closeModal(); resolve(false); }}),
         btn
       ]
     });
@@ -446,23 +478,23 @@ function shell(activeRoute,content){
   var app=$("#app"); clear(app);
   var me=state.me||{};
   var nav=el("nav",[
-    navLink("#/dashboard","Dashboard",activeRoute),
-    navLink("#/users","Users",activeRoute),
-    navLink("#/plans","Plans",activeRoute)
+    navLink("#/dashboard","لوحة التحكم",activeRoute),
+    navLink("#/users","المستخدمون",activeRoute),
+    navLink("#/plans","الخطط",activeRoute)
   ]);
-  var top=el("div",{class:"topbar"},[
-    el("div",{class:"brand"},[el("span",{class:"logo",text:"M"}),"Moldati Admin"]),
+  var side=el("div",{class:"sidebar"},[
+    el("div",{class:"brand"},[el("span",{class:"logo",text:"M"}),"إدارة مولدتي"]),
     nav,
-    el("div",{class:"me"},[
-      el("span",{class:"who",text:(me.name||me.username||"admin")}),
-      el("button",{class:"logout",text:"Logout",onclick:function(){
-        confirmModal({title:"Log out",message:"End your admin session?",confirmText:"Log out",onConfirm:function(){ doLogout(); return true; }});
+    el("div",{class:"foot"},[
+      el("span",{class:"who",text:(me.name||me.username||"المدير")}),
+      el("button",{class:"logout",text:"تسجيل الخروج",onclick:function(){
+        confirmModal({title:"تسجيل الخروج",message:"هل تريد إنهاء جلسة المدير؟",confirmText:"تسجيل الخروج",onConfirm:function(){ doLogout(); return true; }});
       }})
     ])
   ]);
   var wrap=el("div",{class:"wrap"});
   wrap.appendChild(content);
-  app.appendChild(top);
+  app.appendChild(side);
   app.appendChild(wrap);
 }
 function navLink(href,label,active){
@@ -470,7 +502,7 @@ function navLink(href,label,active){
   return el("a",{href:href,class:isActive?"active":"",text:label});
 }
 function loadingBlock(label){
-  return el("div",{class:"loading-box"},[el("span",{class:"spin lg"}),el("span",{text:label||"Loading…"})]);
+  return el("div",{class:"loading-box"},[el("span",{class:"spin lg"}),el("span",{text:label||"جارٍ التحميل…"})]);
 }
 function pageHead(title,actions,crumb){
   var head=el("div");
@@ -486,11 +518,13 @@ function pageHead(title,actions,crumb){
    ============================================================ */
 var routes=[
   {re:/^#\/login$/, view:viewLogin, public:true},
+  {re:/^#\/r\/([^\/]+)$/, view:viewPublicReceipt, public:true},
   {re:/^#\/dashboard$/, view:viewDashboard},
   {re:/^#\/users$/, view:viewUsers},
   {re:/^#\/users\/([^\/]+)\/data\/receipts\/detail\/([^\/]+)$/, view:viewReceiptDetail},
   {re:/^#\/users\/([^\/]+)\/data\/([^\/]+)\/by\/([^\/]+)\/([^\/]+)$/, view:viewUserEntity},
   {re:/^#\/users\/([^\/]+)\/data\/([^\/]+)$/, view:viewUserEntity},
+  {re:/^#\/users\/([^\/]+)\/sub\/([^\/]+)$/, view:viewUserStatement},
   {re:/^#\/users\/([^\/]+)$/, view:viewUserDetail},
   {re:/^#\/plans$/, view:viewPlans}
 ];
@@ -516,38 +550,38 @@ window.addEventListener("hashchange",render);
 function viewLogin(){
   var app=$("#app"); clear(app);
   var errBox=el("div");
-  var uIn=el("input",{class:"input",type:"text",placeholder:"username",autocomplete:"username"});
-  var pIn=el("input",{class:"input",type:"password",placeholder:"password",autocomplete:"current-password"});
-  var btn=el("button",{class:"btn",type:"submit",text:"Sign in"});
+  var uIn=el("input",{class:"input",type:"text",placeholder:"اسم المستخدم",autocomplete:"username"});
+  var pIn=el("input",{class:"input",type:"password",placeholder:"كلمة المرور",autocomplete:"current-password"});
+  var btn=el("button",{class:"btn",type:"submit",text:"تسجيل الدخول"});
 
   function submit(e){
     if(e) e.preventDefault();
     clear(errBox);
     var u=uIn.value.trim(), p=pIn.value;
-    if(!u||!p){ errBox.appendChild(el("div",{class:"alert err",text:"Enter username and password."})); return; }
-    btn.disabled=true; clear(btn); btn.appendChild(el("span",{class:"spin white"})); btn.appendChild(document.createTextNode(" Signing in…"));
+    if(!u||!p){ errBox.appendChild(el("div",{class:"alert err",text:"أدخل اسم المستخدم وكلمة المرور."})); return; }
+    btn.disabled=true; clear(btn); btn.appendChild(el("span",{class:"spin white"})); btn.appendChild(document.createTextNode(" جارٍ تسجيل الدخول…"));
     API.login(u,p).then(function(res){
-      if(!res||!res.token) throw new ApiError("No token returned by server.",0);
+      if(!res||!res.token) throw new ApiError("لم يُرجع الخادم أي رمز دخول.",0);
       var acc=res.account||{};
       if(acc.role && acc.role!=="admin"){
-        throw new ApiError("This account is not an administrator.",403,"NOT_ADMIN");
+        throw new ApiError("هذا الحساب ليس حساب مدير.",403,"NOT_ADMIN");
       }
       setSession(res.token,acc);
-      toast("Welcome, "+(acc.name||acc.username||"admin"),"ok");
+      toast("مرحبًا، "+(acc.name||acc.username||"المدير"),"ok");
       location.hash="#/dashboard";
     }).catch(function(err){
-      btn.disabled=false; clear(btn); btn.textContent="Sign in";
-      errBox.appendChild(el("div",{class:"alert err",text:err.message||"Login failed."}));
+      btn.disabled=false; clear(btn); btn.textContent="تسجيل الدخول";
+      errBox.appendChild(el("div",{class:"alert err",text:err.message||"فشل تسجيل الدخول."}));
     });
   }
 
   var form=el("form",{onsubmit:submit},[
     el("div",{class:"logo-big",text:"M"}),
-    el("h2",{text:"Moldati Admin"}),
-    el("p",{class:"tag",text:"Sign in to manage accounts & plans"}),
+    el("h2",{text:"إدارة مولدتي"}),
+    el("p",{class:"tag",text:"سجّل الدخول لإدارة الحسابات والخطط"}),
     errBox,
-    el("div",{class:"field"},[el("label",{text:"Username"}),uIn]),
-    el("div",{class:"field"},[el("label",{text:"Password"}),pIn]),
+    el("div",{class:"field"},[el("label",{text:"اسم المستخدم"}),uIn]),
+    el("div",{class:"field"},[el("label",{text:"كلمة المرور"}),pIn]),
     btn
   ]);
   app.appendChild(el("div",{class:"login-screen"},[el("div",{class:"login-card"},[form])]));
@@ -557,7 +591,7 @@ function viewLogin(){
    View: Dashboard
    ============================================================ */
 function viewDashboard(){
-  shell("#/dashboard",loadingBlock("Loading dashboard…"));
+  shell("#/dashboard",loadingBlock("جارٍ تحميل لوحة التحكم…"));
   Promise.all([API.users().catch(function(){return {users:[]};}), API.plans().catch(function(){return {plans:[]};})])
   .then(function(res){
     var users=normalizeList(res[0],"users");
@@ -574,32 +608,32 @@ function viewDashboard(){
     var activePlans=plans.filter(function(p){return p.active!==false;}).length;
 
     var content=el("div");
-    content.appendChild(pageHead("Dashboard"));
+    content.appendChild(pageHead("لوحة التحكم"));
     var grid=el("div",{class:"stats"});
-    grid.appendChild(statCard("Total Users",total,"👥"));
-    grid.appendChild(statCard("Active Subs",active,"✅"));
-    grid.appendChild(statCard("Pending Plans",pending,"⏳"));
-    grid.appendChild(statCard("Blocked",blocked,"🚫"));
-    grid.appendChild(statCard("Admins",admins,"🔑"));
-    grid.appendChild(statCard("Active Plans",activePlans+"/"+plans.length,"📦"));
+    grid.appendChild(statCard("إجمالي المستخدمين",total,"👥"));
+    grid.appendChild(statCard("اشتراكات نشطة",active,"✅"));
+    grid.appendChild(statCard("خطط قيد الانتظار",pending,"⏳"));
+    grid.appendChild(statCard("المحظورون",blocked,"🚫"));
+    grid.appendChild(statCard("المديرون",admins,"🔑"));
+    grid.appendChild(statCard("الخطط النشطة",activePlans+"/"+plans.length,"📦"));
     content.appendChild(grid);
 
     // pending requests panel
     var pendingUsers=users.filter(function(u){ return (u.subscription||{}).status==="pending"; });
     if(pendingUsers.length){
       var card=el("div",{class:"card"});
-      card.appendChild(el("div",{class:"card-h"},[el("span",{text:"Pending plan requests"}),el("span",{class:"sub",text:pendingUsers.length+" waiting"})]));
+      card.appendChild(el("div",{class:"card-h"},[el("span",{text:"طلبات الخطط قيد الانتظار"}),el("span",{class:"sub",text:pendingUsers.length+" بالانتظار"})]));
       var b=el("div",{class:"card-b flush"});
       var tw=el("div",{class:"tbl-wrap"});
       var tbl=el("table");
-      tbl.appendChild(el("thead",[el("tr",[th("User"),th("Username"),th("Requested plan"),th("")])]));
+      tbl.appendChild(el("thead",[el("tr",[th("المستخدم"),th("اسم المستخدم"),th("الخطة المطلوبة"),th("")])]));
       var tb=el("tbody");
       pendingUsers.forEach(function(u){
         tb.appendChild(el("tr",[
           el("td",[el("a",{href:"#/users/"+u.id,text:u.name||"—"})]),
           el("td",{class:"muted",text:u.username||"—"}),
           el("td",[planChip((u.subscription||{}).planCode)]),
-          el("td",{class:"right"},[el("a",{class:"btn sm ghost",href:"#/users/"+u.id,text:"Review"})])
+          el("td",{class:"right"},[el("a",{class:"btn sm ghost",href:"#/users/"+u.id,text:"مراجعة"})])
         ]));
       });
       tbl.appendChild(tb); tw.appendChild(tbl); b.appendChild(tw); card.appendChild(b);
@@ -608,10 +642,10 @@ function viewDashboard(){
 
     // quick links
     var quick=el("div",{class:"card"});
-    quick.appendChild(el("div",{class:"card-h"},["Quick actions"]));
+    quick.appendChild(el("div",{class:"card-h"},["إجراءات سريعة"]));
     quick.appendChild(el("div",{class:"card-b"},[el("div",{class:"pill-actions"},[
-      el("a",{class:"btn ghost",href:"#/users",text:"Manage users"}),
-      el("a",{class:"btn ghost",href:"#/plans",text:"Manage plans"})
+      el("a",{class:"btn ghost",href:"#/users",text:"إدارة المستخدمين"}),
+      el("a",{class:"btn ghost",href:"#/plans",text:"إدارة الخطط"})
     ])]));
     content.appendChild(quick);
 
@@ -638,7 +672,7 @@ function th(t){ return el("th",{text:t}); }
    View: Users list
    ============================================================ */
 function viewUsers(){
-  shell("#/users",loadingBlock("Loading users…"));
+  shell("#/users",loadingBlock("جارٍ تحميل المستخدمين…"));
   API.users().then(function(res){
     var users=normalizeList(res,"users");
     renderUsers(users);
@@ -649,17 +683,17 @@ function viewUsers(){
 
   function renderUsers(users){
     var content=el("div");
-    content.appendChild(pageHead("Users",[
-      el("button",{class:"btn",onclick:function(){ openCreateUser(viewUsers); }},["+ New user"])
+    content.appendChild(pageHead("المستخدمون",[
+      el("button",{class:"btn",onclick:function(){ openCreateUser(viewUsers); }},["+ مستخدم جديد"])
     ]));
 
-    var searchIn=el("input",{class:"input",type:"text",placeholder:"Search name, username, phone…"});
+    var searchIn=el("input",{class:"input",type:"text",placeholder:"ابحث بالاسم أو اسم المستخدم أو الهاتف…"});
     var statusSel=el("select",{class:"input",style:"max-width:170px"},[
-      optEl("","All statuses"),optEl("active","Active sub"),optEl("pending","Pending"),
-      optEl("none","No sub"),optEl("rejected","Rejected"),optEl("expired","Expired")
+      optEl("","كل الحالات"),optEl("active","اشتراك نشط"),optEl("pending","قيد الانتظار"),
+      optEl("none","بدون اشتراك"),optEl("rejected","مرفوض"),optEl("expired","منتهٍ")
     ]);
     var blockSel=el("select",{class:"input",style:"max-width:150px"},[
-      optEl("","All users"),optEl("active","Not blocked"),optEl("blocked","Blocked")
+      optEl("","كل المستخدمين"),optEl("active","غير محظور"),optEl("blocked","محظور")
     ]);
     var tbody=el("tbody");
 
@@ -678,18 +712,18 @@ function viewUsers(){
       });
       clear(tbody);
       if(!rows.length){
-        tbody.appendChild(el("tr",[el("td",{colspan:"6"},[el("div",{class:"empty"},[el("div",{class:"big",text:"🔍"}),"No users match your filters."])])]));
+        tbody.appendChild(el("tr",[el("td",{colspan:"6"},[el("div",{class:"empty"},[el("div",{class:"big",text:"🔍"}),"لا يوجد مستخدمون يطابقون عوامل التصفية."])])]));
         return;
       }
       rows.forEach(function(u){
         var sub=u.subscription||{};
         tbody.appendChild(el("tr",[
-          el("td",[el("a",{href:"#/users/"+u.id,text:u.name||"—",style:"font-weight:700"}),u.role==="admin"?el("span",{style:"margin-left:8px"},[roleBadge(u.role)]):null]),
+          el("td",[el("a",{href:"#/users/"+u.id,text:u.name||"—",style:"font-weight:700"}),u.role==="admin"?el("span",{style:"margin-right:8px"},[roleBadge(u.role)]):null]),
           el("td",{class:"muted nowrap",text:u.username||"—"}),
           el("td",{class:"muted nowrap",text:u.phone||"—"}),
-          el("td",[sub.planCode?planChip(sub.planCode):el("span",{class:"muted",text:"—"}),el("span",{style:"margin-left:6px"},[statusBadge(sub.status||"none")])]),
+          el("td",[sub.planCode?planChip(sub.planCode):el("span",{class:"muted",text:"—"}),el("span",{style:"margin-right:6px"},[statusBadge(sub.status||"none")])]),
           el("td",[blockedBadge(u.blocked)]),
-          el("td",{class:"right"},[el("a",{class:"btn sm ghost",href:"#/users/"+u.id,text:"Manage"})])
+          el("td",{class:"right"},[el("a",{class:"btn sm ghost",href:"#/users/"+u.id,text:"إدارة"})])
         ]));
       });
     }
@@ -702,14 +736,14 @@ function viewUsers(){
       el("div",{class:"search"},[el("span",{class:"ic",text:"🔍"}),searchIn]),
       statusSel, blockSel,
       el("div",{class:"grow"}),
-      el("span",{class:"muted",text:users.length+" total"})
+      el("span",{class:"muted",text:users.length+" إجمالاً"})
     ]));
 
     var card=el("div",{class:"card"});
     var b=el("div",{class:"card-b flush"});
     var tw=el("div",{class:"tbl-wrap"});
     var tbl=el("table");
-    tbl.appendChild(el("thead",[el("tr",[th("Name"),th("Username"),th("Phone"),th("Subscription"),th("Status"),th("")])]));
+    tbl.appendChild(el("thead",[el("tr",[th("الاسم"),th("اسم المستخدم"),th("الهاتف"),th("الاشتراك"),th("الحالة"),th("")])]));
     tbl.appendChild(tbody);
     tw.appendChild(tbl); b.appendChild(tw); card.appendChild(b);
     content.appendChild(card);
@@ -724,7 +758,7 @@ function optEl(v,t){ return el("option",{value:v,text:t}); }
    View: User detail
    ============================================================ */
 function viewUserDetail(id){
-  shell("#/users",loadingBlock("Loading user…"));
+  shell("#/users",loadingBlock("جارٍ تحميل المستخدم…"));
   loadUser();
 
   function loadUser(){
@@ -744,69 +778,69 @@ function viewUserDetail(id){
     var devices=u.devices||[];
     var content=el("div");
 
-    content.appendChild(el("div",{class:"crumb"},[el("a",{href:"#/users",text:"Users"}),el("span",{text:" / "+(u.name||u.username||"detail")})]));
+    content.appendChild(el("div",{class:"crumb"},[el("a",{href:"#/users",text:"المستخدمون"}),el("span",{text:" / "+(u.name||u.username||"التفاصيل")})]));
 
     var headActions=[];
     headActions.push(u.blocked
-      ? el("button",{class:"btn success",onclick:function(){ toggleBlock(u,false); }},["Unblock"])
-      : el("button",{class:"btn warn",onclick:function(){ toggleBlock(u,true); }},["Block"]));
-    headActions.push(el("button",{class:"btn danger ghost",onclick:function(){ deleteUser(u); }},["Delete"]));
-    content.appendChild(pageHead(u.name||u.username||"User",headActions));
+      ? el("button",{class:"btn success",onclick:function(){ toggleBlock(u,false); }},["إلغاء الحظر"])
+      : el("button",{class:"btn warn",onclick:function(){ toggleBlock(u,true); }},["حظر"]));
+    headActions.push(el("button",{class:"btn danger ghost",onclick:function(){ deleteUser(u); }},["حذف"]));
+    content.appendChild(pageHead(u.name||u.username||"مستخدم",headActions));
 
     // overview card
     var ov=el("div",{class:"card"});
-    ov.appendChild(el("div",{class:"card-h"},["Account"]));
+    ov.appendChild(el("div",{class:"card-h"},["الحساب"]));
     ov.appendChild(el("div",{class:"card-b"},[el("div",{class:"kv"},[
-      kv("Name",u.name||"—"),
-      kv("Username",u.username||"—"),
-      kv("Phone",u.phone||"—"),
-      kvNode("Role",roleBadge(u.role)),
-      kvNode("Status",blockedBadge(u.blocked)),
-      kv("Created",fmtDate(u.createdAt)),
-      kv("ID",u.id||"—")
+      kv("الاسم",u.name||"—"),
+      kv("اسم المستخدم",u.username||"—"),
+      kv("الهاتف",u.phone||"—"),
+      kvNode("الدور",roleBadge(u.role)),
+      kvNode("الحالة",blockedBadge(u.blocked)),
+      kv("تاريخ الإنشاء",fmtDate(u.createdAt)),
+      kv("المعرّف",u.id||"—")
     ])]));
     content.appendChild(ov);
 
     // subscription card
     var subCard=el("div",{class:"card"});
-    var subActions=el("div",{style:"margin-left:auto",class:"pill-actions"});
+    var subActions=el("div",{style:"margin-right:auto",class:"pill-actions"});
     if(sub.status==="pending"){
-      subActions.appendChild(el("button",{class:"btn sm success",onclick:function(){ approve(u); }},["Approve"]));
-      subActions.appendChild(el("button",{class:"btn sm danger ghost",onclick:function(){ reject(u); }},["Reject"]));
+      subActions.appendChild(el("button",{class:"btn sm success",onclick:function(){ approve(u); }},["موافقة"]));
+      subActions.appendChild(el("button",{class:"btn sm danger ghost",onclick:function(){ reject(u); }},["رفض"]));
     }
-    subActions.appendChild(el("button",{class:"btn sm ghost",onclick:function(){ openSetPlan(u); }},["Set plan"]));
-    subCard.appendChild(el("div",{class:"card-h"},[el("span",{text:"Subscription"}),subActions]));
+    subActions.appendChild(el("button",{class:"btn sm ghost",onclick:function(){ openSetPlan(u); }},["تعيين خطة"]));
+    subCard.appendChild(el("div",{class:"card-h"},[el("span",{text:"الاشتراك"}),subActions]));
     subCard.appendChild(el("div",{class:"card-b"},[
-      sub.status==="pending"?el("div",{class:"alert info",text:"This user requested plan \""+(sub.planCode||"?")+"\" and is awaiting approval."}):null,
+      sub.status==="pending"?el("div",{class:"alert info",text:"طلب هذا المستخدم الخطة \""+(sub.planCode||"؟")+"\" وهي بانتظار الموافقة."}):null,
       el("div",{class:"kv"},[
-        kvNode("Plan",sub.planCode?planChip(sub.planCode):el("span",{class:"muted",text:"None"})),
-        kvNode("Status",statusBadge(sub.status||"none")),
-        kv("Started",fmtDateShort(sub.startedAt)),
-        kv("Expires",fmtDateShort(sub.expiresAt))
+        kvNode("الخطة",sub.planCode?planChip(sub.planCode):el("span",{class:"muted",text:"لا يوجد"})),
+        kvNode("الحالة",statusBadge(sub.status||"none")),
+        kv("تاريخ البدء",fmtDateShort(sub.startedAt)),
+        kv("تاريخ الانتهاء",fmtDateShort(sub.expiresAt))
       ])
     ]));
     content.appendChild(subCard);
 
     // devices card
     var devCard=el("div",{class:"card"});
-    devCard.appendChild(el("div",{class:"card-h"},[el("span",{text:"Devices"}),el("span",{class:"sub",text:devices.length+" bound"})]));
+    devCard.appendChild(el("div",{class:"card-h"},[el("span",{text:"الأجهزة"}),el("span",{class:"sub",text:devices.length+" مرتبط"})]));
     var devBody=el("div",{class:"card-b flush"});
     if(!devices.length){
       devBody.className="card-b";
-      devBody.appendChild(el("div",{class:"empty"},[el("div",{class:"big",text:"📱"}),"No devices bound."]));
+      devBody.appendChild(el("div",{class:"empty"},[el("div",{class:"big",text:"📱"}),"لا توجد أجهزة مرتبطة."]));
     } else {
       var tw=el("div",{class:"tbl-wrap"});
       var tbl=el("table");
-      tbl.appendChild(el("thead",[el("tr",[th("Device"),th("Platform"),th("OS"),th("Last seen"),th("")])]));
+      tbl.appendChild(el("thead",[el("tr",[th("الجهاز"),th("النظام"),th("إصدار النظام"),th("آخر ظهور"),th("")])]));
       var tb=el("tbody");
       devices.forEach(function(d){
-        var name=(d.brand||d.model)?((d.brand?d.brand+" ":"")+(d.model||"")).trim():(d.deviceId||"Device");
+        var name=(d.brand||d.model)?((d.brand?d.brand+" ":"")+(d.model||"")).trim():(d.deviceId||"جهاز");
         tb.appendChild(el("tr",[
-          el("td",[el("div",{style:"font-weight:700"},[name,d.current?el("span",{class:"badge green",style:"margin-left:8px",text:"Current"}):null]),el("div",{class:"mono muted",text:d.deviceId||""})]),
+          el("td",[el("div",{style:"font-weight:700"},[name,d.current?el("span",{class:"badge green",style:"margin-right:8px",text:"الحالي"}):null]),el("div",{class:"mono muted",text:d.deviceId||""})]),
           el("td",{class:"muted",text:d.platform||"—"}),
           el("td",{class:"muted",text:d.osVersion||"—"}),
           el("td",{class:"muted nowrap",text:fmtDate(d.lastSeen||d.boundAt)}),
-          el("td",{class:"right"},[el("button",{class:"btn sm danger ghost",onclick:function(){ unbind(u,d); }},["Unbind"])])
+          el("td",{class:"right"},[el("button",{class:"btn sm danger ghost",onclick:function(){ unbind(u,d); }},["فك الارتباط"])])
         ]));
       });
       tbl.appendChild(tb); tw.appendChild(tbl); devBody.appendChild(tw);
@@ -823,44 +857,44 @@ function viewUserDetail(id){
   /* actions */
   function toggleBlock(u,blocked){
     confirmModal({
-      title:blocked?"Block user":"Unblock user",
-      message:blocked?"Block <b>"+esc(u.name||u.username)+"</b>? They will not be able to use the app.":"Restore access for <b>"+esc(u.name||u.username)+"</b>?",
-      danger:blocked, confirmText:blocked?"Block":"Unblock",
+      title:blocked?"حظر المستخدم":"إلغاء حظر المستخدم",
+      message:blocked?"حظر <b>"+esc(u.name||u.username)+"</b>؟ لن يتمكن من استخدام التطبيق.":"استعادة وصول <b>"+esc(u.name||u.username)+"</b>؟",
+      danger:blocked, confirmText:blocked?"حظر":"إلغاء الحظر",
       onConfirm:function(){
-        return API.setBlocked(u.id,blocked).then(function(){ toast(blocked?"User blocked":"User unblocked","ok"); reload(); });
+        return API.setBlocked(u.id,blocked).then(function(){ toast(blocked?"تم حظر المستخدم":"تم إلغاء حظر المستخدم","ok"); reload(); });
       }
     });
   }
   function deleteUser(u){
     confirmModal({
-      title:"Delete user", danger:true, confirmText:"Delete",
-      alert:"This permanently removes the account and its subscription.", alertType:"err",
-      message:"Delete <b>"+esc(u.name||u.username)+"</b>? This cannot be undone.",
+      title:"حذف المستخدم", danger:true, confirmText:"حذف",
+      alert:"هذا يحذف الحساب واشتراكه نهائيًا.", alertType:"err",
+      message:"حذف <b>"+esc(u.name||u.username)+"</b>؟ لا يمكن التراجع عن هذا الإجراء.",
       onConfirm:function(){
-        return API.deleteUser(u.id).then(function(){ toast("User deleted","ok"); location.hash="#/users"; });
+        return API.deleteUser(u.id).then(function(){ toast("تم حذف المستخدم","ok"); location.hash="#/users"; });
       }
     });
   }
   function approve(u){
     confirmModal({
-      title:"Approve plan", confirmText:"Approve",
-      message:"Approve the pending plan \""+esc((u.subscription||{}).planCode)+"\" for <b>"+esc(u.name||u.username)+"</b>?",
-      onConfirm:function(){ return API.approvePlan(u.id).then(function(){ toast("Plan approved","ok"); reload(); }); }
+      title:"الموافقة على الخطة", confirmText:"موافقة",
+      message:"الموافقة على الخطة المعلّقة \""+esc((u.subscription||{}).planCode)+"\" لـ <b>"+esc(u.name||u.username)+"</b>؟",
+      onConfirm:function(){ return API.approvePlan(u.id).then(function(){ toast("تمت الموافقة على الخطة","ok"); reload(); }); }
     });
   }
   function reject(u){
     confirmModal({
-      title:"Reject plan", danger:true, confirmText:"Reject",
-      message:"Reject the pending plan request for <b>"+esc(u.name||u.username)+"</b>?",
-      onConfirm:function(){ return API.rejectPlan(u.id).then(function(){ toast("Plan rejected","ok"); reload(); }); }
+      title:"رفض الخطة", danger:true, confirmText:"رفض",
+      message:"رفض طلب الخطة المعلّق لـ <b>"+esc(u.name||u.username)+"</b>؟",
+      onConfirm:function(){ return API.rejectPlan(u.id).then(function(){ toast("تم رفض الخطة","ok"); reload(); }); }
     });
   }
   function unbind(u,d){
     var name=((d.brand?d.brand+" ":"")+(d.model||"")).trim()||d.deviceId;
     confirmModal({
-      title:"Unbind device", danger:true, confirmText:"Unbind",
-      message:"Unbind <b>"+esc(name)+"</b> from this account?",
-      onConfirm:function(){ return API.unbindDevice(u.id,d.deviceId).then(function(){ toast("Device unbound","ok"); reload(); }); }
+      title:"فك ارتباط الجهاز", danger:true, confirmText:"فك الارتباط",
+      message:"فك ارتباط <b>"+esc(name)+"</b> من هذا الحساب؟",
+      onConfirm:function(){ return API.unbindDevice(u.id,d.deviceId).then(function(){ toast("تم فك ارتباط الجهاز","ok"); reload(); }); }
     });
   }
   function openSetPlan(u){
@@ -877,43 +911,47 @@ function kvNode(k,node){ return [el("div",{class:"k",text:k}),el("div",{class:"v
 // Per-entity column definitions: each col = {label, get(data)->node|string}.
 // Falls back to a generic localId + JSON view for unknown entities.
 var SYNC_ENTITIES=[
-  {value:"subscribers",label:"Subscribers"},
-  {value:"boards",label:"Boards"},
-  {value:"circuits",label:"Circuits"},
-  {value:"receipts",label:"Receipts"},
-  {value:"expenses",label:"Expenses"},
-  {value:"monthly_prices",label:"Monthly prices"}
+  {value:"subscribers",label:"المشتركون"},
+  {value:"boards",label:"اللوحات"},
+  {value:"circuits",label:"الجوزات"},
+  {value:"receipts",label:"الوصولات"},
+  {value:"expenses",label:"المصاريف"},
+  {value:"monthly_prices",label:"الأسعار الشهرية"}
 ];
+function entityLabel(value){
+  for(var i=0;i<SYNC_ENTITIES.length;i++){ if(SYNC_ENTITIES[i].value===value) return SYNC_ENTITIES[i].label; }
+  return value;
+}
 function syncText(v){ return (v==null||v==="")?"—":String(v); }
 var SYNC_COLUMNS={
   subscribers:[
-    {label:"Name",get:function(d){ return syncText(d.name); }},
-    {label:"Phone",get:function(d){ return syncText(d.phone); }},
-    {label:"Amps",get:function(d){ return syncText(d.amps); }}
+    {label:"الاسم",get:function(d){ return syncText(d.name); }},
+    {label:"الهاتف",get:function(d){ return syncText(d.phone); }},
+    {label:"الأمبيرات",get:function(d){ return syncText(d.amps); }}
   ],
   boards:[
-    {label:"Name",get:function(d){ return syncText(d.name); }},
-    {label:"Code",get:function(d){ return syncText(d.code); }}
+    {label:"الاسم",get:function(d){ return syncText(d.name); }},
+    {label:"الرمز",get:function(d){ return syncText(d.code); }}
   ],
   circuits:[
-    {label:"Name",get:function(d){ return syncText(d.name); }},
-    {label:"Board",get:function(d){ return syncText(d.board_id); }},
-    {label:"Phase",get:function(d){ return syncText(d.phase); }}
+    {label:"الاسم",get:function(d){ return syncText(d.name); }},
+    {label:"اللوحة",get:function(d){ return syncText(d.board_id); }},
+    {label:"الطور",get:function(d){ return syncText(d.phase); }}
   ],
   receipts:[
-    {label:"Receipt #",get:function(d){ return syncText(d.receipt_no); }},
-    {label:"Month",get:function(d){ return syncText(d.month); }},
-    {label:"Paid",get:function(d){ return d.paid_amount!=null?fmtPrice(d.paid_amount):"—"; }}
+    {label:"رقم الوصل",get:function(d){ return syncText(d.receipt_no); }},
+    {label:"الشهر",get:function(d){ return syncText(d.month); }},
+    {label:"المدفوع",get:function(d){ return d.paid_amount!=null?fmtPrice(d.paid_amount):"—"; }}
   ],
   expenses:[
-    {label:"Category",get:function(d){ return syncText(d.category); }},
-    {label:"Amount",get:function(d){ return d.amount!=null?fmtPrice(d.amount):"—"; }},
-    {label:"Note",get:function(d){ return syncText(d.note); }},
-    {label:"Date",get:function(d){ return d.date?fmtDateShort(d.date):"—"; }}
+    {label:"الفئة",get:function(d){ return syncText(d.category); }},
+    {label:"المبلغ",get:function(d){ return d.amount!=null?fmtPrice(d.amount):"—"; }},
+    {label:"ملاحظة",get:function(d){ return syncText(d.note); }},
+    {label:"التاريخ",get:function(d){ return d.date?fmtDateShort(d.date):"—"; }}
   ],
   monthly_prices:[
-    {label:"Month",get:function(d){ return syncText(d.month); }},
-    {label:"Price / amp",get:function(d){ return (d.price_per_amp!=null?fmtPrice(d.price_per_amp):(d.price!=null?fmtPrice(d.price):"—")); }}
+    {label:"الشهر",get:function(d){ return syncText(d.month); }},
+    {label:"سعر الأمبير",get:function(d){ return (d.price_per_amp!=null?fmtPrice(d.price_per_amp):(d.price!=null?fmtPrice(d.price):"—")); }}
   ]
 };
 
@@ -921,8 +959,8 @@ function syncedDataCard(u){
   // Separate screens: a grid of links, one per synced entity.
   var card=el("div",{class:"card"});
   card.appendChild(el("div",{class:"card-h"},[
-    el("span",{text:"Synced data"}),
-    el("span",{class:"sub",text:"open a screen per type"})
+    el("span",{text:"البيانات المتزامنة"}),
+    el("span",{class:"sub",text:"افتح شاشة لكل نوع"})
   ]));
   var b=el("div",{class:"card-b"});
   var grid=el("div",{class:"stats"});
@@ -934,7 +972,7 @@ function syncedDataCard(u){
     },[
       el("div",{class:"ic",text:"🗂️"}),
       el("div",{class:"lbl",text:e.label}),
-      el("div",{class:"val",style:"font-size:16px",text:"Open →"})
+      el("div",{class:"val",style:"font-size:16px",text:"فتح ←"})
     ]));
   });
   b.appendChild(grid);
@@ -947,14 +985,14 @@ function syncedDataCard(u){
 function renderSyncTable(entity,records,onDelete,drill){
   if(!records.length){
     return el("div",{class:"card"},[el("div",{class:"card-b"},[
-      el("div",{class:"empty"},[el("div",{class:"big",text:"🗂️"}),"No "+entity.replace(/_/g," ")+" synced yet."])
+      el("div",{class:"empty"},[el("div",{class:"big",text:"🗂️"}),"لا توجد بيانات ("+entityLabel(entity)+") متزامنة بعد."])
     ])]);
   }
   var hasActions=!!(onDelete||drill);
   function actionsCell(r){
     var btns=[];
-    if(drill) btns.push(el("button",{class:"btn sm ghost",onclick:function(){ drill.onClick(r); }},[drill.label+" ›"]));
-    if(onDelete) btns.push(el("button",{class:"btn sm danger ghost",onclick:function(){ onDelete(r); }},["Delete"]));
+    if(drill) btns.push(el("button",{class:"btn sm ghost",onclick:function(){ drill.onClick(r); }},["‹ "+drill.label]));
+    if(onDelete) btns.push(el("button",{class:"btn sm danger ghost",onclick:function(){ onDelete(r); }},["حذف"]));
     return el("td",{class:"right"},[el("div",{class:"acts"},btns)]);
   }
   var cols=SYNC_COLUMNS[entity];
@@ -963,8 +1001,8 @@ function renderSyncTable(entity,records,onDelete,drill){
   var tb=el("tbody");
   if(cols){
     var head=cols.map(function(c){ return th(c.label); });
-    head.push(th("Updated"));
-    if(hasActions) head.push(th("Actions"));
+    head.push(th("آخر تحديث"));
+    if(hasActions) head.push(th("الإجراءات"));
     tbl.appendChild(el("thead",[el("tr",head)]));
     records.forEach(function(r){
       var data=r.data||{};
@@ -977,8 +1015,8 @@ function renderSyncTable(entity,records,onDelete,drill){
       tb.appendChild(el("tr",cells));
     });
   } else {
-    var ghead=[th("Local ID"),th("Data"),th("Updated")];
-    if(hasActions) ghead.push(th("Actions"));
+    var ghead=[th("المعرّف المحلي"),th("البيانات"),th("آخر تحديث")];
+    if(hasActions) ghead.push(th("الإجراءات"));
     tbl.appendChild(el("thead",[el("tr",ghead)]));
     records.forEach(function(r){
       var gcells=[
@@ -997,9 +1035,9 @@ function renderSyncTable(entity,records,onDelete,drill){
 /* Drill-down: from a row of one entity to the related child entity, filtered by
    the parent's id. Subscriber→its receipts, board→its circuits, circuit→its subscribers. */
 var SYNC_DRILL={
-  subscribers:{label:"Receipts",entity:"receipts",field:"subscriber_id"},
-  boards:{label:"Circuits",entity:"circuits",field:"board_id"},
-  circuits:{label:"Subscribers",entity:"subscribers",field:"circuit_id"}
+  subscribers:{label:"الوصولات",entity:"receipts",field:"subscriber_id"},
+  boards:{label:"الجوزات",entity:"circuits",field:"board_id"},
+  circuits:{label:"المشتركون",entity:"subscribers",field:"circuit_id"}
 };
 
 /* Separate full screen for ONE user's synced entity (#/users/:id/data/:entity).
@@ -1015,9 +1053,13 @@ function viewUserEntity(id,entity,relField,relValue){
     label:drillCfg.label,
     onClick:function(r){ location.hash="#/users/"+id+"/data/"+drillCfg.entity+"/by/"+drillCfg.field+"/"+encodeURIComponent(r.localId); }
   }:null;
+  // Subscribers: drill action opens the per-subscriber statement (info + receipts).
+  if(entity==="subscribers"){
+    drill={label:"كشف الحساب",onClick:function(r){ location.hash="#/users/"+id+"/sub/"+encodeURIComponent(r.localId); }};
+  }
   // Receipts: drill action opens the single-receipt details screen.
   if(entity==="receipts"){
-    drill={label:"Details",onClick:function(r){ location.hash="#/users/"+id+"/data/receipts/detail/"+encodeURIComponent(r.localId); }};
+    drill={label:"التفاصيل",onClick:function(r){ location.hash="#/users/"+id+"/data/receipts/detail/"+encodeURIComponent(r.localId); }};
   }
 
   // Screen-local state (persists across in-screen reloads; resets when the
@@ -1030,13 +1072,13 @@ function viewUserEntity(id,entity,relField,relValue){
   var headWrap=el("div");        // pageHead (title + count)
   var tableWrap=el("div");       // table card
   var pagerWrap=el("div");       // pagination controls
-  var searchIn=el("input",{class:"input",type:"text",placeholder:"Search "+label+"…",value:""});
+  var searchIn=el("input",{class:"input",type:"text",placeholder:"ابحث في "+label+"…",value:""});
 
   function crumb(){
     return el("div",{class:"crumb"},[
-      el("a",{href:"#/users",text:"Users"}),el("span",{text:" / "}),
-      el("a",{href:"#/users/"+id,text:(user.name||user.username||"user")}),
-      el("span",{text:" / "+label+(relField?" (filtered)":"")})
+      el("a",{href:"#/users",text:"المستخدمون"}),el("span",{text:" / "}),
+      el("a",{href:"#/users/"+id,text:(user.name||user.username||"مستخدم")}),
+      el("span",{text:" / "+label+(relField?" (مُصفّى)":"")})
     ]);
   }
 
@@ -1049,9 +1091,9 @@ function viewUserEntity(id,entity,relField,relValue){
       el("div",{class:"grow"})
     ];
     if(relField){
-      toolbarKids.push(el("a",{class:"btn neutral sm",href:"#/users/"+id+"/data/"+entity},["‹ All "+label]));
+      toolbarKids.push(el("a",{class:"btn neutral sm",href:"#/users/"+id+"/data/"+entity},["كل "+label+" ›"]));
     }
-    toolbarKids.push(el("button",{class:"btn ghost",onclick:function(){ load(); }},["Refresh"]));
+    toolbarKids.push(el("button",{class:"btn ghost",onclick:function(){ load(); }},["تحديث"]));
     content.appendChild(el("div",{class:"toolbar"},toolbarKids));
     content.appendChild(tableWrap);
     content.appendChild(pagerWrap);
@@ -1068,20 +1110,20 @@ function viewUserEntity(id,entity,relField,relValue){
     var pages=Math.max(1,Math.ceil((total||0)/SYNC_PAGE_LIMIT));
     if(!total) return;
     pagerWrap.appendChild(el("div",{class:"toolbar",style:"justify-content:center;margin-top:6px"},[
-      el("button",{class:"btn neutral sm",disabled:page<=1?"":false,onclick:function(){ if(page>1){ page--; load(); } }},["‹ Prev"]),
-      el("span",{class:"muted",style:"min-width:120px;text-align:center",text:"Page "+page+" / "+pages}),
-      el("button",{class:"btn neutral sm",disabled:page>=pages?"":false,onclick:function(){ if(page<pages){ page++; load(); } }},["Next ›"])
+      el("button",{class:"btn neutral sm",disabled:page<=1?"":false,onclick:function(){ if(page>1){ page--; load(); } }},["السابق ›"]),
+      el("span",{class:"muted",style:"min-width:120px;text-align:center",text:"صفحة "+page+" / "+pages}),
+      el("button",{class:"btn neutral sm",disabled:page>=pages?"":false,onclick:function(){ if(page<pages){ page++; load(); } }},["‹ التالي"])
     ]));
   }
 
   function doDelete(r){
     confirmModal({
-      title:"Delete record", danger:true, confirmText:"Delete",
-      alert:"This removes the record from the synced mirror only (read-only copy).", alertType:"err",
-      message:"Delete this "+label.replace(/s$/,"").toLowerCase()+" record (<code>"+esc(r.localId||"")+"</code>)?",
+      title:"حذف السجل", danger:true, confirmText:"حذف",
+      alert:"هذا يحذف السجل من النسخة المتزامنة فقط (نسخة للقراءة فقط).", alertType:"err",
+      message:"حذف هذا السجل من ("+label+") — <code>"+esc(r.localId||"")+"</code>؟",
       onConfirm:function(){
         return API.deleteUserData(id,entity,r.localId).then(function(){
-          toast("Record deleted","ok");
+          toast("تم حذف السجل","ok");
           load();
         });
       }
@@ -1089,7 +1131,7 @@ function viewUserEntity(id,entity,relField,relValue){
   }
 
   function load(){
-    clear(tableWrap); tableWrap.appendChild(loadingBlock("Loading…"));
+    clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
     clear(pagerWrap);
     API.userData(id,entity,{q:query,page:page,limit:SYNC_PAGE_LIMIT,relField:relField,relValue:relValue}).then(function(res){
       var records=normalizeList(res,"records");
@@ -1122,7 +1164,7 @@ function viewUserEntity(id,entity,relField,relValue){
   // the breadcrumb, then load the first page of records.
   paintHead(0);
   buildShell();
-  clear(tableWrap); tableWrap.appendChild(loadingBlock("Loading…"));
+  clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
   API.user(id).then(function(res){
     user=(res&&res.user)||res||{};
     buildShell();   // re-render crumb with the real user name
@@ -1132,7 +1174,7 @@ function viewUserEntity(id,entity,relField,relValue){
 
 /* Single receipt details (#/users/:id/data/receipts/detail/:localId). */
 function viewReceiptDetail(id,localId){
-  shell("#/users",loadingBlock("Loading…"));
+  shell("#/users",loadingBlock("جارٍ التحميل…"));
   Promise.all([
     API.user(id).catch(function(){ return {user:{}}; }),
     API.userData(id,"receipts",{localId:localId})
@@ -1142,12 +1184,12 @@ function viewReceiptDetail(id,localId){
     if(!rec){
       var nf=el("div");
       nf.appendChild(el("div",{class:"crumb"},[
-        el("a",{href:"#/users",text:"Users"}),el("span",{text:" / "}),
-        el("a",{href:"#/users/"+id+"/data/receipts",text:"Receipts"}),el("span",{text:" / not found"})
+        el("a",{href:"#/users",text:"المستخدمون"}),el("span",{text:" / "}),
+        el("a",{href:"#/users/"+id+"/data/receipts",text:"الوصولات"}),el("span",{text:" / غير موجود"})
       ]));
-      nf.appendChild(pageHead("Receipt"));
+      nf.appendChild(pageHead("وصل"));
       nf.appendChild(el("div",{class:"card"},[el("div",{class:"card-b"},[
-        el("div",{class:"empty"},[el("div",{class:"big",text:"🧾"}),"Receipt not found in the mirror."])
+        el("div",{class:"empty"},[el("div",{class:"big",text:"🧾"}),"الوصل غير موجود في النسخة المتزامنة."])
       ])]));
       shell("#/users",nf);
       return;
@@ -1167,16 +1209,16 @@ function viewReceiptDetail(id,localId){
 function renderReceiptDetail(id,u,rec,d,subName){
   var content=el("div");
   content.appendChild(el("div",{class:"crumb"},[
-    el("a",{href:"#/users",text:"Users"}),el("span",{text:" / "}),
-    el("a",{href:"#/users/"+id,text:(u.name||u.username||"user")}),el("span",{text:" / "}),
-    el("a",{href:"#/users/"+id+"/data/receipts",text:"Receipts"}),
+    el("a",{href:"#/users",text:"المستخدمون"}),el("span",{text:" / "}),
+    el("a",{href:"#/users/"+id,text:(u.name||u.username||"مستخدم")}),el("span",{text:" / "}),
+    el("a",{href:"#/users/"+id+"/data/receipts",text:"الوصولات"}),
     el("span",{text:" / #"+(d.receipt_no!=null?d.receipt_no:"")})
   ]));
-  content.appendChild(pageHead("Receipt #"+(d.receipt_no!=null?d.receipt_no:"—")));
+  content.appendChild(pageHead("وصل رقم #"+(d.receipt_no!=null?d.receipt_no:"—")));
 
   var status=(d.status||"valid");
-  var badge=el("span",{class:"badge "+(status==="valid"?"green":"red")},[status]);
-  if(d.deleted||rec.deleted){ badge=el("span",{class:"badge gray"},["deleted"]); }
+  var badge=el("span",{class:"badge "+(status==="valid"?"green":"red")},[status==="valid"?"صالح":status]);
+  if(d.deleted||rec.deleted){ badge=el("span",{class:"badge gray"},["محذوف"]); }
 
   var kv=[];
   function row(k,v){
@@ -1184,66 +1226,213 @@ function renderReceiptDetail(id,u,rec,d,subName){
     if(v&&v.nodeType) kv.push(el("div",{class:"v"},[v]));
     else kv.push(el("div",{class:"v",text:(v==null||v==="")?"—":String(v)}));
   }
-  row("Receipt #", d.receipt_no);
-  row("Status", badge);
-  row("Subscriber", subName||d.subscriber_id||"—");
-  row("Month", d.month);
-  row("Amps", d.amps_snapshot);
-  row("Price / amp", d.price_snapshot!=null?fmtPrice(d.price_snapshot):"—");
-  row("Paid", d.paid_amount!=null?fmtPrice(d.paid_amount):"—");
-  row("Remaining after", d.remaining_after!=null?fmtPrice(d.remaining_after):"—");
-  row("Issued at", d.issued_at?fmtDate(d.issued_at):"—");
-  row("Synced", fmtDate(rec.updatedAt));
-  row("Receipt ID", rec.localId);
+  row("رقم الوصل", d.receipt_no);
+  row("الحالة", badge);
+  row("المشترك", subName||d.subscriber_id||"—");
+  row("الشهر", d.month);
+  row("الأمبيرات", d.amps_snapshot);
+  row("سعر الأمبير", d.price_snapshot!=null?fmtPrice(d.price_snapshot):"—");
+  row("المدفوع", d.paid_amount!=null?fmtPrice(d.paid_amount):"—");
+  row("المتبقي بعد الدفع", d.remaining_after!=null?fmtPrice(d.remaining_after):"—");
+  row("تاريخ الإصدار", d.issued_at?fmtDate(d.issued_at):"—");
+  row("تاريخ المزامنة", fmtDate(rec.updatedAt));
+  row("معرّف الوصل", rec.localId);
 
   content.appendChild(el("div",{class:"card"},[
-    el("div",{class:"card-h"},[el("span",{text:"Receipt details"})]),
+    el("div",{class:"card-h"},[el("span",{text:"تفاصيل الوصل"})]),
     el("div",{class:"card-b"},[el("div",{class:"kv"},kv)])
   ]));
   shell("#/users",content);
 }
 
+/* ============================================================
+   Subscriber statement (#/users/:id/sub/:subId)
+   Header card with the subscriber's info + a paginated payment-history
+   statement of their receipts. Reuses the receipts mirror endpoint filtered
+   by subscriber_id; each receipt row links to the receipt-details screen.
+   ============================================================ */
+function viewUserStatement(id,subId){
+  var query="";          // not searched here, kept for endpoint shape
+  var page=1;
+  var user={};
+  var sub=null;          // subscriber record data
+
+  var headWrap=el("div");   // crumb + page head
+  var infoWrap=el("div");   // subscriber info card
+  var tableWrap=el("div");  // statement table card
+  var pagerWrap=el("div");  // pagination controls
+
+  function crumb(){
+    return el("div",{class:"crumb"},[
+      el("a",{href:"#/users",text:"المستخدمون"}),el("span",{text:" / "}),
+      el("a",{href:"#/users/"+id,text:(user.name||user.username||"مستخدم")}),el("span",{text:" / "}),
+      el("a",{href:"#/users/"+id+"/data/subscribers",text:"المشتركون"}),
+      el("span",{text:" / "+((sub&&sub.name)||"كشف الحساب")})
+    ]);
+  }
+
+  function buildShell(){
+    var content=el("div");
+    content.appendChild(headWrap);
+    content.appendChild(infoWrap);
+    content.appendChild(tableWrap);
+    content.appendChild(pagerWrap);
+    shell("#/users",content);
+  }
+
+  function paintHead(){
+    clear(headWrap);
+    headWrap.appendChild(crumb());
+    headWrap.appendChild(pageHead("كشف حساب: "+((sub&&sub.name)||"مشترك"),[
+      el("a",{class:"btn neutral",href:"#/users/"+id+"/data/subscribers"},["كل المشتركين ›"]),
+      el("button",{class:"btn ghost",onclick:function(){ loadReceipts(); }},["تحديث"])
+    ]));
+  }
+
+  function paintInfo(){
+    clear(infoWrap);
+    var s=sub||{};
+    infoWrap.appendChild(el("div",{class:"card"},[
+      el("div",{class:"card-h"},[el("span",{text:"بيانات المشترك"})]),
+      el("div",{class:"card-b"},[el("div",{class:"kv"},[
+        kv("الاسم",s.name||"—"),
+        kv("الهاتف",s.phone||"—"),
+        kv("الأمبيرات",s.amps!=null?String(s.amps):"—"),
+        kv("اللوحة",s.board_id||"—"),
+        kv("الجوزة",s.circuit_id||"—"),
+        kvNode("الحالة", (s.status==="inactive"||s.active===false)
+          ? el("span",{class:"badge gray"},[el("span",{class:"dot"}),"غير نشط"])
+          : el("span",{class:"badge green"},[el("span",{class:"dot"}),"نشط"]))
+      ])])
+    ]));
+  }
+
+  function paintPager(total){
+    clear(pagerWrap);
+    var pages=Math.max(1,Math.ceil((total||0)/SYNC_PAGE_LIMIT));
+    if(!total) return;
+    pagerWrap.appendChild(el("div",{class:"toolbar",style:"justify-content:center;margin-top:6px"},[
+      el("button",{class:"btn neutral sm",disabled:page<=1?"":false,onclick:function(){ if(page>1){ page--; loadReceipts(); } }},["السابق ›"]),
+      el("span",{class:"muted",style:"min-width:120px;text-align:center",text:"صفحة "+page+" / "+pages}),
+      el("button",{class:"btn neutral sm",disabled:page>=pages?"":false,onclick:function(){ if(page<pages){ page++; loadReceipts(); } }},["‹ التالي"])
+    ]));
+  }
+
+  function statementTable(records){
+    if(!records.length){
+      return el("div",{class:"card"},[el("div",{class:"card-b"},[
+        el("div",{class:"empty"},[el("div",{class:"big",text:"🧾"}),"لا توجد وصولات لهذا المشترك بعد."])
+      ])]);
+    }
+    var tw=el("div",{class:"tbl-wrap"});
+    var tbl=el("table");
+    tbl.appendChild(el("thead",[el("tr",[
+      th("رقم الوصل"),th("الشهر"),th("المدفوع"),th("المتبقي"),th("التاريخ"),th("الحالة"),th("")
+    ])]));
+    var tb=el("tbody");
+    records.forEach(function(r){
+      var d=r.data||{};
+      var st=(d.deleted||r.deleted)?"deleted":(d.status||"valid");
+      var stBadge=st==="deleted"
+        ? el("span",{class:"badge gray"},["محذوف"])
+        : el("span",{class:"badge "+(st==="valid"?"green":"red")},[st==="valid"?"صالح":st]);
+      var detailHref="#/users/"+id+"/data/receipts/detail/"+encodeURIComponent(r.localId);
+      tb.appendChild(el("tr",[
+        el("td",[el("a",{href:detailHref,style:"font-weight:700",text:(d.receipt_no!=null?"#"+d.receipt_no:"—")})]),
+        el("td",{class:"nowrap",text:syncText(d.month)}),
+        el("td",{class:"nowrap",text:d.paid_amount!=null?fmtPrice(d.paid_amount):"—"}),
+        el("td",{class:"nowrap",text:d.remaining_after!=null?fmtPrice(d.remaining_after):"—"}),
+        el("td",{class:"muted nowrap",text:d.issued_at?fmtDateShort(d.issued_at):fmtDateShort(r.updatedAt)}),
+        el("td",[stBadge]),
+        el("td",{class:"right"},[el("a",{class:"btn sm ghost",href:detailHref},["التفاصيل ›"])])
+      ]));
+    });
+    tbl.appendChild(tb); tw.appendChild(tbl);
+    return el("div",{class:"card"},[
+      el("div",{class:"card-h"},[el("span",{text:"سجل المدفوعات"})]),
+      el("div",{class:"card-b flush"},[tw])
+    ]);
+  }
+
+  function loadReceipts(){
+    clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
+    clear(pagerWrap);
+    API.userData(id,"receipts",{q:query,page:page,limit:SYNC_PAGE_LIMIT,relField:"subscriber_id",relValue:subId}).then(function(res){
+      var records=normalizeList(res,"records");
+      var total=(res&&typeof res.total==="number")?res.total:records.length;
+      if(res&&res.page) page=res.page;
+      paintPager(total);
+      clear(tableWrap);
+      tableWrap.appendChild(statementTable(records));
+    }).catch(function(err){
+      if(err.status===401) return;
+      clear(tableWrap); tableWrap.appendChild(errorBlock(err,loadReceipts));
+    });
+  }
+
+  // Initial render: placeholder shell, then fetch user + subscriber, then receipts.
+  paintHead();
+  paintInfo();
+  buildShell();
+  clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
+  Promise.all([
+    API.user(id).catch(function(){ return {user:{}}; }),
+    API.userData(id,"subscribers",{localId:subId}).catch(function(){ return {records:[]}; })
+  ]).then(function(res){
+    user=(res[0]&&res[0].user)||res[0]||{};
+    var sr=normalizeList(res[1],"records")[0];
+    sub=sr?(sr.data||{}):{};
+    paintHead();
+    paintInfo();
+    buildShell();
+    loadReceipts();
+  }).catch(function(err){
+    if(err.status===401) return;
+    clear(tableWrap); tableWrap.appendChild(errorBlock(err,function(){ viewUserStatement(id,subId); }));
+  });
+}
+
 /* Set-plan modal (loads plans for the dropdown) */
 function setPlanModal(u,onDone){
   var sub=u.subscription||{};
-  var planSel=el("select",{class:"input"},[el("option",{value:"",text:"Loading plans…"})]);
+  var planSel=el("select",{class:"input"},[el("option",{value:"",text:"جارٍ تحميل الخطط…"})]);
   var statusSel=el("select",{class:"input"},[
-    optEl("active","Active"),optEl("pending","Pending"),optEl("expired","Expired"),optEl("rejected","Rejected"),optEl("none","None")
+    optEl("active","نشط"),optEl("pending","قيد الانتظار"),optEl("expired","منتهٍ"),optEl("rejected","مرفوض"),optEl("none","لا يوجد")
   ]);
   statusSel.value=sub.status&&sub.status!=="none"?(["active","pending","expired","rejected","none"].indexOf(sub.status)>=0?sub.status:"active"):"active";
   var errBox=el("div");
-  var saveBtn=el("button",{class:"btn",text:"Save",onclick:function(){
+  var saveBtn=el("button",{class:"btn",text:"حفظ",onclick:function(){
     var code=planSel.value;
-    if(!code){ clear(errBox); errBox.appendChild(el("div",{class:"alert err",text:"Choose a plan."})); return; }
+    if(!code){ clear(errBox); errBox.appendChild(el("div",{class:"alert err",text:"اختر خطة."})); return; }
     saveBtn.disabled=true; clear(saveBtn); saveBtn.appendChild(el("span",{class:"spin white"}));
     API.setPlan(u.id,code,statusSel.value).then(function(){
-      toast("Plan updated","ok"); closeModal(); if(onDone) onDone();
+      toast("تم تحديث الخطة","ok"); closeModal(); if(onDone) onDone();
     }).catch(function(err){
-      saveBtn.disabled=false; clear(saveBtn); saveBtn.textContent="Save";
+      saveBtn.disabled=false; clear(saveBtn); saveBtn.textContent="حفظ";
       clear(errBox); errBox.appendChild(el("div",{class:"alert err",text:err.message}));
     });
   }});
 
   modal({
-    title:"Set plan",
+    title:"تعيين خطة",
     body:el("div",[
       errBox,
-      el("div",{class:"field"},[el("label",{text:"Plan"}),planSel]),
-      el("div",{class:"field"},[el("label",{text:"Status"}),statusSel])
+      el("div",{class:"field"},[el("label",{text:"الخطة"}),planSel]),
+      el("div",{class:"field"},[el("label",{text:"الحالة"}),statusSel])
     ]),
-    footer:[el("button",{class:"btn neutral",text:"Cancel",onclick:closeModal}),saveBtn]
+    footer:[el("button",{class:"btn neutral",text:"إلغاء",onclick:closeModal}),saveBtn]
   });
 
   API.plans().then(function(res){
     var plans=normalizeList(res,"plans");
     clear(planSel);
-    if(!plans.length){ planSel.appendChild(el("option",{value:"",text:"No plans available"})); return; }
+    if(!plans.length){ planSel.appendChild(el("option",{value:"",text:"لا توجد خطط متاحة"})); return; }
     plans.forEach(function(p){
       planSel.appendChild(el("option",{value:p.code,text:p.name?(p.name+" ("+p.code+")"):p.code}));
     });
     if(sub.planCode) planSel.value=sub.planCode;
   }).catch(function(err){
-    clear(planSel); planSel.appendChild(el("option",{value:"",text:"Failed to load plans"}));
+    clear(planSel); planSel.appendChild(el("option",{value:"",text:"تعذّر تحميل الخطط"}));
     clear(errBox); errBox.appendChild(el("div",{class:"alert err",text:err.message}));
   });
 }
@@ -1252,13 +1441,13 @@ function setPlanModal(u,onDone){
    Create user modal
    ============================================================ */
 function openCreateUser(onDone){
-  var name=el("input",{class:"input",type:"text",placeholder:"Owner name"});
-  var username=el("input",{class:"input",type:"text",placeholder:"unique username",autocomplete:"off"});
-  var phone=el("input",{class:"input",type:"text",placeholder:"optional"});
-  var pass=el("input",{class:"input",type:"password",placeholder:"password",autocomplete:"new-password"});
-  var roleSel=el("select",{class:"input"},[optEl("owner","Owner"),optEl("admin","Admin")]);
+  var name=el("input",{class:"input",type:"text",placeholder:"اسم المالك"});
+  var username=el("input",{class:"input",type:"text",placeholder:"اسم مستخدم فريد",autocomplete:"off"});
+  var phone=el("input",{class:"input",type:"text",placeholder:"اختياري"});
+  var pass=el("input",{class:"input",type:"password",placeholder:"كلمة المرور",autocomplete:"new-password"});
+  var roleSel=el("select",{class:"input"},[optEl("owner","مالك"),optEl("admin","مدير")]);
   var errBox=el("div");
-  var saveBtn=el("button",{class:"btn",text:"Create",onclick:function(){
+  var saveBtn=el("button",{class:"btn",text:"إنشاء",onclick:function(){
     clear(errBox);
     var body={
       name:name.value.trim(), username:username.value.trim(),
@@ -1266,31 +1455,31 @@ function openCreateUser(onDone){
     };
     if(phone.value.trim()) body.phone=phone.value.trim();
     if(!body.name||!body.username||!body.password){
-      errBox.appendChild(el("div",{class:"alert err",text:"Name, username and password are required."})); return;
+      errBox.appendChild(el("div",{class:"alert err",text:"الاسم واسم المستخدم وكلمة المرور حقول مطلوبة."})); return;
     }
     saveBtn.disabled=true; clear(saveBtn); saveBtn.appendChild(el("span",{class:"spin white"}));
     API.createUser(body).then(function(){
-      toast("User created","ok"); closeModal(); if(onDone) onDone();
+      toast("تم إنشاء المستخدم","ok"); closeModal(); if(onDone) onDone();
     }).catch(function(err){
-      saveBtn.disabled=false; clear(saveBtn); saveBtn.textContent="Create";
+      saveBtn.disabled=false; clear(saveBtn); saveBtn.textContent="إنشاء";
       errBox.appendChild(el("div",{class:"alert err",text:err.message}));
     });
   }});
   modal({
-    title:"Create user", wide:true,
+    title:"إنشاء مستخدم", wide:true,
     body:el("div",[
       errBox,
       el("div",{class:"row"},[
-        el("div",{class:"field"},[el("label",{text:"Name"}),name]),
-        el("div",{class:"field"},[el("label",{text:"Username"}),username])
+        el("div",{class:"field"},[el("label",{text:"الاسم"}),name]),
+        el("div",{class:"field"},[el("label",{text:"اسم المستخدم"}),username])
       ]),
       el("div",{class:"row"},[
-        el("div",{class:"field"},[el("label",{text:"Phone"}),phone]),
-        el("div",{class:"field"},[el("label",{text:"Role"}),roleSel])
+        el("div",{class:"field"},[el("label",{text:"الهاتف"}),phone]),
+        el("div",{class:"field"},[el("label",{text:"الدور"}),roleSel])
       ]),
-      el("div",{class:"field"},[el("label",{text:"Password"}),pass])
+      el("div",{class:"field"},[el("label",{text:"كلمة المرور"}),pass])
     ]),
-    footer:[el("button",{class:"btn neutral",text:"Cancel",onclick:closeModal}),saveBtn]
+    footer:[el("button",{class:"btn neutral",text:"إلغاء",onclick:closeModal}),saveBtn]
   });
 }
 
@@ -1298,7 +1487,7 @@ function openCreateUser(onDone){
    View: Plans
    ============================================================ */
 function viewPlans(){
-  shell("#/plans",loadingBlock("Loading plans…"));
+  shell("#/plans",loadingBlock("جارٍ تحميل الخطط…"));
   API.plans().then(function(res){
     var plans=normalizeList(res,"plans");
     renderPlans(plans);
@@ -1309,31 +1498,31 @@ function viewPlans(){
 
   function renderPlans(plans){
     var content=el("div");
-    content.appendChild(pageHead("Plans",[
-      el("button",{class:"btn",onclick:function(){ openPlanModal(null,viewPlans); }},["+ New plan"])
+    content.appendChild(pageHead("الخطط",[
+      el("button",{class:"btn",onclick:function(){ openPlanModal(null,viewPlans); }},["+ خطة جديدة"])
     ]));
 
     var card=el("div",{class:"card"});
     var b=el("div",{class:"card-b flush"});
     if(!plans.length){
       b.className="card-b";
-      b.appendChild(el("div",{class:"empty"},[el("div",{class:"big",text:"📦"}),"No plans yet. Create your first plan."]));
+      b.appendChild(el("div",{class:"empty"},[el("div",{class:"big",text:"📦"}),"لا توجد خطط بعد. أنشئ خطتك الأولى."]));
     } else {
       var tw=el("div",{class:"tbl-wrap"});
       var tbl=el("table");
-      tbl.appendChild(el("thead",[el("tr",[th("Code"),th("Name"),th("Duration"),th("Max devices"),th("Price"),th("Active"),th("")])]));
+      tbl.appendChild(el("thead",[el("tr",[th("الرمز"),th("الاسم"),th("المدة"),th("أقصى عدد أجهزة"),th("السعر"),th("نشطة"),th("")])]));
       var tb=el("tbody");
       plans.forEach(function(p){
         tb.appendChild(el("tr",[
           el("td",[el("span",{class:"badge blue",text:p.code})]),
           el("td",{style:"font-weight:700"},[p.name||"—"]),
-          el("td",{class:"muted",text:(p.durationDays!=null?p.durationDays+" days":"—")}),
+          el("td",{class:"muted",text:(p.durationDays!=null?p.durationDays+" يوم":"—")}),
           el("td",{class:"muted",text:(p.maxDevices!=null?String(p.maxDevices):"—")}),
           el("td",{class:"muted nowrap",text:fmtPrice(p.price)}),
-          el("td",[p.active!==false?el("span",{class:"badge green",text:"Active"}):el("span",{class:"badge gray",text:"Inactive"})]),
+          el("td",[p.active!==false?el("span",{class:"badge green",text:"نشطة"}):el("span",{class:"badge gray",text:"غير نشطة"})]),
           el("td",{class:"right"},[el("div",{class:"acts",style:"justify-content:flex-end"},[
-            el("button",{class:"btn sm ghost",onclick:function(){ openPlanModal(p,viewPlans); }},["Edit"]),
-            el("button",{class:"btn sm danger ghost",onclick:function(){ deletePlan(p); }},["Delete"])
+            el("button",{class:"btn sm ghost",onclick:function(){ openPlanModal(p,viewPlans); }},["تعديل"]),
+            el("button",{class:"btn sm danger ghost",onclick:function(){ deletePlan(p); }},["حذف"])
           ])])
         ]));
       });
@@ -1346,9 +1535,9 @@ function viewPlans(){
 
   function deletePlan(p){
     confirmModal({
-      title:"Delete plan", danger:true, confirmText:"Delete",
-      message:"Delete plan <b>"+esc(p.name||p.code)+"</b> (<code>"+esc(p.code)+"</code>)?",
-      onConfirm:function(){ return API.deletePlan(p.code).then(function(){ toast("Plan deleted","ok"); viewPlans(); }); }
+      title:"حذف الخطة", danger:true, confirmText:"حذف",
+      message:"حذف الخطة <b>"+esc(p.name||p.code)+"</b> (<code>"+esc(p.code)+"</code>)؟",
+      onConfirm:function(){ return API.deletePlan(p.code).then(function(){ toast("تم حذف الخطة","ok"); viewPlans(); }); }
     });
   }
 }
@@ -1356,19 +1545,19 @@ function viewPlans(){
 function openPlanModal(existing,onDone){
   var isEdit=!!existing;
   var p=existing||{};
-  var code=el("input",{class:"input",type:"text",placeholder:"e.g. monthly",value:p.code||""});
+  var code=el("input",{class:"input",type:"text",placeholder:"مثال: monthly",value:p.code||""});
   if(isEdit){ code.disabled=true; code.style.background="#f4f6fa"; }
-  var name=el("input",{class:"input",type:"text",placeholder:"e.g. Monthly",value:p.name||""});
+  var name=el("input",{class:"input",type:"text",placeholder:"مثال: شهري",value:p.name||""});
   var duration=el("input",{class:"input",type:"number",min:"0",placeholder:"30",value:(p.durationDays!=null?p.durationDays:"")});
   var maxDev=el("input",{class:"input",type:"number",min:"1",placeholder:"1",value:(p.maxDevices!=null?p.maxDevices:"")});
   var price=el("input",{class:"input",type:"number",min:"0",placeholder:"0",value:(p.price!=null?p.price:"")});
-  var desc=el("textarea",{class:"input",placeholder:"Optional description"});
+  var desc=el("textarea",{class:"input",placeholder:"وصف اختياري"});
   desc.value=p.description||"";
   var activeChk=el("input",{type:"checkbox"});
   activeChk.checked=p.active!==false;
   var errBox=el("div");
 
-  var saveBtn=el("button",{class:"btn",text:isEdit?"Save changes":"Create plan",onclick:function(){
+  var saveBtn=el("button",{class:"btn",text:isEdit?"حفظ التغييرات":"إنشاء خطة",onclick:function(){
     clear(errBox);
     var body={
       code:(code.value||"").trim(),
@@ -1379,34 +1568,34 @@ function openPlanModal(existing,onDone){
       description:(desc.value||"").trim(),
       active:activeChk.checked
     };
-    if(!body.code){ errBox.appendChild(el("div",{class:"alert err",text:"Code is required."})); return; }
-    if(!body.name){ errBox.appendChild(el("div",{class:"alert err",text:"Name is required."})); return; }
+    if(!body.code){ errBox.appendChild(el("div",{class:"alert err",text:"الرمز مطلوب."})); return; }
+    if(!body.name){ errBox.appendChild(el("div",{class:"alert err",text:"الاسم مطلوب."})); return; }
     saveBtn.disabled=true; clear(saveBtn); saveBtn.appendChild(el("span",{class:"spin white"}));
     API.upsertPlan(body).then(function(){
-      toast(isEdit?"Plan updated":"Plan created","ok"); closeModal(); if(onDone) onDone();
+      toast(isEdit?"تم تحديث الخطة":"تم إنشاء الخطة","ok"); closeModal(); if(onDone) onDone();
     }).catch(function(err){
-      saveBtn.disabled=false; clear(saveBtn); saveBtn.textContent=isEdit?"Save changes":"Create plan";
+      saveBtn.disabled=false; clear(saveBtn); saveBtn.textContent=isEdit?"حفظ التغييرات":"إنشاء خطة";
       errBox.appendChild(el("div",{class:"alert err",text:err.message}));
     });
   }});
 
   modal({
-    title:isEdit?("Edit plan: "+(p.code||"")):"New plan", wide:true,
+    title:isEdit?("تعديل الخطة: "+(p.code||"")):"خطة جديدة", wide:true,
     body:el("div",[
       errBox,
       el("div",{class:"row"},[
-        el("div",{class:"field"},[el("label",{text:"Code"+(isEdit?" (locked)":"")}),code]),
-        el("div",{class:"field"},[el("label",{text:"Name"}),name])
+        el("div",{class:"field"},[el("label",{text:"الرمز"+(isEdit?" (مقفل)":"")}),code]),
+        el("div",{class:"field"},[el("label",{text:"الاسم"}),name])
       ]),
       el("div",{class:"row"},[
-        el("div",{class:"field"},[el("label",{text:"Duration (days)"}),duration]),
-        el("div",{class:"field"},[el("label",{text:"Max devices"}),maxDev]),
-        el("div",{class:"field"},[el("label",{text:"Price (IQD)"}),price])
+        el("div",{class:"field"},[el("label",{text:"المدة (أيام)"}),duration]),
+        el("div",{class:"field"},[el("label",{text:"أقصى عدد أجهزة"}),maxDev]),
+        el("div",{class:"field"},[el("label",{text:"السعر (د.ع)"}),price])
       ]),
-      el("div",{class:"field"},[el("label",{text:"Description"}),desc]),
-      el("div",{class:"field"},[el("label",{class:"check"},[activeChk,el("span",{text:"Active (visible to users)"})])])
+      el("div",{class:"field"},[el("label",{text:"الوصف"}),desc]),
+      el("div",{class:"field"},[el("label",{class:"check"},[activeChk,el("span",{text:"نشطة (مرئية للمستخدمين)"})])])
     ]),
-    footer:[el("button",{class:"btn neutral",text:"Cancel",onclick:closeModal}),saveBtn]
+    footer:[el("button",{class:"btn neutral",text:"إلغاء",onclick:closeModal}),saveBtn]
   });
 }
 
@@ -1415,10 +1604,10 @@ function openPlanModal(existing,onDone){
    ============================================================ */
 function errorBlock(err,retry){
   var content=el("div");
-  content.appendChild(pageHead("Something went wrong"));
+  content.appendChild(pageHead("حدث خطأ ما"));
   content.appendChild(el("div",{class:"card"},[el("div",{class:"card-b"},[
-    el("div",{class:"alert err",text:err.message||"Unexpected error."}),
-    retry?el("button",{class:"btn ghost",onclick:retry},["Retry"]):null
+    el("div",{class:"alert err",text:err.message||"خطأ غير متوقع."}),
+    retry?el("button",{class:"btn ghost",onclick:retry},["إعادة المحاولة"]):null
   ])]));
   return content;
 }
@@ -1428,6 +1617,74 @@ function normalizeList(res,key){
   if(Array.isArray(res[key])) return res[key];
   if(Array.isArray(res.data)) return res.data;
   return [];
+}
+
+/* ============================================================
+   Public receipt verification (#/r/:uuid) — renders WITHOUT login.
+   Standalone Arabic card; no sidebar/nav. Fetches the public endpoint.
+   ============================================================ */
+function viewPublicReceipt(uuid){
+  var app=$("#app"); clear(app);
+  var screen=el("div",{class:"receipt-screen"});
+  var card=el("div",{class:"receipt-card"});
+  card.appendChild(el("div",{class:"r-body",style:"padding:48px 22px"},[loadingBlock("جارٍ التحقق من الوصل…")]));
+  screen.appendChild(card);
+  app.appendChild(screen);
+
+  API.publicReceipt(uuid).then(function(res){
+    clear(card);
+    var found=res&&res.found&&res.receipt;
+    var genName=(res&&res.generatorName)||"المولّدة";
+    card.appendChild(el("div",{class:"r-head"},[
+      el("h1",{class:"gen",text:genName}),
+      el("p",{class:"tag",text:found?"وصل استلام":"التحقق من الوصل"})
+    ]));
+
+    if(!found){
+      card.appendChild(el("div",{class:"r-empty"},[
+        el("div",{class:"big",text:"🧾"}),
+        el("div",{style:"font-weight:700;font-size:16px;color:var(--text)",text:"غير موجود"}),
+        el("div",{style:"margin-top:6px",text:"تعذّر العثور على هذا الوصل."})
+      ]));
+      return;
+    }
+
+    var r=res.receipt;
+    var status=(r.status||"valid");
+    var stBadge=el("span",{class:"badge "+(status==="valid"?"green":(status==="deleted"?"gray":"red"))},[
+      status==="valid"?"صالح":(status==="deleted"?"محذوف":status)
+    ]);
+
+    card.appendChild(el("div",{class:"r-no",text:"وصل استلام رقم #"+(r.receipt_no!=null?r.receipt_no:"—")}));
+
+    var body=el("div",{class:"r-body"});
+    function line(k,v){
+      body.appendChild(el("div",{class:"r-line"},[
+        el("span",{class:"k",text:k}),
+        (v&&v.nodeType)?el("span",{class:"v"},[v]):el("span",{class:"v",text:(v==null||v==="")?"—":String(v)})
+      ]));
+    }
+    line("المشترك", (res.subscriberName||"—"));
+    line("الشهر", r.month);
+    line("الأمبيرات", r.amps_snapshot);
+    line("سعر الأمبير", r.price_snapshot!=null?fmtPrice(r.price_snapshot):"—");
+    line("المدفوع", r.paid_amount!=null?fmtPrice(r.paid_amount):"—");
+    line("المتبقي", r.remaining_after!=null?fmtPrice(r.remaining_after):"—");
+    line("التاريخ", r.issued_at?fmtDate(r.issued_at):"—");
+    line("الحالة", stBadge);
+    card.appendChild(body);
+  }).catch(function(err){
+    clear(card);
+    card.appendChild(el("div",{class:"r-head"},[
+      el("h1",{class:"gen",text:"المولّدة"}),
+      el("p",{class:"tag",text:"التحقق من الوصل"})
+    ]));
+    card.appendChild(el("div",{class:"r-empty"},[
+      el("div",{class:"big",text:"⚠️"}),
+      el("div",{style:"font-weight:700;font-size:16px;color:var(--text)",text:"تعذّر التحقق"}),
+      el("div",{style:"margin-top:6px",text:err.message||"حدث خطأ أثناء جلب الوصل."})
+    ]));
+  });
 }
 
 /* ============================================================
@@ -1443,7 +1700,7 @@ function boot(){
     API.me().then(function(res){
       var acc=(res&&res.account)||res;
       if(acc){
-        if(acc.role && acc.role!=="admin"){ toast("Not an admin account","err"); doLogout(true); return; }
+        if(acc.role && acc.role!=="admin"){ toast("ليس حساب مدير","err"); doLogout(true); return; }
         setSession(state.token,acc);
       }
     }).catch(function(){ /* 401 handled inside api() */ });

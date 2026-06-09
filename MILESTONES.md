@@ -29,6 +29,10 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Delete local data (Settings)** + dashboard up-to-date status & pull-latest button.
 - ✅ **Admin panel: separate screen per synced entity** (Subscribers / Boards / Circuits / Receipts / Expenses / Monthly prices) at `#/users/:id/data/:entity`.
 - ✅ **Admin synced-data screens: search + server-side pagination + delete on all 6 entity screens** (read-only mirror; sync stays push-only). `GET /api/admin/users/:id/data` takes `q,page,limit` and returns `total,page,limit`; `DELETE /api/admin/users/:id/data/:entity/:localId` hard-deletes one mirrored record.
+- ✅ **Public receipt verification page** — scan the receipt QR (no login) to open `/admin/#/r/:uuid`, a standalone Arabic receipt page rendered without the sidebar/auth gate; backed by public `GET /api/public/receipt/:uuid` (no auth) that looks up the receipt by uuid across all accounts and returns receipt + subscriber name + generator name.
+- ✅ **Admin panel fully Arabic (RTL)** — sidebar layout; all admin screens/labels in Arabic, right-to-left.
+- ✅ **Admin subscriber statement** — per-subscriber payment history (kashf hesab) view in the admin panel.
+- ✅ **App: record payment + print invoice from the payment-history screen** — log a payment and print its receipt directly from a subscriber's payment-history screen.
 - ✅ **Verified live (RMX3085 + Chrome MCP):** small change auto-synced (board → admin Boards screen); 150-record seed → confirm dialog "253 changes pending — upload now?" → uploaded only on confirm → admin Subscribers (150).
 - ✅ Billing (per-amp monthly price, receipts, Bluetooth print), expenses, dashboard.
 - ✅ **Arabic everywhere** (default Arabic RTL; all text via `.tr`).

@@ -17,6 +17,7 @@ const deviceRoutes = require('./routes/device');
 const backupRoutes = require('./routes/backup');
 const syncRoutes = require('./routes/sync');
 const adminRoutes = require('./routes/admin');
+const publicRoutes = require('./routes/public');
 
 function buildApp() {
   const app = express();
@@ -36,6 +37,8 @@ function buildApp() {
   app.use('/api/backup', backupRoutes);
   app.use('/api/sync', syncRoutes);
   app.use('/api/admin', adminRoutes);
+  // Public, no-auth routes (e.g. scan-a-QR receipt view).
+  app.use('/api/public', publicRoutes);
 
   // Static assets served to the app (images) and the admin SPA.
   const imagesDir = path.join(__dirname, '..', 'images');

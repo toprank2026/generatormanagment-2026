@@ -175,6 +175,48 @@ Errors: `404` record not found.
 
 ---
 
+## Public — `/api/public`  (no auth)
+
+Open endpoints reachable without a JWT. Backs the scan-a-QR receipt view.
+
+### GET `/api/public/receipt/:uuid`  (public)
+
+Resolves a receipt by its device UUID (`receipts.localId`) across **all** accounts'
+mirrors so a scanned QR can be viewed without logging in. Looks up the receipt
+`SyncRecord` (`entity: receipts`, not deleted); the subscriber name comes from the
+same owner's `subscribers` mirror (matched on `data.subscriber_id`) and the
+generator name from the owning `User.generatorName`. Receipt fields are
+whitelisted (`receipt_no`, `month`, `amps_snapshot`, `price_snapshot`,
+`paid_amount`, `remaining_after`, `issued_at`, `status`).
+
+Always responds `200`; `found` is `false` when no matching (non-deleted) receipt
+exists.
+```jsonc
+// 200 response (found)
+{
+  "found": true,
+  "receipt": {
+    "receipt_no": 42,
+    "month": "2026-06",
+    "amps_snapshot": 5,
+    "price_snapshot": 15000,
+    "paid_amount": 75000,
+    "remaining_after": 0,
+    "issued_at": "ISO",
+    "status": "paid"
+  },
+  "subscriberName": "Subscriber Name",   // null if missing
+  "generatorName": "Generator Name"      // null if missing
+}
+// 200 response (not found)
+{ "found": false, "receipt": null, "subscriberName": null, "generatorName": null }
+```
+
+The Flutter receipt QR encodes `${API_BASE_URL}/admin/#/r/<uuid>`; the admin SPA's
+`#/r/:uuid` route renders this standalone (no login / no nav).
+
+---
+
 ## Objects
 
 ### Account

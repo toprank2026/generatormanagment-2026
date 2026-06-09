@@ -298,7 +298,75 @@ printing.
 
 ---
 
-## 7. Earlier supporting changes (context)
+## 7. Public receipt verification — scan QR without login
+
+Anyone can scan a printed receipt's QR to verify it on a public, login-free page.
+The QR target changed from the per-account admin detail route to the new public
+route `/admin/#/r/<uuid>`.
+
+### 7.1 Backend — public lookup endpoint
+**Files:** `backend/src/controllers/publicController.js` (new) · `backend/src/routes/public.js` (new) · `backend/src/server.js` (edited)
+
+- `GET /api/public/receipt/:uuid` — **PUBLIC, no auth middleware**. Looks up the
+  receipt across **all** accounts:
+  `SyncRecord.findOne({ entity:'receipts', localId: uuid, deleted:false })`; if
+  found, resolves `subscriberName` from the owner's `subscribers` mirror
+  (`{ user: rec.user, entity:'subscribers', localId: rec.data.subscriber_id }`)
+  and `generatorName` from `User.findById(rec.user).generatorName`.
+- Response JSON: `{ found, receipt: { receipt_no, month, amps_snapshot,
+  price_snapshot, paid_amount, remaining_after, issued_at, status } | null,
+  subscriberName: string|null, generatorName: string|null }`.
+- `server.js`: mount `app.use('/api/public', publicRoutes)` **without**
+  `requireAuth`.
+
+### 7.2 Admin panel — public route `#/r/:uuid`
+**File:** `backend/public/admin/index.html`
+
+- Added a hash route `#/r/:uuid` that **bypasses the router's auth/login gate for
+  this route only**, fetches `GET /api/public/receipt/:uuid`, and renders a
+  standalone Arabic receipt page (**no sidebar/nav**) showing the receipt fields +
+  subscriber name + generator name (or a "not found" message).
+
+### 7.3 App — QR now encodes the public route
+**Files:** `lib/utils/pdf_service.dart`, `lib/utils/bluetooth_print_service.dart`
+
+- `_receiptQrUrl(receipt)` now returns exactly
+  `'${ApiConfig.baseUrl}/admin/#/r/${receipt.uuid}'` (replaces the old
+  `/admin/#/users/<accountId>/data/receipts/detail/<uuid>` target from §6).
+
+---
+
+## 8. Admin panel — fully Arabic (RTL) + sidebar layout
+**File:** `backend/public/admin/index.html`
+
+- Rewrote the admin SPA to be **fully Arabic, right-to-left** (`dir="rtl"`, Arabic
+  labels/columns/buttons throughout) with a **sidebar navigation layout** (nav on
+  the side, content pane beside it) replacing the prior top-nav English UI.
+
+---
+
+## 9. Admin subscriber statement — payment history per subscriber
+**Files:** `backend/public/admin/index.html` · `backend/src/controllers/adminController.js` (supporting)
+
+- Added an admin **subscriber statement (كشف حساب)** screen: a per-subscriber
+  payment history listing that owner's receipts for one subscriber. Uses the
+  existing `GET /api/admin/users/:id/data` mirror endpoint scoped to
+  `entity=receipts` filtered by the subscriber (`relField=subscriber_id` +
+  `relValue`), newest first.
+
+---
+
+## 10. App — record payment + print invoice from the payment-history screen
+**Files:** `lib/views/screens/*payment_history*` , related controller/repository, `lib/utils/translations.dart`
+
+- The subscriber **payment-history** screen can now **record a payment** (log a
+  paid amount, create the receipt) and **print its invoice** directly from that
+  screen — no separate navigation. New user-facing strings added to **both**
+  language maps in `lib/utils/translations.dart`.
+
+---
+
+## 11. Earlier supporting changes (context)
 
 These predate the work above but are part of the same recent line and are
 referenced by it.

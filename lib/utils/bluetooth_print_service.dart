@@ -111,13 +111,13 @@ class BluetoothPrintService {
     return 'TopRank';
   }
 
-  /// URL the receipt QR encodes: opens the receipt-details screen in the admin
-  /// panel. Falls back to the raw uuid if the account id isn't available.
+  /// URL the receipt QR encodes: opens the public receipt page (no login) in the
+  /// admin panel. Falls back to the raw uuid if the account isn't available.
   String _receiptQrUrl(Receipt receipt) {
     try {
       final id = Get.find<AuthController>().account.value?.id;
       if (id != null && id.isNotEmpty) {
-        return '${ApiConfig.baseUrl}/admin/#/users/$id/data/receipts/detail/${receipt.uuid}';
+        return '${ApiConfig.baseUrl}/admin/#/r/${receipt.uuid}';
       }
     } catch (_) {}
     return receipt.uuid;
