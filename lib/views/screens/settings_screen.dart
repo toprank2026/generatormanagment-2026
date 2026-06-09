@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
+import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/views/screens/subscription_screen.dart';
 import 'package:generatormanagment/views/screens/backup_screen.dart';
@@ -382,6 +383,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const SizedBox(height: 24),
               _buildManageDevicesSection(),
+              const SizedBox(height: 24),
+
+              // Delete local data
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8, bottom: 8),
+                  child: Text(
+                    'delete_local_data'.tr,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blueGrey,
+                    ),
+                  ),
+                ),
+              ),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: ListTile(
+                  leading: const Icon(
+                    Icons.delete_forever,
+                    color: Colors.redAccent,
+                  ),
+                  title: Text('delete_local_data'.tr),
+                  subtitle: Text('delete_local_data_subtitle'.tr),
+                  onTap: _confirmDeleteLocalData,
+                ),
+              ),
             ],
 
             const SizedBox(height: 32),
@@ -637,6 +669,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       onConfirm: () {
         controller.deleteUser(userId);
         Get.back();
+      },
+    );
+  }
+
+  void _confirmDeleteLocalData() {
+    Get.defaultDialog(
+      title: 'delete_local_data'.tr,
+      middleText: 'delete_local_data_confirm'.tr,
+      textConfirm: 'delete'.tr,
+      textCancel: 'cancel'.tr,
+      confirmTextColor: Colors.white,
+      buttonColor: Colors.red,
+      onConfirm: () {
+        Get.back();
+        Get.find<SyncController>().deleteLocalData();
       },
     );
   }

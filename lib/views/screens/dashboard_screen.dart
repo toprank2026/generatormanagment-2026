@@ -127,12 +127,32 @@ class DashboardScreen extends StatelessWidget {
                                   }),
                                 ),
                                 const SizedBox(height: 10),
-                                // Unsynced count + immediate sync button
+                                // Sync status + push ("sync now") + pull ("update")
                                 Obx(() {
                                   final pending =
                                       syncController.pendingCount.value;
                                   final syncing =
                                       syncController.isSyncing.value;
+                                  final pulling =
+                                      syncController.isPulling.value;
+                                  final busy = syncing || pulling;
+
+                                  // Status icon: spinning sync while busy, else
+                                  // cloud_done when up to date, cloud_upload otherwise.
+                                  final IconData statusIcon = busy
+                                      ? Icons.sync
+                                      : (pending == 0
+                                          ? Icons.cloud_done
+                                          : Icons.cloud_upload);
+                                  // Status text mirrors the icon's three states.
+                                  final String statusText = pulling
+                                      ? 'pulling'.tr
+                                      : (syncing
+                                          ? 'syncing'.tr
+                                          : (pending == 0
+                                              ? 'up_to_date'.tr
+                                              : '$pending ${'sync_pending'.tr}'));
+
                                   return Row(
                                     children: [
                                       Container(
@@ -143,11 +163,7 @@ class DashboardScreen extends StatelessWidget {
                                               BorderRadius.circular(8),
                                         ),
                                         child: Icon(
-                                          syncing
-                                              ? Icons.sync
-                                              : (pending == 0
-                                                  ? Icons.cloud_done
-                                                  : Icons.cloud_upload),
+                                          statusIcon,
                                           color: Colors.white,
                                           size: 16,
                                         ),
@@ -155,11 +171,7 @@ class DashboardScreen extends StatelessWidget {
                                       const SizedBox(width: 10),
                                       Expanded(
                                         child: Text(
-                                          syncing
-                                              ? 'syncing'.tr
-                                              : (pending == 0
-                                                  ? 'all_synced'.tr
-                                                  : '$pending ${'sync_pending'.tr}'),
+                                          statusText,
                                           style: const TextStyle(
                                             color: Colors.white,
                                             fontSize: 12,
@@ -169,10 +181,11 @@ class DashboardScreen extends StatelessWidget {
                                         ),
                                       ),
                                       const SizedBox(width: 8),
+                                      // Push pending local changes.
                                       SizedBox(
                                         height: 30,
                                         child: ElevatedButton.icon(
-                                          onPressed: syncing
+                                          onPressed: busy
                                               ? null
                                               : () => syncController.syncNow(),
                                           style: ElevatedButton.styleFrom(
@@ -203,6 +216,45 @@ class DashboardScreen extends StatelessWidget {
                                                 )
                                               : const Icon(Icons.sync, size: 16),
                                           label: Text('sync_now'.tr),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      // Pull the latest server data ("update").
+                                      SizedBox(
+                                        height: 30,
+                                        child: ElevatedButton.icon(
+                                          onPressed: busy
+                                              ? null
+                                              : () => syncController.pull(),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.white,
+                                            foregroundColor:
+                                                const Color(0xFF1565C0),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 12),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            textStyle: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold),
+                                          ),
+                                          icon: pulling
+                                              ? const SizedBox(
+                                                  width: 14,
+                                                  height: 14,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    valueColor:
+                                                        AlwaysStoppedAnimation(
+                                                            Color(0xFF1565C0)),
+                                                  ),
+                                                )
+                                              : const Icon(Icons.cloud_download,
+                                                  size: 16),
+                                          label: Text('update_now'.tr),
                                         ),
                                       ),
                                     ],

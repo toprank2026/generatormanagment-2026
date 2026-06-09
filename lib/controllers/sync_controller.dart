@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/core/logger.dart';
 import 'package:generatormanagment/core/sync_service.dart';
@@ -19,7 +20,12 @@ class SyncController extends GetxController {
 
   final pendingCount = 0.obs;
   final isSyncing = false.obs;
+  final isPulling = false.obs;
   final lastSyncAt = RxnString();
+  final lastPullAt = RxnString();
+
+  /// True when there are no local changes waiting to upload.
+  bool get isUpToDate => pendingCount.value == 0;
 
   StreamSubscription<bool>? _netSub;
   Timer? _timer;
@@ -104,5 +110,58 @@ class SyncController extends GetxController {
       isSyncing.value = false;
       await refreshPending();
     }
+  }
+
+  /// Pulls this account's latest data from the server into local SQLite. Any
+  /// pending local changes are pushed first so they aren't lost, then the server
+  /// copy is applied (server wins). Used by the dashboard "update" button and
+  /// after clearing local data / signing in on a new device.
+  Future<void> pull({bool silent = false}) async {
+    if (isPulling.value || isSyncing.value) return;
+    if (!await _net.isOnline()) {
+      if (!silent) Get.snackbar('sync'.tr, 'online_only'.tr);
+      return;
+    }
+    isPulling.value = true;
+    try {
+      // Preserve local changes first.
+      if (pendingCount.value > 0) await _sync.push();
+      final n = await _sync.pull();
+      lastPullAt.value = DateTime.now().toIso8601String();
+      await _reloadAppData();
+      if (!silent) {
+        Get.snackbar('sync'.tr, '${'pulled_records'.tr}: $n');
+      }
+    } catch (e) {
+      Log.e('pull failed', e);
+      if (!silent) Get.snackbar('sync'.tr, 'sync_failed'.tr);
+    } finally {
+      isPulling.value = false;
+      await refreshPending();
+    }
+  }
+
+  /// Clears all local business data (boards/subscribers/receipts/…) and the
+  /// pending outbox. The server mirror is untouched, so [pull] restores it.
+  Future<void> deleteLocalData() async {
+    try {
+      await _sync.deleteLocalData();
+      await _reloadAppData();
+      Get.snackbar('settings'.tr, 'local_data_deleted'.tr);
+    } catch (e) {
+      Log.e('delete local failed', e);
+      Get.snackbar('error'.tr, '$e');
+    } finally {
+      await refreshPending();
+    }
+  }
+
+  /// Refresh the in-memory app state after a pull / local wipe so the UI updates.
+  Future<void> _reloadAppData() async {
+    try {
+      if (Get.isRegistered<DashboardController>()) {
+        await Get.find<DashboardController>().loadStats();
+      }
+    } catch (_) {}
   }
 }

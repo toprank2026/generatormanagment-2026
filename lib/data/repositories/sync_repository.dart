@@ -1,8 +1,10 @@
 import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/api_config.dart';
 
-/// Talks to the backend sync mirror. Push-only (device → server) — the device
-/// stays the source of truth; the server mirror is what the admin panel reads.
+/// Talks to the backend per-account sync mirror. Push (device → server) keeps
+/// the server copy current; pull (server → device) restores this account's data
+/// onto a device (new device, or after clearing local data). The mirror is
+/// strictly per-account — the backend scopes every record to the JWT's user.
 class SyncRepository {
   final ApiClient _api = ApiClient();
 
@@ -10,5 +12,22 @@ class SyncRepository {
   /// { entity, localId, deleted, updatedAt, data? }.
   Future<void> push(List<Map<String, dynamic>> records) async {
     await _api.post(ApiConfig.syncPush, body: {'records': records});
+  }
+
+  /// Pulls this account's mirrored records (optionally only those updated after
+  /// [since]). Returns the raw record maps: { entity, localId, deleted,
+  /// updatedAt, data }.
+  Future<List<Map<String, dynamic>>> pull({String? since}) async {
+    final res = await _api.get(
+      ApiConfig.syncPull,
+      query: (since != null && since.isNotEmpty) ? {'since': since} : null,
+    );
+    final list = (res is Map && res['records'] is List)
+        ? res['records'] as List
+        : const [];
+    return list
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
   }
 }

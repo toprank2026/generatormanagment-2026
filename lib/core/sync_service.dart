@@ -87,4 +87,61 @@ class SyncService {
     Log.d('SyncService: pushed ${records.length} records');
     return records.length;
   }
+
+  /// Pulls this account's data from the server mirror and writes it into local
+  /// SQLite (upsert by primary key; tombstones delete the local row). The writes
+  /// fire the change-capture triggers, so any outbox rows they create are removed
+  /// inside the same transaction — a pull must never turn into a re-push.
+  /// Returns the number of records applied.
+  Future<int> pull({String? since}) async {
+    final records = await _repo.pull(since: since);
+    if (records.isEmpty) return 0;
+
+    final db = await _db.database;
+    await db.transaction((txn) async {
+      final seqRow = await txn.rawQuery('SELECT MAX(seq) m FROM sync_outbox');
+      final int seqBefore = Sqflite.firstIntValue(seqRow) ?? 0;
+
+      for (final rec in records) {
+        final entity = '${rec['entity']}';
+        final pk = DbHelper.syncedTables[entity];
+        if (pk == null) continue;
+        final localId = '${rec['localId']}';
+        final deleted = rec['deleted'] == true;
+
+        if (deleted) {
+          await txn.delete(entity, where: '$pk = ?', whereArgs: [localId]);
+          continue;
+        }
+        final data = rec['data'];
+        if (data is Map) {
+          await txn.insert(
+            entity,
+            data.cast<String, dynamic>(),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+      }
+
+      // Drop the outbox rows this pull just generated so it isn't re-pushed.
+      await txn.delete('sync_outbox', where: 'seq > ?', whereArgs: [seqBefore]);
+    });
+
+    Log.d('SyncService: pulled ${records.length} records');
+    return records.length;
+  }
+
+  /// Wipes all local business data and clears the outbox (so the wipe is NOT
+  /// pushed to the server — the server mirror is left intact and can be pulled
+  /// back). Used by Settings → "delete local data".
+  Future<void> deleteLocalData() async {
+    final db = await _db.database;
+    await db.transaction((txn) async {
+      for (final table in DbHelper.syncedTables.keys) {
+        await txn.delete(table);
+      }
+      await txn.delete('sync_outbox');
+    });
+    Log.d('SyncService: local business data cleared');
+  }
 }

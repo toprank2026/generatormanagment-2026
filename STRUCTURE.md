@@ -46,9 +46,11 @@ flowchart TB
 the **source of truth** for all **generator business data** (boards, circuits,
 subscribers, monthly prices, receipts, refunds, expenses) — the app reads and
 writes it and works **fully offline**. Those changes are now also **synced
-(pushed) to a server mirror** (`/api/sync`) so the **admin panel can view each
-owner's data**; the mirror is a read-only copy for admins, never the app's
-source of truth. Local staff users stay device-only. The backend owns
+two-way to a per-account server mirror** (`/api/sync`): **pushed** so the **admin
+panel can view each owner's data**, and **pulled** back to restore the account
+onto a new device (or after deleting local data). The mirror is a read-only copy
+for admins, never the app's source of truth. Local staff users stay device-only.
+The backend owns
 authentication, subscription/plan, device binding, opaque **cloud DB backups**,
 and the **sync mirror** — backed by MongoDB.
 
@@ -224,17 +226,20 @@ User-detail, Plans) driving the `/api/admin/*` endpoints with a Bearer JWT.
 
 ---
 
-## 6. Sync (device → server mirror)
+## 6. Sync (two-way, per-account mirror)
 
-The app stays offline-first, but local business changes are now **pushed** to a
-per-account server mirror so admins can view each owner's data. The flow is
-**push-only** — the device SQLite is the source of truth and is never written by
-sync:
+The app stays offline-first — the device SQLite is the source of truth — but sync
+is now **two-way** and **strictly per-account** (everything is scoped to the JWT
+user): local business changes are **pushed** to a per-account server mirror so
+admins can view each owner's data, and that mirror can be **pulled** back onto a
+device to restore it (a new device, or one after **deleting local data**):
 
 ```
-SQLite triggers → sync_outbox table → SyncService (drains, builds records)
-   → SyncRepository → POST /api/sync/push → per-account mirror in MongoDB
-                                          → admin reads via /api/admin/users/:id/data
+push:  SQLite triggers → sync_outbox → SyncService (drains, builds records)
+          → POST /api/sync/push → per-account mirror in MongoDB
+                                → admin reads via /api/admin/users/:id/data
+pull:  GET /api/sync/pull?since=ISO → SyncService writes records into SQLite
+          → clears the outbox rows the write generated (so pull never re-pushes)
 ```
 
 - **Capture:** SQLite triggers record every insert/update/delete to a local
@@ -249,11 +254,20 @@ SQLite triggers → sync_outbox table → SyncService (drains, builds records)
 - **Entities synced:** `subscribers, boards, circuits, monthly_prices, receipts,
   refunds, expenses` (local staff users are not synced). Each record is
   `{ entity, localId, deleted, updatedAt, data }`.
-- **Restore path:** `GET /api/sync/pull?since=ISO` lets a new device pull the
-  mirror back; day-to-day operation is push-only.
+- **Pull (server → device):** `GET /api/sync/pull?since=ISO` returns this
+  account's mirror; `SyncService.pull({since})` pushes any pending changes first,
+  then writes the returned records into SQLite and **clears the outbox rows that
+  write generated** so a pull never re-pushes what it just wrote. Pull restores a
+  per-account mirror onto a **new device** or onto a device **after deleting local
+  data**.
+- **Delete local data (Settings):** `SyncService.deleteLocalData()` wipes the 7
+  business tables + clears the outbox locally; the **server mirror is untouched**,
+  so the account's data can be pulled back afterwards.
+- **Dashboard status:** the dashboard shows an **up-to-date / pending** indicator
+  (from `SyncController.pendingCount` / `isUpToDate`) and a **pull-latest** button.
 - **Admin view:** the admin SPA's per-entity screens read the mirror via
   `GET /api/admin/users/:id/data?entity=&q=&page=&limit=` (case-insensitive
   search over per-entity fields, applied before server-side pagination; returns
-  `{ records, total, page, limit }`). The mirror stays push-only otherwise — the
-  only admin write is `DELETE /api/admin/users/:id/data/:entity/:localId`, which
-  hard-deletes a single mirrored record.
+  `{ records, total, page, limit }`). Admins never create/edit a mirrored record —
+  the only admin write is `DELETE /api/admin/users/:id/data/:entity/:localId`,
+  which hard-deletes a single mirrored record.
