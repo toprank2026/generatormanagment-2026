@@ -180,7 +180,7 @@
 
   /* ---------- public receipt (standalone, no sidebar) ---------- */
   .receipt-screen{min-height:100vh;display:grid;place-items:center;padding:24px;
-    background:linear-gradient(135deg,#1565C0 0%,#0d47a1 100%);}
+    background:#fff;}
   .receipt-card{width:100%;max-width:430px;background:#fff;border-radius:16px;box-shadow:var(--shadow-lg);overflow:hidden}
   .receipt-card .r-head{background:var(--primary);color:#fff;text-align:center;padding:22px 22px 18px}
   .receipt-card .r-head .gen{font-size:21px;font-weight:800;margin:0}
@@ -351,8 +351,8 @@ function api(method,path,body,isForm){
   }
   return fetch(API_BASE+path,opts).then(function(res){
     if(res.status===401){
-      // session expired -> back to login
-      doLogout(true);
+      // session expired -> back to login, but never bounce a public page.
+      if(!currentRouteIsPublic()) doLogout(true);
       throw new ApiError("انتهت الجلسة. يرجى تسجيل الدخول مرة أخرى.",401);
     }
     var ct=res.headers.get("content-type")||"";
@@ -530,6 +530,13 @@ var routes=[
   {re:/^#\/users\/([^\/]+)$/, view:viewUserDetail},
   {re:/^#\/plans$/, view:viewPlans}
 ];
+// True when the current hash maps to a public (no-login) route — used so a
+// stale token's background /me 401 never bounces a public page to login.
+function currentRouteIsPublic(){
+  var hash=location.hash||"";
+  for(var i=0;i<routes.length;i++){ if(hash.match(routes[i].re)) return !!routes[i].public; }
+  return false;
+}
 function render(){
   var hash=location.hash||"";
   if(!hash){ location.hash = state.token?"#/dashboard":"#/login"; return; }
@@ -1768,7 +1775,7 @@ function boot(){
     location.hash="#/dashboard";
   }
   render();
-  if(state.token){
+  if(state.token && !currentRouteIsPublic()){
     API.me().then(function(res){
       var acc=(res&&res.account)||res;
       if(acc){

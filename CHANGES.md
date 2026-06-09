@@ -406,3 +406,181 @@ referenced by it.
 8. Run `flutter pub get` (and `cd backend && npm install` if deps changed); a
    device upgrading an existing install runs the v2 migration automatically on
    next launch.
+
+---
+
+## 12. Two-way sync — pull (server → device) + delete-local-data
+
+Lets an account restore its server mirror onto a device (new device, or after
+clearing local data), and wipe local business data on demand.
+
+**Files:** `lib/core/sync_service.dart`, `lib/controllers/sync_controller.dart`, `lib/data/repositories/sync_repository.dart`, `lib/views/screens/settings_screen.dart`, `lib/utils/translations.dart`
+
+- `SyncService.pull({since})`: fetches the account's mirror via
+  `SyncRepository.pull`, writes each record into SQLite (insert/replace, or delete
+  for tombstones) inside one transaction, and **clears the `sync_outbox` rows the
+  pull itself generated** (`seq > seqBefore` snapshot) so a pull never re-pushes.
+- `SyncService.deleteLocalData()`: wipes the 7 business tables + `sync_outbox` in a
+  transaction. **The server mirror is untouched** (re-pullable).
+- `SyncController`: `isPulling`, `lastPullAt`, `isUpToDate` (pendingCount==0);
+  `pull({silent})` pushes pending first then pulls then reloads dashboard;
+  `deleteLocalData()`.
+- Settings: a red **"delete local data"** tile (confirm dialog →
+  `deleteLocalData()`).
+- New translation keys (both maps): `up_to_date, update_now, pull_latest, pulling,
+  pulled_records, delete_local_data, delete_local_data_subtitle,
+  delete_local_data_confirm, local_data_deleted`.
+
+> Backend endpoint `GET /api/sync/pull` already existed (see §1.4); this is the
+> device-side apply + the delete-local action.
+
+---
+
+## 13. Sync access points — pull/refresh buttons
+
+**Files:** `lib/views/screens/dashboard_screen.dart`, `lib/views/screens/sync_screen.dart`
+
+- Dashboard banner shows an up-to-date status ("محدّث" vs N pending) plus
+  **"مزامنة الآن"** (push) and **"تحديث"** (pull) buttons.
+- Sync screen (`sync_screen.dart`) gains a **"جلب أحدث البيانات"** (pull) button
+  below "Sync now" (`OutlinedButton` → `syncController.pull()`).
+
+---
+
+## 14. Public receipt — invoice history, white background, no-login fix
+
+Extends §7 (public scan-a-QR receipt page).
+
+### 14.1 Backend — public subscriber history
+**Files:** `backend/src/controllers/publicController.js`, `backend/src/routes/public.js`
+
+- `GET /api/public/receipt/:uuid/history` — **PUBLIC, no auth**. Finds the receipt
+  by uuid → its `user` + `subscriber_id` → returns that subscriber's other
+  receipts, newest first: `{ found, subscriberName, generatorName,
+  receipts:[{uuid,receipt_no,month,paid_amount,remaining_after,issued_at,status}] }`.
+
+### 14.2 Admin SPA — history button + page + white bg + login-gate fix
+**File:** `backend/public/admin/index.html`
+
+- Public receipt page (`#/r/:uuid`) gains a **"عرض الفواتير السابقة"** button →
+  new public route `#/r/:uuid/history` (`viewPublicReceiptHistory`) listing the
+  subscriber's invoices, each linking to its own `#/r/<uuid>`.
+- `.receipt-screen` background changed from the blue gradient to **white**
+  (`background:#fff;`).
+- **No-login fix (important):** a stale admin token in `localStorage` made `boot()`
+  call `/api/auth/me`, get **401**, and `doLogout()` → redirect to `#/login`, even
+  on a public receipt page. Added `currentRouteIsPublic()` and:
+  1. `boot()` only validates the token (`API.me()`) when **not** on a public route;
+  2. the `api()` 401 handler only `doLogout()`s when **not** on a public route.
+  Now `#/r/:uuid` and `#/r/:uuid/history` always render without a login, regardless
+  of any stored token.
+
+---
+
+## 15. Subscriber detail — removed inline receipt history
+**File:** `lib/views/screens/subscriber_detail_screen.dart`
+
+- Removed the inline **"السجل"** receipt-history list that sat under the green
+  paid-card. The payment history (with record-payment + print, see §10) now lives
+  only on the dedicated payment-history screen, reachable from the AppBar history
+  icon. The detail screen keeps only the info card, billing month, and paid-card.
+
+---
+
+## 16. Running on a LAN IP (config, not code)
+
+To let another device on the same Wi-Fi reach the backend and scan receipt QRs:
+
+- Backend binds all interfaces (`app.listen(PORT)` in `backend/src/server.js`), so
+  it is reachable at `http://<PC-LAN-IP>:4000` (allow it through the OS firewall).
+- Run the app pointing at the LAN IP so its receipt QRs encode it:
+  `flutter run --dart-define=API_BASE_URL=http://<PC-LAN-IP>:4000`.
+- A scanned QR opens `http://<PC-LAN-IP>:4000/admin/#/r/<uuid>` — the public page
+  (§7/§14), no login.
+
+---
+
+## Test steps — verify each feature (step by step)
+
+> Setup: backend `cd backend && npm run dev` (in-memory Mongo); app
+> `flutter run --dart-define=API_BASE_URL=http://<host>:4000`; admin SPA at
+> `http://<host>:4000/admin` (admin/admin123 by default). Seeds available via
+> `--dart-define=DEV_SEED=true --dart-define=DEV_SEED_COUNT=N`.
+
+### A. Offline sync — push (device → server mirror)
+1. Sign in on the app (online), add a board/subscriber/receipt while online or
+   offline.
+2. Open the admin panel → Users → that owner → Subscribers/Boards/Receipts.
+3. Confirm the new rows appear in the admin mirror (auto-synced when online).
+
+### B. Ask-before-large-upload
+1. Seed/accumulate **> 100** pending changes (e.g. `DEV_SEED_COUNT=200`).
+2. Let auto-sync run (or open Sync screen).
+3. Confirm a dialog "**N changes pending — upload now?**" appears; the upload only
+   happens after you confirm.
+
+### C. Two-way pull + delete-local
+1. With data synced to the server, go **Settings → delete local data → confirm**.
+2. Confirm the dashboard counts drop to **0** and lists are empty.
+3. Go **Settings → Sync (المزامنة) → "جلب أحدث البيانات"** (or dashboard
+   **"تحديث"**).
+4. Confirm the data is **restored** from the server and the status returns to
+   "محدّث" (up to date) with **0 pending** (pull does not re-queue a push).
+
+### D. Per-account isolation
+1. Register two accounts; sync different data from each.
+2. In admin, open each owner's synced-data screens.
+3. Confirm each owner sees **only their own** records.
+
+### E. Admin synced-data — search / paginate / delete
+1. Admin → Users → owner → Subscribers.
+2. Type in the search box → confirm server-side filtering; page with Prev/Next.
+3. Delete one row → confirm it disappears (mirror-only delete; the app is
+   unaffected).
+
+### F. Admin panel — Arabic (RTL) + sidebar
+1. Open the admin panel.
+2. Confirm the whole UI is **Arabic, right-to-left**, with a **sidebar** (لوحة
+   التحكم / المستخدمون / الخطط + تسجيل الخروج), not a top nav.
+
+### G. Admin subscriber statement (كشف الحساب)
+1. Admin → Users → owner → Subscribers → a subscriber's **"كشف الحساب"**.
+2. Confirm a subscriber info card + a **payment-history table** (receipt #, month,
+   paid, remaining, date, status); each row opens the receipt details.
+
+### H. Public receipt page (scan QR, no login)
+1. Print/preview a receipt in the app (QR encodes `…/admin/#/r/<uuid>`).
+2. On **another device** (same Wi-Fi), scan the QR.
+3. Confirm the **Arabic receipt page** opens **without any login** — generator
+   name, receipt #, subscriber, month, amps, price, paid, remaining, date, status.
+4. Confirm it still opens even on a device that previously logged into the admin
+   (stale token must **not** bounce to login).
+
+### I. Public invoice history
+1. On the public receipt page, tap **"عرض الفواتير السابقة"**.
+2. Confirm the subscriber's other invoices list (newest first), each opening its
+   own public receipt, with a "‹ رجوع للوصل" back button — all without login.
+
+### J. Generator name
+1. Sign up with a **Generator name** (اسم المولدة).
+2. Confirm it shows on the dashboard banner and as the **header** of printed
+   receipts and the public receipt page.
+
+### K. Receipt layout + QR
+1. Collect a payment and print/preview the receipt.
+2. Confirm all fields render in a **bordered table** and the **QR** prints as a
+   crisp image (not garbled).
+
+### L. Record payment + print from the history screen
+1. Open a subscriber → AppBar **history icon** → payment-history screen.
+2. Use **record payment** to log a payment; confirm a receipt is created.
+3. Use the per-receipt **print** action; confirm it prints/previews.
+4. Confirm the subscriber **detail** screen no longer shows an inline history list
+   under the green card (§15).
+
+### M. Run on LAN + scan from another phone
+1. Start the backend; note the PC LAN IP; run the app with
+   `--dart-define=API_BASE_URL=http://<PC-LAN-IP>:4000`.
+2. From another phone on the same Wi-Fi, open/scan a receipt URL
+   `http://<PC-LAN-IP>:4000/admin/#/r/<uuid>`.
+3. Confirm the public receipt page loads (firewall must allow port 4000).
