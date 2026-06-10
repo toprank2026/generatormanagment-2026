@@ -202,6 +202,21 @@
   .toast .x{margin-right:auto;cursor:pointer;opacity:.8;font-weight:800}
   @keyframes slidein{from{transform:translateX(-20px);opacity:0}to{transform:translateX(0);opacity:1}}
 
+  /* ---------- new-account popup (real-time SSE) ---------- */
+  #popups{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:1100;display:flex;flex-direction:column;gap:12px;width:min(420px,calc(100vw - 36px));pointer-events:none}
+  .popup{
+    pointer-events:auto;background:#fff;border:1px solid var(--border);border-right:5px solid var(--success);
+    border-radius:14px;box-shadow:var(--shadow-lg);padding:16px 18px;display:flex;gap:14px;align-items:flex-start;
+    animation:popdrop .3s cubic-bezier(.2,.9,.3,1.4);
+  }
+  .popup .pic{width:44px;height:44px;border-radius:12px;background:var(--success-light);color:var(--success);display:grid;place-items:center;font-size:24px;flex-shrink:0}
+  .popup .ptxt{flex:1;min-width:0}
+  .popup .ptitle{font-weight:800;font-size:15px;color:var(--text);margin-bottom:3px}
+  .popup .pname{font-weight:700;color:var(--success);word-break:break-word}
+  .popup .psub{color:var(--muted);font-size:13px;margin-top:2px;word-break:break-word}
+  .popup .x{background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer;line-height:1;align-self:flex-start;padding:0 2px}
+  @keyframes popdrop{from{transform:translateY(-26px) scale(.96);opacity:0}to{transform:none;opacity:1}}
+
   /* ---------- modal ---------- */
   .modal-back{position:fixed;inset:0;background:rgba(16,24,40,.5);z-index:500;display:grid;place-items:center;padding:20px;animation:fade .15s}
   @keyframes fade{from{opacity:0}to{opacity:1}}
@@ -230,6 +245,7 @@
 <div id="app"></div>
 <div id="modal-root"></div>
 <div id="toasts"></div>
+<div id="popups"></div>
 
 <script>
 (function(){
@@ -296,6 +312,23 @@ function toast(msg,type){
   $("#toasts").appendChild(t);
   var to=setTimeout(remove,4200);
   function remove(){ clearTimeout(to); if(t.parentNode) t.parentNode.removeChild(t); }
+}
+
+/* Prominent real-time popup for a newly-registered account (auto-dismiss). */
+function newAccountPopup(name,username){
+  var root=$("#popups"); if(!root) return;
+  var p=el("div",{class:"popup"},[
+    el("div",{class:"pic",text:"🎉"}),
+    el("div",{class:"ptxt"},[
+      el("div",{class:"ptitle",text:"حساب جديد"}),
+      el("div",{class:"pname",text:(name||username||"مستخدم جديد")}),
+      username?el("div",{class:"psub",text:"اسم المستخدم: "+username}):null
+    ]),
+    el("button",{class:"x",text:"×",onclick:function(){ remove(); }})
+  ]);
+  root.appendChild(p);
+  var to=setTimeout(remove,7000);
+  function remove(){ clearTimeout(to); if(p.parentNode) p.parentNode.removeChild(p); }
 }
 
 /* ============================================================
@@ -408,14 +441,60 @@ function setSession(token,me){
   state.token=token; state.me=me;
   localStorage.setItem(TOKEN_KEY,token);
   if(me) localStorage.setItem(ME_KEY,JSON.stringify(me));
+  connectEvents();
 }
 function doLogout(silent){
   state.token=null; state.me=null;
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(ME_KEY);
+  disconnectEvents();
   if(!silent) toast("تم تسجيل الخروج","ok");
   if(location.hash!=="#/login") location.hash="#/login";
   else render();
+}
+
+/* ============================================================
+   Real-time events (SSE) — new-account notifications
+   Opens an EventSource to /api/admin/events once authenticated; shows a
+   prominent popup (+ toast) when a new owner registers, and refreshes the
+   Users list if it is the current route. Auto-reconnects on error.
+   ============================================================ */
+var _es=null;          // active EventSource (or null)
+var _esRetry=null;     // pending reconnect timer
+function connectEvents(){
+  if(!state.token) return;
+  if(typeof EventSource==="undefined") return;   // unsupported browser → silently skip
+  disconnectEvents();
+  var es;
+  try{
+    es=new EventSource(API_BASE+"/api/admin/events?token="+encodeURIComponent(state.token));
+  }catch(e){ return; }
+  _es=es;
+  es.addEventListener("user_registered",function(e){
+    var d=null; try{ d=JSON.parse(e.data); }catch(err){ d=null; }
+    d=d||{};
+    var name=d.name||d.username||"مستخدم جديد";
+    var username=d.username||"";
+    newAccountPopup(name,username);
+    toast("حساب جديد: "+name+(username?(" ("+username+")"):""),"ok");
+    // If the Users list is open, refresh it so the new account appears live.
+    if((location.hash||"")==="#/users"){ try{ viewUsers(); }catch(err){} }
+  });
+  es.onerror=function(){
+    // EventSource auto-reconnects, but if the connection is fully closed (e.g.
+    // token rejected) re-open it ourselves after a short delay while signed in.
+    if(es.readyState===2){
+      disconnectEvents();
+      if(state.token){
+        if(_esRetry) clearTimeout(_esRetry);
+        _esRetry=setTimeout(function(){ if(state.token) connectEvents(); },4000);
+      }
+    }
+  };
+}
+function disconnectEvents(){
+  if(_esRetry){ clearTimeout(_esRetry); _esRetry=null; }
+  if(_es){ try{ _es.close(); }catch(e){} _es=null; }
 }
 
 /* ============================================================
@@ -1776,6 +1855,7 @@ function boot(){
   }
   render();
   if(state.token && !currentRouteIsPublic()){
+    connectEvents();   // start real-time notifications for the restored session
     API.me().then(function(res){
       var acc=(res&&res.account)||res;
       if(acc){

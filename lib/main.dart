@@ -9,6 +9,7 @@ import 'package:generatormanagment/views/screens/setup_screen.dart';
 import 'package:generatormanagment/views/screens/plan_selection_screen.dart';
 import 'package:generatormanagment/views/root_handler.dart';
 import 'package:generatormanagment/utils/translations.dart';
+import 'package:generatormanagment/utils/printer_prefs.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -30,6 +31,9 @@ Future<void> main() async {
   final locale = langCode == 'en'
       ? const Locale('en', 'US')
       : const Locale('ar', 'AR');
+
+  // Prime the cached thermal-printer paper width for the print services.
+  await PrinterPrefs.load();
 
   runApp(MyApp(initialLocale: locale));
 }

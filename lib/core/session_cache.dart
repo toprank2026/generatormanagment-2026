@@ -12,6 +12,7 @@ class SessionCache {
   static const _kAccount = 'cached_account';
   static const _kRemember = 'remember_me';
   static const _kLastBackup = 'last_backup_at';
+  static const _kLastOnlineValidation = 'last_online_validation_at';
 
   Future<void> saveAccount(Map<String, dynamic> account) async {
     final p = await SharedPreferences.getInstance();
@@ -49,11 +50,28 @@ class SessionCache {
     return p.getString(_kLastBackup);
   }
 
-  /// Clears cached account + per-account backup timestamp on logout
-  /// (keeps language / printer settings untouched).
+  /// Timestamp (ISO-8601) of the last successful **online** session validation
+  /// (`/auth/me` confirmed the session is still valid). Used to auto-logout a
+  /// device that has been offline beyond the allowed threshold.
+  Future<void> setLastOnlineValidationAt(String iso) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_kLastOnlineValidation, iso);
+  }
+
+  Future<DateTime?> getLastOnlineValidationAt() async {
+    final p = await SharedPreferences.getInstance();
+    final raw = p.getString(_kLastOnlineValidation);
+    if (raw == null || raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
+  }
+
+  /// Clears cached account + per-account backup timestamp + last online
+  /// validation timestamp on logout (keeps language / printer settings
+  /// untouched).
   Future<void> clear() async {
     final p = await SharedPreferences.getInstance();
     await p.remove(_kAccount);
     await p.remove(_kLastBackup);
+    await p.remove(_kLastOnlineValidation);
   }
 }

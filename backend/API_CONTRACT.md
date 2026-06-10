@@ -130,6 +130,7 @@ Backups are stored per-account (quota: keep last N, default 10).
 - `GET    /api/admin/plans`                          list all plans
 - `PUT    /api/admin/plans`                          upsert a plan (body = Plan)
 - `DELETE /api/admin/plans/:code`                    delete a plan
+- `GET    /api/admin/events`                         Server-Sent Events stream (admin via `?token=`, see below)
 
 The admin SPA (`backend/public/admin/index.html`) is a hash-routed single-file
 app driving exactly these endpoints with a Bearer JWT.
@@ -172,6 +173,37 @@ the mirror). Does not touch the device's local SQLite source of truth.
 { "ok": true }
 ```
 Errors: `404` record not found.
+
+### GET `/api/admin/events`  (admin, real-time SSE)
+
+A long-lived **Server-Sent Events** stream the admin panel subscribes to so it
+can react live to backend activity (e.g. a new account just registered).
+
+Auth: the JWT is passed as a **`?token=<jwt>` query param** (not the
+`Authorization` header) because the browser `EventSource` API cannot set custom
+headers. The token must belong to a `role=admin` user. Errors: `401` missing /
+invalid token, `403` not an admin.
+
+Response: `Content-Type: text/event-stream` (keep-alive). The server sends a
+`: connected` comment on open and a `:hb` heartbeat comment every ~25s. Each
+real event is framed as:
+```
+event: user_registered
+data: {"id":"...","name":"...","username":"...","phone":null,"generatorName":null,"createdAt":"ISO"}
+```
+Emitted events:
+- `user_registered` — fired right after a new owner account is saved by
+  `POST /api/auth/register`. Payload:
+  `{ id, name, username, phone, generatorName, createdAt }`.
+
+Client example:
+```js
+const es = new EventSource(`${API}/api/admin/events?token=${jwt}`);
+es.addEventListener('user_registered', (e) => {
+  const acct = JSON.parse(e.data);
+  // refresh the users list / show a toast
+});
+```
 
 ---
 

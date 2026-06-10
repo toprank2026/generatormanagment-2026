@@ -8,6 +8,7 @@ import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/api_config.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/utils/printer_prefs.dart';
 
 class PdfService {
   Future<Uint8List> generateReceipt(Receipt receipt, Subscriber sub) async {
@@ -46,7 +47,8 @@ class PdfService {
 
     pdf.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat.roll80, // Thermal printer width
+        // Thermal printer width — roll57 for 58mm, roll80 for 80mm (setting).
+        pageFormat: PrinterPrefs.pdfPageFormat,
         theme: cairo != null
             ? pw.ThemeData.withFont(base: cairo, bold: cairo)
             : null,

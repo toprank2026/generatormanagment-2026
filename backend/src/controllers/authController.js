@@ -6,6 +6,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { signToken } = require('../utils/token');
 const { serializeAccount } = require('../utils/serialize');
 const { upsertDevice } = require('../utils/devices');
+const { adminEvents } = require('../utils/events');
 const { HttpError } = require('../middleware/error');
 
 /** POST /api/auth/register (public) */
@@ -33,6 +34,17 @@ const register = asyncHandler(async (req, res) => {
   // device always satisfies).
   if (device) await upsertDevice(user, device);
   await user.save();
+
+  // Notify any connected admin panels in real time (SSE). Best-effort; never
+  // blocks the registration response.
+  adminEvents.emit('user_registered', {
+    id: String(user._id),
+    name: user.name,
+    username: user.username,
+    phone: user.phone || null,
+    generatorName: user.generatorName || null,
+    createdAt: user.createdAt,
+  });
 
   const token = signToken(user);
   res.status(201).json({

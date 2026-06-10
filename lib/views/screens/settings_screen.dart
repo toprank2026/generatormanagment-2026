@@ -296,33 +296,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: Obx(() {
-                final hasPrinter = controller.printerAddress.value.isNotEmpty;
-                return ListTile(
-                  leading: Icon(
-                    Icons.print,
-                    color: hasPrinter ? Colors.green : Colors.grey,
-                  ),
-                  title: Text(
-                    hasPrinter
-                        ? controller.printerName.value
-                        : 'no_printer_selected'.tr,
-                  ),
-                  subtitle: Text(
-                    hasPrinter
-                        ? controller.printerAddress.value
-                        : 'select_bluetooth_printer'.tr,
-                  ),
-                  trailing: IconButton(
-                    icon: const Icon(
-                      Icons.settings_bluetooth,
-                      color: Colors.blue,
+              child: Column(
+                children: [
+                  Obx(() {
+                    final hasPrinter =
+                        controller.printerAddress.value.isNotEmpty;
+                    return ListTile(
+                      leading: Icon(
+                        Icons.print,
+                        color: hasPrinter ? Colors.green : Colors.grey,
+                      ),
+                      title: Text(
+                        hasPrinter
+                            ? controller.printerName.value
+                            : 'no_printer_selected'.tr,
+                      ),
+                      subtitle: Text(
+                        hasPrinter
+                            ? controller.printerAddress.value
+                            : 'select_bluetooth_printer'.tr,
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(
+                          Icons.settings_bluetooth,
+                          color: Colors.blue,
+                        ),
+                        onPressed: () => _showPrinterSelection(controller),
+                      ),
+                      onTap: () => _showPrinterSelection(controller),
+                    );
+                  }),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.straighten,
+                      color: Color(0xFF1565C0),
                     ),
-                    onPressed: () => _showPrinterSelection(controller),
+                    title: Text('printer_width'.tr),
+                    trailing: Obx(
+                      () => ToggleButtons(
+                        borderRadius: BorderRadius.circular(8),
+                        constraints: const BoxConstraints(
+                          minHeight: 36,
+                          minWidth: 64,
+                        ),
+                        isSelected: [
+                          controller.paperWidthMm.value == 58,
+                          controller.paperWidthMm.value == 80,
+                        ],
+                        onPressed: (index) =>
+                            controller.savePaperWidth(index == 0 ? 58 : 80),
+                        children: [
+                          Text('paper_58'.tr),
+                          Text('paper_80'.tr),
+                        ],
+                      ),
+                    ),
                   ),
-                  onTap: () => _showPrinterSelection(controller),
-                );
-              }),
+                ],
+              ),
             ),
 
             Align(

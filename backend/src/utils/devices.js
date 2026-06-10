@@ -4,25 +4,25 @@ const Plan = require('../models/Plan');
 const { HttpError } = require('../middleware/error');
 
 /**
- * Identity of a device is keyed off installId + deviceId. Two payloads refer to
- * the same physical binding when both match (installId is app-generated and the
- * primary key; deviceId is the OS-stable id).
+ * Identity of a device is keyed primarily off the OS-stable `deviceId`.
+ *
+ * Reinstall-safety: the app-generated `installId` changes on every reinstall /
+ * data-clear, but the same physical handset keeps the same OS `deviceId`. So we
+ * match on `deviceId` FIRST — a reinstall on the same phone is recognised as the
+ * SAME device (refreshes the binding) instead of being treated as a brand-new
+ * device that would trip DEVICE_LIMIT. `installId` is only a fallback for the
+ * (rare) case where one side has no `deviceId`.
  */
 function sameDevice(existing, incoming) {
-  const sameInstall =
-    existing.installId && incoming.installId
-      ? existing.installId === incoming.installId
-      : false;
-  const sameDeviceId =
-    existing.deviceId && incoming.deviceId
-      ? existing.deviceId === incoming.deviceId
-      : false;
-  // If both ids are present, require both to match; otherwise fall back to
-  // whichever id is available so we never duplicate the same handset.
-  if (existing.installId && incoming.installId && existing.deviceId && incoming.deviceId) {
-    return sameInstall && sameDeviceId;
+  // Primary: same OS-stable deviceId -> same physical handset (ignore installId).
+  if (existing.deviceId && incoming.deviceId) {
+    return existing.deviceId === incoming.deviceId;
   }
-  return sameInstall || sameDeviceId;
+  // Fallback: no deviceId on one side, but matching app-generated installId.
+  if (existing.installId && incoming.installId) {
+    return existing.installId === incoming.installId;
+  }
+  return false;
 }
 
 /** Returns the effective max device count for a user's ACTIVE plan (default 1). */

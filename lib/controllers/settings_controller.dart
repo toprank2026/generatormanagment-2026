@@ -12,6 +12,7 @@ import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/models/user_model.dart';
 import 'package:generatormanagment/data/repositories/backup_repository.dart';
 import 'package:generatormanagment/data/repositories/user_repository.dart';
+import 'package:generatormanagment/utils/printer_prefs.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 import 'package:uuid/uuid.dart';
@@ -41,6 +42,8 @@ class SettingsController extends GetxController {
   // Printer Settings
   var printerName = "".obs;
   var printerAddress = "".obs;
+  // Thermal paper width in mm (58 or 80); default 58.
+  var paperWidthMm = PrinterPrefs.defaultWidthMm.obs;
 
   // Persistence Keys
   static const String _keyLang = 'lang_code';
@@ -88,6 +91,7 @@ class SettingsController extends GetxController {
     final prefs = await SharedPreferences.getInstance();
     printerName.value = prefs.getString(_keyPrinterName) ?? "";
     printerAddress.value = prefs.getString(_keyPrinterAddress) ?? "";
+    paperWidthMm.value = await PrinterPrefs.load();
     update();
   }
 
@@ -97,6 +101,14 @@ class SettingsController extends GetxController {
     await prefs.setString(_keyPrinterAddress, address);
     printerName.value = name;
     printerAddress.value = address;
+    update();
+  }
+
+  /// Persists the thermal paper width (58 or 80 mm) and refreshes the cache
+  /// read by the print services.
+  Future<void> savePaperWidth(int mm) async {
+    await PrinterPrefs.setWidth(mm);
+    paperWidthMm.value = PrinterPrefs.widthMm;
     update();
   }
 

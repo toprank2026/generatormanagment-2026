@@ -17,6 +17,7 @@ const deviceRoutes = require('./routes/device');
 const backupRoutes = require('./routes/backup');
 const syncRoutes = require('./routes/sync');
 const adminRoutes = require('./routes/admin');
+const eventsRoutes = require('./routes/events');
 const publicRoutes = require('./routes/public');
 
 function buildApp() {
@@ -36,6 +37,9 @@ function buildApp() {
   app.use('/api/device', deviceRoutes);
   app.use('/api/backup', backupRoutes);
   app.use('/api/sync', syncRoutes);
+  // SSE events for the admin panel (auth via ?token= query). Mount BEFORE the
+  // header-auth admin router so the token-on-query request reaches it.
+  app.use('/api/admin', eventsRoutes);
   app.use('/api/admin', adminRoutes);
   // Public, no-auth routes (e.g. scan-a-QR receipt view).
   app.use('/api/public', publicRoutes);

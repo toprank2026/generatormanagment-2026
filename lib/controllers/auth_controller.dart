@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:get/get.dart';
 import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
@@ -23,6 +25,20 @@ class AuthController extends GetxController {
   final isLoggedIn = false.obs;
   final isLoading = true.obs;
   final isSyncing = false.obs;
+
+  /// How often we re-validate the session against the server while online.
+  static const _recheckInterval = Duration(minutes: 15);
+
+  /// If the device stays offline (no successful online validation) longer than
+  /// this, the session is ended and the user must sign in again. Keeps the
+  /// offline-first contract for brief blips while still bounding offline use.
+  static const _offlineLogoutThreshold = Duration(days: 3);
+
+  /// Periodic online re-check timer (cancelled in [onClose]).
+  Timer? _recheckTimer;
+
+  /// Guards against overlapping re-checks (periodic tick vs. pull-to-refresh).
+  bool _recheckInFlight = false;
 
   /// Server account (source of truth when online).
   final Rxn<Account> account = Rxn<Account>();
@@ -60,6 +76,61 @@ class AuthController extends GetxController {
   void onInit() {
     super.onInit();
     bootstrap();
+    _startPeriodicRecheck();
+  }
+
+  @override
+  void onClose() {
+    _recheckTimer?.cancel();
+    _recheckTimer = null;
+    super.onClose();
+  }
+
+  /// Starts a periodic online re-validation. On each tick, if online we run the
+  /// shared [recheckSession] (which signs out + sets [logoutReason] on
+  /// blocked/expired); if offline we enforce the offline-too-long rule.
+  void _startPeriodicRecheck() {
+    _recheckTimer?.cancel();
+    _recheckTimer = Timer.periodic(_recheckInterval, (_) => _onRecheckTick());
+  }
+
+  Future<void> _onRecheckTick() async {
+    if (!isLoggedIn.value) return;
+    if (await _net.isOnline()) {
+      await _guardedRecheck();
+    } else {
+      await _enforceOfflineLimit();
+    }
+  }
+
+  /// Runs [recheckSession] unless one is already in flight (e.g. a concurrent
+  /// pull-to-refresh), so the periodic tick never overlaps with it.
+  Future<bool> _guardedRecheck() async {
+    if (_recheckInFlight) return true;
+    _recheckInFlight = true;
+    try {
+      return await recheckSession();
+    } finally {
+      _recheckInFlight = false;
+    }
+  }
+
+  /// Auto-logout if the device has been offline (no successful online
+  /// validation) longer than [_offlineLogoutThreshold]. Initialises the
+  /// timestamp on first use so a brand-new session is never logged out, and a
+  /// brief network blip never trips the rule.
+  Future<void> _enforceOfflineLimit() async {
+    if (!isLoggedIn.value) return;
+    final last = await _cache.getLastOnlineValidationAt();
+    if (last == null) {
+      // No baseline yet (fresh session / first run) — set it to now so we don't
+      // immediately sign out, then start counting from here.
+      await _cache.setLastOnlineValidationAt(DateTime.now().toIso8601String());
+      return;
+    }
+    if (DateTime.now().difference(last) > _offlineLogoutThreshold) {
+      await logout(reason: 'offline_too_long');
+    }
   }
 
   /// Restore the cached session, then (if online) refresh from the server.
@@ -73,6 +144,9 @@ class AuthController extends GetxController {
         isLoggedIn.value = true;
         if (await _net.isOnline()) {
           await _refreshFromServer();
+        } else {
+          // Offline launch: enforce the offline-too-long auto-logout rule.
+          await _enforceOfflineLimit();
         }
       } else {
         isLoggedIn.value = false;
@@ -91,6 +165,8 @@ class AuthController extends GetxController {
       final acc = await _auth.me();
       await _cache.saveAccount(acc.toJson());
       _setAccount(acc, online: true);
+      // Successful online validation → reset the offline-too-long baseline.
+      await _cache.setLastOnlineValidationAt(DateTime.now().toIso8601String());
     } on ApiException catch (e) {
       // Only an explicit auth rejection ends the session. Network errors keep
       // the cached (offline) session alive.
@@ -134,6 +210,7 @@ class AuthController extends GetxController {
       final result = await _auth.login(username: username, password: password);
       await _cache.saveAccount(result.account.toJson());
       _setAccount(result.account, online: true);
+      await _cache.setLastOnlineValidationAt(DateTime.now().toIso8601String());
       isLoggedIn.value = true;
       logoutReason.value = null; // clear any prior "you were signed out" warning
       update();
@@ -168,6 +245,7 @@ class AuthController extends GetxController {
       );
       await _cache.saveAccount(result.account.toJson());
       _setAccount(result.account, online: true);
+      await _cache.setLastOnlineValidationAt(DateTime.now().toIso8601String());
       isLoggedIn.value = true;
       update();
       return {'success': true};
@@ -213,6 +291,8 @@ class AuthController extends GetxController {
         return false;
       }
       subscriptionBlocked.value = false; // active again → clear any gate
+      // Successful online validation → reset the offline-too-long baseline.
+      await _cache.setLastOnlineValidationAt(DateTime.now().toIso8601String());
       update();
       return true;
     } on ApiException catch (e) {

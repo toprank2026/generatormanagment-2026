@@ -531,6 +531,81 @@ To let another device on the same Wi-Fi reach the backend and scan receipt QRs:
 
 ---
 
+## 18. Same-device (reinstall-safe) login
+**File:** `backend/src/utils/devices.js`
+
+- Device identity now keys off the **OS-stable `deviceId` first**. `sameDevice(existing, incoming)`
+  matches on `deviceId` when both sides have one (ignoring `installId`), and only
+  falls back to `installId` when one side has no `deviceId`.
+- Why: the app-generated `installId` changes on every reinstall / data-clear, but
+  the same physical handset keeps the same OS `deviceId`. Matching on `deviceId`
+  first means a reinstall on the same phone is recognised as the **same device**
+  (the existing binding's fields + `lastSeen` are refreshed) instead of being
+  treated as a brand-new device that would trip `DEVICE_LIMIT`.
+- `upsertDevice` is unchanged in shape: an existing (same) device is refreshed;
+  only a genuinely new `deviceId` is counted against the active plan's
+  `maxDevices` (default 1 when there is no active plan).
+
+**Test:** `backend/test/device_and_events.test.mjs` (new) — register on `dev-A`,
+re-login same `deviceId` + new `installId` → 200, still 1 device; login from a
+different `deviceId` → 403 `DEVICE_LIMIT`.
+
+---
+
+## 19. Real-time new-account notification — SSE + admin pop-up
+**Files:** `backend/src/controllers/authController.js` / register flow, an SSE
+stream route (`backend/src/routes/*` + controller), `backend/public/admin/index.html`
+
+- The backend emits a **Server-Sent Event** when a new account registers and
+  exposes an admin-only SSE stream endpoint. The admin SPA subscribes to that
+  stream and shows a **live pop-up** when a new account signs up, so admins see
+  registrations in real time without reloading the Users screen.
+
+---
+
+## 20. Thermal printer paper-width setting (58mm / 80mm)
+**Files:** `lib/views/screens/settings_screen.dart`, `lib/utils/bluetooth_print_service.dart`, `lib/utils/translations.dart`
+
+- Added a **printer paper-width** setting (58mm / 80mm) in Settings. The selected
+  width is persisted and read by `bluetooth_print_service.dart`, which lays out
+  the receipt (line width / row-image widths) for the chosen paper so receipts
+  print correctly on both common thermal printer sizes.
+- New user-facing strings added to **both** language maps in
+  `lib/utils/translations.dart` (printer width label + the 58mm/80mm options).
+
+---
+
+## 21. Periodic expiry/block re-check + auto-logout after long offline
+**Files:** `lib/controllers/auth_controller.dart`, related app lifecycle wiring, `lib/utils/translations.dart`
+
+- Extends §17.1 (pull-to-refresh `recheckSession`) with a **periodic / foreground**
+  re-validation: while online the app re-checks `/auth/me` on a timer (and on
+  resume), and a **blocked** account or an **inactive** subscription signs the user
+  out to login with the matching warning banner.
+- **Auto-logout after long offline:** a device that stays offline past a grace
+  window is signed out, so a revoked / expired account cannot keep running
+  indefinitely on a stale cached offline session. (A short offline period still
+  keeps the cached session per the offline-first rule.)
+- Any new strings added to **both** language maps in `lib/utils/translations.dart`.
+
+---
+
+## 22. Expenses — sync + pagination
+**Files:** `lib/data/db_helper.dart` (`syncedTables`), expenses controller/repository, `lib/views/screens/*expense*`
+
+- **Expenses are part of the per-account synced tables** (`expenses: 'id'` in
+  `DbHelper.syncedTables`), so every expense change is captured by the
+  `sync_outbox` triggers and pushed device→server like the other business
+  entities; admins view them on the **Expenses** synced-data screen.
+- The **expenses list paginates** via the canonical pattern (fetch
+  `itemsPerPage + 1`, trim, page-1 `assignAll` + later `addAll`, reset on filter
+  change, `ScrollController` `loadMore` near the bottom).
+
+> Note: this documents existing behaviour (expenses were already in the synced
+> tables); no schema-version bump is involved.
+
+---
+
 ## Test steps — verify each feature (step by step)
 
 > Setup: backend `cd backend && npm run dev` (in-memory Mongo); app
@@ -634,3 +709,39 @@ To let another device on the same Wi-Fi reach the backend and scan receipt QRs:
 1. Sign in with an active subscription that has an expiry date.
 2. Confirm the dashboard banner's plan row shows e.g. **`MONTHLY_29days`**
    (or `MONTHLY_expired` once past the expiry).
+
+### P. Same-device (reinstall-safe) login
+1. Register/sign in on a phone (it binds that handset; no active plan => limit 1).
+2. On the **same** phone, clear the app data / reinstall and sign in again.
+3. Confirm sign-in **succeeds** (no `DEVICE_LIMIT`) and the account still shows
+   **one** device (the binding was refreshed, not duplicated).
+4. Sign in from a **different** phone → confirm it is **rejected**
+   (`403 DEVICE_LIMIT`) until a device is unbound / the plan allows more.
+5. Automated: `cd backend && npm test` → `device_and_events.test.mjs` passes.
+
+### Q. Real-time new-account notification (SSE + admin pop-up)
+1. Open the admin panel and stay on it (Users screen).
+2. From the app (or another browser), **register a new account**.
+3. Confirm a **live pop-up** appears in the admin panel announcing the new
+   account, without manually refreshing.
+
+### R. Thermal printer paper-width (58mm / 80mm)
+1. Go to **Settings** → printer paper-width and select **58mm**.
+2. Print a receipt → confirm it fits the 58mm paper.
+3. Switch to **80mm**, print again → confirm the layout widens to the 80mm paper.
+
+### S. Periodic expiry/block re-check + auto-logout after long offline
+1. Sign in (active plan) and leave the app open (online).
+2. In the admin panel **block** the account (or set the plan **expired**).
+3. Wait for the periodic re-check (or background→foreground the app) → confirm
+   the app **signs out to login** with the matching warning banner.
+4. Sign back in, go **offline**, and leave the app offline past the grace window
+   → confirm it **auto-logs-out** (a short offline period must still keep the
+   session, per offline-first).
+
+### T. Expenses — sync + pagination
+1. Add several expenses in the app (online or offline).
+2. When online, open the admin panel → that owner → **Expenses** → confirm the
+   rows appear in the mirror (auto-synced).
+3. Scroll the in-app expenses list → confirm it **paginates** (loads more near the
+   bottom; the count grows page by page) and resets when a filter changes.

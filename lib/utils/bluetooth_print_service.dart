@@ -5,6 +5,7 @@ import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/api_config.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/utils/printer_prefs.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
@@ -126,9 +127,9 @@ class BluetoothPrintService {
   /// Renders [data] as a QR code image (centred on the paper) and prints it.
   /// Image path is reliable for long URLs where the native QR command garbles.
   Future<void> _printQrImage(String data) async {
-    const double paper = 380;
+    final double paper = PrinterPrefs.pixelWidth;
     const double qr = 240;
-    const double off = (paper - qr) / 2;
+    final double off = (paper - qr) / 2;
     final code = bc.Barcode.qrCode(
       errorCorrectLevel: bc.BarcodeQRCorrectionLevel.medium,
     );
@@ -136,7 +137,7 @@ class BluetoothPrintService {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     canvas.drawRect(
-      const Rect.fromLTWH(0, 0, paper, qr + 8),
+      Rect.fromLTWH(0, 0, paper, qr + 8),
       Paint()..color = Colors.white,
     );
     final black = Paint()..color = Colors.black;
@@ -182,7 +183,7 @@ class BluetoothPrintService {
     double fontSize = 22,
     bool top = false,
   }) async {
-    const double width = 380;
+    final double width = PrinterPrefs.pixelWidth;
     const double pad = 10;
     const double rowGap = 8;
     final double divX = width * 0.45; // left column (value) width
@@ -222,7 +223,7 @@ class BluetoothPrintService {
     canvas.drawLine(Offset(width - 1, 0), Offset(width - 1, hh), line); // right
     canvas.drawLine(Offset(0, hh - 1), Offset(width, hh - 1), line); // bottom
     canvas.drawLine(Offset(divX, 0), Offset(divX, hh), line); // divider
-    if (top) canvas.drawLine(const Offset(0, 1), const Offset(width, 1), line);
+    if (top) canvas.drawLine(const Offset(0, 1), Offset(width, 1), line);
 
     lp.paint(canvas, Offset(divX + pad, rowGap));
     vp.paint(canvas, Offset(pad, rowGap));
@@ -264,18 +265,19 @@ class BluetoothPrintService {
           : (textAlign == 2 ? TextAlign.left : TextAlign.right),
     );
 
-    // Standard 58mm printer is ~384 pixels wide. 80mm is ~576.
-    // We'll assume 380 for safety.
-    textPainter.layout(maxWidth: 380);
+    // Paper pixel width depends on the selected setting: ~384px for a 58mm
+    // roll, ~576px for an 80mm roll.
+    final double width = PrinterPrefs.pixelWidth;
+    textPainter.layout(maxWidth: width);
 
     // Fill background with white (some printers need this to avoid black blocks)
     final paint = Paint()..color = Colors.white;
-    canvas.drawRect(Rect.fromLTWH(0, 0, 380, textPainter.height), paint);
+    canvas.drawRect(Rect.fromLTWH(0, 0, width, textPainter.height), paint);
 
     textPainter.paint(canvas, Offset.zero);
 
     final picture = recorder.endRecording();
-    final img = await picture.toImage(380, textPainter.height.toInt() + 4);
+    final img = await picture.toImage(width.toInt(), textPainter.height.toInt() + 4);
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
 
     if (byteData != null) {
