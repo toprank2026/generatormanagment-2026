@@ -7,6 +7,18 @@ import 'package:generatormanagment/views/widgets/shimmer_loading.dart';
 import 'package:generatormanagment/views/screens/subscribers_screen.dart';
 import 'package:generatormanagment/views/screens/boards_screen.dart';
 
+/// Compact plan label with the remaining plan time appended as
+/// `plan_Ndays` (e.g. `MONTHLY_29days`), or `plan_expired` once past the
+/// expiry. Returns just [base] when there is no expiry date.
+String _planWithDaysLeft(String base, String? expiresAt) {
+  if (expiresAt == null || expiresAt.isEmpty) return base;
+  final exp = DateTime.tryParse(expiresAt);
+  if (exp == null) return base;
+  final left = exp.difference(DateTime.now()).inDays;
+  if (left < 0) return '${base}_expired';
+  return '${base}_${left}days';
+}
+
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
 
@@ -117,12 +129,14 @@ class DashboardScreen extends StatelessWidget {
                                 _bannerRow(
                                   Icons.workspace_premium,
                                   Obx(() {
-                                    final plan = authController.account.value
-                                        ?.subscription.planCode;
+                                    final sub = authController
+                                        .account.value?.subscription;
+                                    final plan = sub?.planCode;
+                                    final base = (plan == null || plan.isEmpty)
+                                        ? 'no_plan'.tr
+                                        : plan.toUpperCase();
                                     return Text(
-                                      (plan == null || plan.isEmpty)
-                                          ? 'no_plan'.tr
-                                          : plan.toUpperCase(),
+                                      _planWithDaysLeft(base, sub?.expiresAt),
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 14,

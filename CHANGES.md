@@ -500,6 +500,37 @@ To let another device on the same Wi-Fi reach the backend and scan receipt QRs:
 
 ---
 
+## 17. Session re-check on pull-to-refresh + plan time remaining on the banner
+
+### 17.1 App — pull-to-refresh re-validates the session
+**Files:** `lib/controllers/auth_controller.dart`, `lib/views/screens/login_screen.dart`, `lib/views/screens/dashboard_screen.dart`, `lib/utils/translations.dart`
+
+- `AuthController.recheckSession()` — online-only re-fetch of `/auth/me`. If the
+  account is **blocked**, or the subscription is **not active** (expired /
+  rejected / pending / none), it signs the user out (`logout(reason:)`) with a
+  translation-key warning; a still-active plan change just refreshes the account.
+  A 401/403 ends the session; offline/network errors keep it. Returns whether the
+  session is still valid.
+- `_sessionProblemReason(acc)` maps the refreshed account to a key:
+  `blocked → account_disabled`, `expired → subscription_expired`,
+  `rejected → subscription_rejected`, `pending → subscription_pending`,
+  else `subscription_required`.
+- New `logoutReason` Rx; `logout({reason})` sets it; `login()` clears it.
+- Login screen: an **orange warning banner** at the top when `logoutReason` is set
+  (`session_ended` title + the specific reason).
+- Dashboard `RefreshIndicator.onRefresh` now calls `recheckSession()` first; only
+  reloads stats if still valid.
+- New keys (both maps): `session_ended`, `session_expired`.
+
+### 17.2 App — plan time remaining on the dashboard banner
+**Files:** `lib/views/screens/dashboard_screen.dart`, `lib/utils/translations.dart`
+
+- The banner's plan row now appends the remaining plan time computed from
+  `subscription.expiresAt` as `plan_Ndays` (e.g. `MONTHLY_29days`), or
+  `plan_expired` once past the expiry. Helper `_planWithDaysLeft(base, expiresAt)`.
+
+---
+
 ## Test steps — verify each feature (step by step)
 
 > Setup: backend `cd backend && npm run dev` (in-memory Mongo); app
@@ -584,3 +615,22 @@ To let another device on the same Wi-Fi reach the backend and scan receipt QRs:
 2. From another phone on the same Wi-Fi, open/scan a receipt URL
    `http://<PC-LAN-IP>:4000/admin/#/r/<uuid>`.
 3. Confirm the public receipt page loads (firewall must allow port 4000).
+
+### N. Pull-to-refresh session re-check (blocked / expired / plan changed)
+1. Sign in (active plan) and reach the dashboard.
+2. **Pull down to refresh** → confirm it stays on the dashboard (a `/auth/me`
+   re-check fired).
+3. In the admin panel, **block** that account
+   (`PUT /api/admin/users/:id/blocked {blocked:true}`).
+4. Pull-to-refresh again → confirm the app **signs out to the login screen** with
+   an orange banner: "You have been signed out" + **"Your account is disabled…"**.
+5. Unblock, sign back in, then set the plan **expired**
+   (`PUT /api/admin/users/:id/plan {status:"expired"}`).
+6. Pull-to-refresh → confirm sign-out with **"Your subscription has expired."**
+7. (Offline) Turn off internet and pull-to-refresh → confirm the session is
+   **kept** (no sign-out).
+
+### O. Plan time remaining on the banner
+1. Sign in with an active subscription that has an expiry date.
+2. Confirm the dashboard banner's plan row shows e.g. **`MONTHLY_29days`**
+   (or `MONTHLY_expired` once past the expiry).

@@ -18,6 +18,8 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 ## Auth & accounts
 - ✅ **Sign-up = name + phone + password only** (phone is the login identifier; login is by phone).
 - ✅ Login / sign-up / subscription gate flow.
+- ✅ **Pull-to-refresh session re-check** — pulling to refresh the dashboard (when online) re-validates the account with the server; if the account is **blocked**, the **subscription expired**, or the **plan changed** to a non-active state, the user is signed out to the login screen with a suitable warning banner. Verified live (RMX3085): active → stays; blocked → "account disabled"; expired → "subscription expired".
+- ✅ **Plan time remaining on the dashboard banner** — the plan row shows e.g. `MONTHLY_29days` (or `MONTHLY_expired`), computed from the subscription expiry date.
 - ✅ Owner has full in-app **CRUD** (create/edit/delete board, circuit, subscriber).
 
 ## Data & features
