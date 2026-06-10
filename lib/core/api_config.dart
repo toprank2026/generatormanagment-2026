@@ -1,14 +1,19 @@
 /// Central configuration for the accounts-only backend.
 ///
-/// Override the base URL at build/run time, e.g.:
+/// Defaults to the live production server. Override the base URL at build/run
+/// time for local dev, e.g.:
 ///   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:4000   (Android emulator)
 ///   flutter run --dart-define=API_BASE_URL=http://192.168.1.99:4000 (LAN device)
+///
+/// IMPORTANT: scheme + host only — no trailing slash and no `/api` (every path
+/// constant below already starts with `/api/...`, joined via
+/// `Uri.parse('${ApiConfig.baseUrl}$path')`).
 class ApiConfig {
   ApiConfig._();
 
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://192.168.1.99:4000',
+    defaultValue: 'https://generator.tikritstore.shop',
   );
 
   static const Duration timeout = Duration(seconds: 20);
