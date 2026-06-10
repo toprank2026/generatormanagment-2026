@@ -36,6 +36,12 @@ class AuthController extends GetxController {
   /// NOT block offline users on a stale state.
   final subscriptionBlocked = false.obs;
 
+  /// When a session ends because of a server-side change (account blocked,
+  /// subscription expired, or plan changed to a non-active state) this holds the
+  /// translation key for the warning shown on the login screen. It is `null` for
+  /// a normal user-initiated logout, so no warning is shown then.
+  final logoutReason = RxnString();
+
   Subscription? get subscription => account.value?.subscription;
   bool get hasActiveSubscription => account.value?.subscription.isActive ?? false;
   /// In-app management rights (create/edit/delete boards, circuits, subscribers,
@@ -129,6 +135,7 @@ class AuthController extends GetxController {
       await _cache.saveAccount(result.account.toJson());
       _setAccount(result.account, online: true);
       isLoggedIn.value = true;
+      logoutReason.value = null; // clear any prior "you were signed out" warning
       update();
       return {'success': true};
     } on ApiException catch (e) {
@@ -177,6 +184,73 @@ class AuthController extends GetxController {
     if (await _net.isOnline()) await _refreshFromServer();
   }
 
+  /// Pull-to-refresh online re-validation. Re-fetches the account and, if the
+  /// server now reports the account is **blocked**, or the subscription is **not
+  /// active** (expired / changed / revoked), signs the user out to the login
+  /// screen with a suitable warning (`logoutReason`). A benign plan change that
+  /// is still active just refreshes the banner. Offline or transient network
+  /// errors keep the session untouched.
+  ///
+  /// Returns `true` if the session is still valid (caller may keep going),
+  /// `false` if the user was signed out.
+  Future<bool> recheckSession() async {
+    if (!await _net.isOnline()) return true; // only check "at home with internet"
+    try {
+      isSyncing.value = true;
+      final acc = await _auth.me();
+      await _cache.saveAccount(acc.toJson());
+      // Refresh the in-memory account so the dashboard reflects any change.
+      account.value = acc;
+      currentUser.value = User(
+        id: acc.id,
+        username: acc.username,
+        passwordHash: '',
+        role: acc.role,
+      );
+      final reason = _sessionProblemReason(acc);
+      if (reason != null) {
+        await logout(reason: reason);
+        return false;
+      }
+      subscriptionBlocked.value = false; // active again → clear any gate
+      update();
+      return true;
+    } on ApiException catch (e) {
+      // A hard auth rejection ends the session; network errors keep it.
+      if (e.isAuthError) {
+        await logout(
+          reason: e.statusCode == 403 ? 'account_disabled' : 'session_expired',
+        );
+        return false;
+      }
+      Log.w('recheckSession skipped: ${e.message}');
+      return true;
+    } catch (e) {
+      Log.e('recheckSession failed', e);
+      return true;
+    } finally {
+      isSyncing.value = false;
+    }
+  }
+
+  /// Maps a refreshed server account to a login-warning key when the session
+  /// must end, or `null` when the session is fine.
+  String? _sessionProblemReason(Account acc) {
+    if (acc.blocked) return 'account_disabled';
+    final sub = acc.subscription;
+    if (sub.isActive) return null;
+    switch (sub.status) {
+      case 'expired':
+        return 'subscription_expired';
+      case 'rejected':
+        return 'subscription_rejected';
+      case 'pending':
+        return 'subscription_pending';
+      default:
+        return 'subscription_required';
+    }
+  }
+
   // --- Backward-compatible setup helpers (now backed by the cloud account) ---
 
   /// Old first-run "create admin" path now registers an account on the backend.
@@ -187,13 +261,17 @@ class AuthController extends GetxController {
   /// Accounts now live on the backend, so there is no local "first user" check.
   Future<bool> hasAnyUser() async => false;
 
-  Future<void> logout() async {
+  /// Ends the session. [reason] is a translation key for the warning to show on
+  /// the login screen (set by [recheckSession]); leave it null for a normal
+  /// user-initiated logout so no warning is shown.
+  Future<void> logout({String? reason}) async {
     await _auth.logout();
     await _cache.clear();
     isLoggedIn.value = false;
     account.value = null;
     currentUser.value = null;
     subscriptionBlocked.value = false;
+    logoutReason.value = reason;
     update();
   }
 }

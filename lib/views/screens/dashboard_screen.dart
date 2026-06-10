@@ -26,7 +26,13 @@ class DashboardScreen extends StatelessWidget {
         elevation: 0,
       ),
       body: RefreshIndicator(
-        onRefresh: () => controller.loadStats(),
+        // Pull-to-refresh (online): re-validate the account/subscription with
+        // the server first — if blocked / expired / plan changed, the user is
+        // signed out to the login screen with a warning. Otherwise reload stats.
+        onRefresh: () async {
+          final stillValid = await authController.recheckSession();
+          if (stillValid) await controller.loadStats();
+        },
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: Column(
