@@ -114,6 +114,55 @@ Backups are stored per-account (quota: keep last N, default 10).
 
 ---
 
+## Account (owner self-service) — `/api/account`  (all auth, any role)
+
+Read-only view of the **caller's own** synced mirror — what an owner logged
+into the panel uses for its self-service dashboard. Always scoped to the JWT
+user (the `:id` is implicit); works for `owner` and `admin` roles alike. There
+is **no** write/delete counterpart here — mirror deletes stay admin-only.
+
+### GET `/api/account/data`  (auth)
+
+Same query params and response shape as
+`GET /api/admin/users/:id/data` (see Admin below), but over the JWT user's own
+mirror:
+- `entity` (required), `q`, `page`, `limit`, `includeDeleted=true`
+- `localId` (exact single-record fetch)
+- `relField`/`relValue` (relationship filter, whitelisted:
+  `subscriber_id · board_id · circuit_id`)
+
+```jsonc
+// 200 response — identical shape to the admin variant
+{
+  "entity": "subscribers",
+  "records": [ { "localId": "uuid", "data": { /* the row */ }, "deleted": false, "updatedAt": "ISO" } ],
+  "total": 150,
+  "page": 1,
+  "limit": 25
+}
+```
+Errors: `400` missing `entity`.
+
+### GET `/api/account/stats`  (auth)
+
+Per-entity counts of the caller's **non-deleted** mirrored rows (dashboard
+stats). Entities with no rows are reported as `0`.
+```jsonc
+// 200 response
+{
+  "counts": {
+    "subscribers": 12,
+    "boards": 3,
+    "circuits": 9,
+    "receipts": 240,
+    "expenses": 31,
+    "monthly_prices": 6
+  }
+}
+```
+
+---
+
 ## Admin — `/api/admin`  (auth + role=admin)
 
 - `GET    /api/admin/users`                         list accounts

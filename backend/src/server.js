@@ -16,6 +16,7 @@ const subscriptionRoutes = require('./routes/subscription');
 const deviceRoutes = require('./routes/device');
 const backupRoutes = require('./routes/backup');
 const syncRoutes = require('./routes/sync');
+const accountRoutes = require('./routes/account');
 const adminRoutes = require('./routes/admin');
 const eventsRoutes = require('./routes/events');
 const publicRoutes = require('./routes/public');
@@ -37,6 +38,8 @@ function buildApp() {
   app.use('/api/device', deviceRoutes);
   app.use('/api/backup', backupRoutes);
   app.use('/api/sync', syncRoutes);
+  // Owner self-service (read-only view of the caller's own synced mirror).
+  app.use('/api/account', accountRoutes);
   // SSE events for the admin panel (auth via ?token= query). Mount BEFORE the
   // header-auth admin router so the token-on-query request reaches it.
   app.use('/api/admin', eventsRoutes);

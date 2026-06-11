@@ -42,6 +42,7 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Admin panel fully Arabic (RTL)** — sidebar layout; all admin screens/labels in Arabic, right-to-left.
 - ✅ **Real-time new-account notification (SSE)** — the backend streams a Server-Sent Event when a new account registers; the admin panel subscribes and shows a live pop-up so admins see sign-ups in real time without refreshing.
 - ✅ **Admin subscriber statement** — per-subscriber payment history (kashf hesab) view in the admin panel.
+- ✅ **Owner self-service panel** — an owner (app account) can log into the admin panel URL with their app credentials and sees **only their own** dashboard + data (stats cards, Subscribers/Boards/Circuits/Receipts/Expenses/Monthly prices, subscriber statement, receipt details — read-only); admin features (Users/Plans/SSE/mirror deletes) are hidden and route-guarded. Backed by `GET /api/account/data` + `GET /api/account/stats` (auth, JWT-scoped).
 - ✅ **App: record payment + print invoice from the payment-history screen** — log a payment and print its receipt directly from a subscriber's payment-history screen.
 - ✅ **Verified live (RMX3085 + Chrome MCP):** small change auto-synced (board → admin Boards screen); 150-record seed → confirm dialog "253 changes pending — upload now?" → uploaded only on confirm → admin Subscribers (150).
 - ✅ Billing (per-amp monthly price, receipts, Bluetooth print), expenses, dashboard.

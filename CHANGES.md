@@ -665,6 +665,64 @@ stream route (`backend/src/routes/*` + controller), `backend/public/admin/index.
 
 ---
 
+## 27. Owner self-service panel — owner login on the admin panel URL
+
+An **owner** (the Flutter app account; phone + password) can now log into the
+**same admin panel URL** and gets a **self-service dashboard of only their own
+data** — like the app: stats cards + Subscribers / Boards / Circuits /
+Receipts / Expenses / Monthly prices, plus the subscriber statement and
+receipt-details views — all **read-only**. Admin features (Users list, Plans,
+other accounts, the SSE feed, mirror deletes) are hidden from owners **and**
+route-guarded.
+
+### 27.1 Backend — JWT-scoped account data + stats
+**Files (new):** `backend/src/controllers/accountController.js`, `backend/src/routes/account.js`
+**Files (edited):** `backend/src/controllers/adminController.js`, `backend/src/server.js`, `backend/API_CONTRACT.md`
+
+- The entity-listing logic (`entity`/`q`/`page`/`limit`/`relField`/`localId`
+  over `SyncRecord`, see §2.1/§6.3) was **refactored out of
+  `adminController.getUserData` into a shared `listUserData` helper**;
+  `getUserData` (admin, any user id) now delegates to it — same behaviour as
+  before for admins.
+- `accountController` (new) reuses the same helper but **always scopes to
+  `req.user._id`** (the JWT account — an owner can never reach another
+  account's mirror):
+  - `GET /api/account/data` (auth) — same query contract as the admin endpoint
+    (`entity, q, page, limit, relField/relValue, localId`) and the same
+    response shape `{ entity, records, total, page, limit }`.
+  - `GET /api/account/stats` (auth) — dashboard counts over the account's own
+    mirror (subscribers / boards / circuits / receipts / expenses /
+    monthly prices) for the stats cards.
+- `routes/account.js`: `router.use(requireAuth)` + the two GETs — **no admin
+  middleware** (owners are the audience) and **no write routes** (the mirror
+  stays push-only device→server; the owner panel is read-only).
+- `server.js`: mount `app.use('/api/account', accountRoutes)`.
+- `backend/API_CONTRACT.md`: documented the two new endpoints.
+
+### 27.2 Admin SPA — owner mode (role-aware boot / sidebar / guards, `#/my` routes)
+**File:** `backend/public/admin/index.html`
+
+- **Role-aware boot:** after login / token validation the SPA keeps the
+  account's `role`; `role === 'admin'` boots into the existing admin UI,
+  `role === 'owner'` boots into **owner mode** (login itself is unchanged —
+  `/api/auth/login` already works for both roles).
+- **Owner sidebar:** only the owner items (dashboard + the six entity
+  screens) — **no Users / Plans** nav — and the admin **SSE** subscription is
+  never opened for owners.
+- **Owner routes (`#/my…`):** `#/my` (dashboard with stats cards from
+  `GET /api/account/stats`) and `#/my/data/:entity` per entity, plus the
+  owner-scoped subscriber statement and receipt-details views — all fetching
+  `GET /api/account/data` with the same search + server-side pagination as the
+  admin screens (§2.2).
+- **Read-only tables:** the owner entity screens render **without delete
+  buttons** (mirror deletes stay admin-only; no create/edit either).
+- **Route guards both ways:** an owner navigating to any admin route (e.g. a
+  direct `#/users` URL) is **redirected to `#/my`**; an admin hitting `#/my…`
+  is redirected to the admin dashboard. Admin behaviour is otherwise
+  unchanged.
+
+---
+
 ## Test steps — verify each feature (step by step)
 
 > Setup: backend `cd backend && npm run dev` (in-memory Mongo); app
@@ -842,3 +900,18 @@ stream route (`backend/src/routes/*` + controller), `backend/public/admin/index.
    session (offline-first).
 3. Run without the defines → confirm the defaults apply (15-min re-check,
    3-day offline window) — production behaviour unchanged.
+
+### Y. Owner self-service panel
+1. Open `http://<host>:4000/admin` and log in with an **app (owner) account**
+   (phone + password — the same credentials as the Flutter app).
+2. Confirm the **owner dashboard** (`#/my`) opens with that account's **stats
+   cards**, and the sidebar shows only the owner items — **no Users / Plans**.
+3. Open each entity screen (Subscribers / Boards / Circuits / Receipts /
+   Expenses / Monthly prices) → confirm only **this account's** rows appear
+   (search + pagination work), the **subscriber statement** and **receipt
+   details** open owner-scoped, and there are **no delete buttons** anywhere
+   (read-only).
+4. Type a direct admin URL (`#/users`) in the address bar → confirm it
+   **redirects to `#/my`**.
+5. Log out and log in as **admin** → confirm the admin panel is unchanged
+   (Users / Plans / SSE pop-up / mirror deletes all present).

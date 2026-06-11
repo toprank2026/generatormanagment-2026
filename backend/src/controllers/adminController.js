@@ -182,31 +182,34 @@ function escapeRegex(str) {
 }
 
 /**
- * GET /api/admin/users/:id/data?entity=E&q=&page=1&limit=25[&includeDeleted=true]
+ * Core mirror listing shared by the admin endpoint (any user id) and the owner
+ * self-service endpoint (`/api/account/data`, the JWT user's own data).
  *
  * Lists the mirrored business rows an owner pushed for a single entity, newest
  * first. Optional case-insensitive substring search (q) is applied (over the
  * entity's SEARCH_FIELDS, or localId for unknown entities) before pagination.
- * Deleted tombstones are excluded unless includeDeleted=true.
+ * Deleted tombstones are excluded unless includeDeleted=true. Also supports a
+ * localId exact fetch and a whitelisted relField/relValue relationship filter.
+ *
+ * @param {*} userId Mongo id of the account whose mirror is listed.
+ * @param {object} query Express `req.query` (entity, q, page, limit, ...).
+ * @returns {Promise<{entity, records, total, page, limit}>}
  */
-const getUserData = asyncHandler(async (req, res) => {
-  const { entity } = req.query;
+async function listUserData(userId, query = {}) {
+  const { entity } = query;
   if (!entity || typeof entity !== 'string') {
     throw new HttpError(400, 'entity query param is required', 'ENTITY_REQUIRED');
   }
 
-  const user = await User.findById(req.params.id);
-  if (!user) throw new HttpError(404, 'User not found', 'USER_NOT_FOUND');
-
-  const filter = { user: user._id, entity };
-  const includeDeleted = req.query.includeDeleted === 'true';
+  const filter = { user: userId, entity };
+  const includeDeleted = query.includeDeleted === 'true';
   if (!includeDeleted) filter.deleted = false;
 
   // Exact single-record fetch by localId (receipt-details screen).
-  const localId = typeof req.query.localId === 'string' ? req.query.localId.trim() : '';
+  const localId = typeof query.localId === 'string' ? query.localId.trim() : '';
   if (localId) filter.localId = localId;
 
-  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  const q = typeof query.q === 'string' ? query.q.trim() : '';
   if (q) {
     const regex = { $regex: escapeRegex(q), $options: 'i' };
     const fields = SEARCH_FIELDS[entity] || [];
@@ -216,16 +219,16 @@ const getUserData = asyncHandler(async (req, res) => {
     filter.$or = or;
   }
 
-  // Optional relationship filter (admin drill-down). Whitelisted fields only.
+  // Optional relationship filter (drill-down). Whitelisted fields only.
   const REL_FIELDS = ['subscriber_id', 'board_id', 'circuit_id'];
-  const relField = typeof req.query.relField === 'string' ? req.query.relField : '';
-  const relValue = req.query.relValue;
+  const relField = typeof query.relField === 'string' ? query.relField : '';
+  const relValue = query.relValue;
   if (relField && REL_FIELDS.includes(relField) && typeof relValue === 'string' && relValue) {
     filter[`data.${relField}`] = relValue;
   }
 
-  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-  let limit = parseInt(req.query.limit, 10);
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  let limit = parseInt(query.limit, 10);
   if (!Number.isFinite(limit) || limit < 1) limit = 25;
   limit = Math.min(200, Math.max(1, limit));
 
@@ -242,7 +245,20 @@ const getUserData = asyncHandler(async (req, res) => {
     updatedAt: d.updatedAt ? d.updatedAt.toISOString() : null,
   }));
 
-  res.status(200).json({ entity, records, total, page, limit });
+  return { entity, records, total, page, limit };
+}
+
+/**
+ * GET /api/admin/users/:id/data?entity=E&q=&page=1&limit=25[&includeDeleted=true]
+ *
+ * Admin view over any owner's mirror; validates the :id param then delegates
+ * to listUserData (see above for the supported query params).
+ */
+const getUserData = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) throw new HttpError(404, 'User not found', 'USER_NOT_FOUND');
+
+  res.status(200).json(await listUserData(user._id, req.query));
 });
 
 /**
@@ -261,6 +277,64 @@ const deleteUserData = asyncHandler(async (req, res) => {
   if (!deleted) throw new HttpError(404, 'Record not found', 'RECORD_NOT_FOUND');
 
   res.status(200).json({ ok: true });
+});
+
+/**
+ * Compact human label for a mirrored record, shown in "latest uploads" lists
+ * (admin dashboard + owner panel home).
+ */
+const labelFor = (entity, data) => {
+  if (!data) return null;
+  switch (entity) {
+    case 'subscribers': return data.name || data.phone || null;
+    case 'boards': return data.name || data.code || null;
+    case 'circuits': return data.name || null;
+    case 'receipts': return data.receipt_no != null ? `#${data.receipt_no}` : null;
+    case 'expenses': return [data.category, data.amount].filter((v) => v != null).join(' — ') || null;
+    case 'monthly_prices': return data.month || null;
+    default: return null;
+  }
+};
+
+/**
+ * GET /api/admin/recent-data?limit=10
+ *
+ * The latest data uploaded (synced) from the Flutter apps across ALL accounts,
+ * newest first — shown on the admin dashboard home. Each item carries the
+ * owner's name/generator plus a compact human label derived from the record.
+ */
+const recentData = asyncHandler(async (req, res) => {
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+
+  const filter = { deleted: false };
+  const total = await SyncRecord.countDocuments(filter);
+  const records = await SyncRecord.find(filter)
+    .sort({ updatedAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit);
+
+  const userIds = [...new Set(records.map((r) => String(r.user)))];
+  const users = await User.find({ _id: { $in: userIds } });
+  const byId = new Map(users.map((u) => [String(u._id), u]));
+
+  res.status(200).json({
+    items: records.map((r) => {
+      const owner = byId.get(String(r.user));
+      return {
+        entity: r.entity,
+        localId: r.localId,
+        updatedAt: r.updatedAt,
+        label: labelFor(r.entity, r.data),
+        userId: String(r.user),
+        userName: owner ? owner.name || owner.username : null,
+        generatorName: owner ? owner.generatorName || null : null,
+      };
+    }),
+    total,
+    page,
+    limit,
+  });
 });
 
 // ---- Plans ----
@@ -312,8 +386,11 @@ module.exports = {
   approvePlan,
   rejectPlan,
   unbindDevice,
+  listUserData,
   getUserData,
   deleteUserData,
+  recentData,
+  labelFor,
   listPlans,
   upsertPlan,
   deletePlan,

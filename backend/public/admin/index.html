@@ -402,20 +402,29 @@ function api(method,path,body,isForm){
     throw new ApiError("خطأ في الشبكة — تعذّر الوصول إلى الخادم.",0);
   });
 }
+// Shared query-string builder for the synced-data endpoints (admin + owner).
+function syncDataQuery(entity,opts){
+  opts=opts||{};
+  var q="?entity="+encodeURIComponent(entity);
+  if(opts.q) q+="&q="+encodeURIComponent(opts.q);
+  if(opts.page) q+="&page="+encodeURIComponent(opts.page);
+  if(opts.limit) q+="&limit="+encodeURIComponent(opts.limit);
+  if(opts.localId) q+="&localId="+encodeURIComponent(opts.localId);
+  if(opts.includeDeleted) q+="&includeDeleted=true";
+  if(opts.relField&&opts.relValue){ q+="&relField="+encodeURIComponent(opts.relField)+"&relValue="+encodeURIComponent(opts.relValue); }
+  return q;
+}
 var API={
   login:function(username,password){ return api("POST","/api/auth/login",{username:username,password:password}); },
   me:function(){ return api("GET","/api/auth/me"); },
+  // Owner self-service: the signed-in account's own stats + mirrored data.
+  myStats:function(){ return api("GET","/api/account/stats"); },
+  myData:function(entity,opts){ return api("GET","/api/account/data"+syncDataQuery(entity,opts)); },
+  myRecent:function(limit,page){ return api("GET","/api/account/recent?limit="+(limit||10)+"&page="+(page||1)); },
   users:function(){ return api("GET","/api/admin/users"); },
   user:function(id){ return api("GET","/api/admin/users/"+encodeURIComponent(id)); },
   userData:function(id,entity,opts){
-    opts=opts||{};
-    var q="?entity="+encodeURIComponent(entity);
-    if(opts.q) q+="&q="+encodeURIComponent(opts.q);
-    if(opts.page) q+="&page="+encodeURIComponent(opts.page);
-    if(opts.limit) q+="&limit="+encodeURIComponent(opts.limit);
-    if(opts.includeDeleted) q+="&includeDeleted=true";
-    if(opts.relField&&opts.relValue){ q+="&relField="+encodeURIComponent(opts.relField)+"&relValue="+encodeURIComponent(opts.relValue); }
-    return api("GET","/api/admin/users/"+encodeURIComponent(id)+"/data"+q);
+    return api("GET","/api/admin/users/"+encodeURIComponent(id)+"/data"+syncDataQuery(entity,opts));
   },
   deleteUserData:function(id,entity,localId){
     return api("DELETE","/api/admin/users/"+encodeURIComponent(id)+"/data/"+encodeURIComponent(entity)+"/"+encodeURIComponent(localId));
@@ -430,6 +439,7 @@ var API={
   plans:function(){ return api("GET","/api/admin/plans"); },
   upsertPlan:function(body){ return api("PUT","/api/admin/plans",body); },
   deletePlan:function(code){ return api("DELETE","/api/admin/plans/"+encodeURIComponent(code)); },
+  recentData:function(limit,page){ return api("GET","/api/admin/recent-data?limit="+(limit||10)+"&page="+(page||1)); },
   publicReceipt:function(uuid){ return api("GET","/api/public/receipt/"+encodeURIComponent(uuid)); },
   publicReceiptHistory:function(uuid){ return api("GET","/api/public/receipt/"+encodeURIComponent(uuid)+"/history"); }
 };
@@ -437,11 +447,15 @@ var API={
 /* ============================================================
    Auth helpers
    ============================================================ */
+function isAdmin(){ return !!(state.me&&state.me.role==="admin"); }
+// Landing route per role: admins → admin dashboard, owners → "لوحتي".
+function homeHash(){ return isAdmin()?"#/dashboard":"#/my"; }
 function setSession(token,me){
   state.token=token; state.me=me;
   localStorage.setItem(TOKEN_KEY,token);
   if(me) localStorage.setItem(ME_KEY,JSON.stringify(me));
-  connectEvents();
+  if(isAdmin()) connectEvents();   // the SSE feed is admin-only
+  else disconnectEvents();
 }
 function doLogout(silent){
   state.token=null; state.me=null;
@@ -463,6 +477,7 @@ var _es=null;          // active EventSource (or null)
 var _esRetry=null;     // pending reconnect timer
 function connectEvents(){
   if(!state.token) return;
+  if(!isAdmin()) return;                         // events feed is an admin-only endpoint
   if(typeof EventSource==="undefined") return;   // unsupported browser → silently skip
   disconnectEvents();
   var es;
@@ -557,18 +572,35 @@ function confirmModal(opts){
 function shell(activeRoute,content){
   var app=$("#app"); clear(app);
   var me=state.me||{};
-  var nav=el("nav",[
-    navLink("#/dashboard","لوحة التحكم",activeRoute),
-    navLink("#/users","المستخدمون",activeRoute),
-    navLink("#/plans","الخطط",activeRoute)
-  ]);
+  var admin=isAdmin();
+  var nav;
+  if(admin){
+    nav=el("nav",[
+      navLink("#/dashboard","لوحة التحكم",activeRoute),
+      navLink("#/users","المستخدمون",activeRoute),
+      navLink("#/plans","الخطط",activeRoute)
+    ]);
+  } else {
+    // Owner mode: their dashboard + one screen per synced entity. No admin items.
+    var items=[navLink("#/my","لوحتي",activeRoute)];
+    OWNER_ENTITIES.forEach(function(e){
+      items.push(navLink("#/my/data/"+e.value,e.label,activeRoute));
+    });
+    nav=el("nav",items);
+  }
+  var who=admin
+    ? el("span",{class:"who",text:(me.name||me.username||"المدير")})
+    : el("div",{class:"who"},[
+        el("div",{text:(me.name||me.username||"مالك")}),
+        me.generatorName?el("div",{style:"font-weight:500;font-size:12.5px;opacity:.85",text:me.generatorName}):null
+      ]);
   var side=el("div",{class:"sidebar"},[
-    el("div",{class:"brand"},[el("span",{class:"logo",text:"M"}),"إدارة مولدتي"]),
+    el("div",{class:"brand"},[el("span",{class:"logo",text:"M"}),admin?"إدارة مولدتي":"مولدتي"]),
     nav,
     el("div",{class:"foot"},[
-      el("span",{class:"who",text:(me.name||me.username||"المدير")}),
+      who,
       el("button",{class:"logout",text:"تسجيل الخروج",onclick:function(){
-        confirmModal({title:"تسجيل الخروج",message:"هل تريد إنهاء جلسة المدير؟",confirmText:"تسجيل الخروج",onConfirm:function(){ doLogout(); return true; }});
+        confirmModal({title:"تسجيل الخروج",message:admin?"هل تريد إنهاء جلسة المدير؟":"هل تريد تسجيل الخروج من حسابك؟",confirmText:"تسجيل الخروج",onConfirm:function(){ doLogout(); return true; }});
       }})
     ])
   ]);
@@ -578,7 +610,7 @@ function shell(activeRoute,content){
   app.appendChild(wrap);
 }
 function navLink(href,label,active){
-  var isActive = active && (active===href || (href!=="#/dashboard" && active.indexOf(href)===0));
+  var isActive = active && (active===href || (href!=="#/dashboard" && href!=="#/my" && active.indexOf(href)===0));
   return el("a",{href:href,class:isActive?"active":"",text:label});
 }
 function loadingBlock(label){
@@ -600,6 +632,12 @@ var routes=[
   {re:/^#\/login$/, view:viewLogin, public:true},
   {re:/^#\/r\/([^\/]+)\/history$/, view:viewPublicReceiptHistory, public:true},
   {re:/^#\/r\/([^\/]+)$/, view:viewPublicReceipt, public:true},
+  // Owner self-service area (#/my…) — the signed-in owner's own data only.
+  {re:/^#\/my$/, view:viewMyDashboard, owner:true},
+  {re:/^#\/my\/data\/receipts\/detail\/([^\/]+)$/, view:viewMyReceiptDetail, owner:true},
+  {re:/^#\/my\/data\/([^\/]+)\/by\/([^\/]+)\/([^\/]+)$/, view:viewMyEntity, owner:true},
+  {re:/^#\/my\/data\/([^\/]+)$/, view:viewMyEntity, owner:true},
+  {re:/^#\/my\/sub\/([^\/]+)$/, view:viewMyStatement, owner:true},
   {re:/^#\/dashboard$/, view:viewDashboard},
   {re:/^#\/users$/, view:viewUsers},
   {re:/^#\/users\/([^\/]+)\/data\/receipts\/detail\/([^\/]+)$/, view:viewReceiptDetail},
@@ -618,15 +656,20 @@ function currentRouteIsPublic(){
 }
 function render(){
   var hash=location.hash||"";
-  if(!hash){ location.hash = state.token?"#/dashboard":"#/login"; return; }
+  if(!hash){ location.hash = state.token?homeHash():"#/login"; return; }
   var match=null,params=null;
   for(var i=0;i<routes.length;i++){
     var m=hash.match(routes[i].re);
     if(m){ match=routes[i]; params=m.slice(1).map(decodeURIComponent); break; }
   }
-  if(!match){ location.hash = state.token?"#/dashboard":"#/login"; return; }
+  if(!match){ location.hash = state.token?homeHash():"#/login"; return; }
   if(!match.public && !state.token){ location.hash="#/login"; return; }
-  if(match.public && match.view===viewLogin && state.token){ location.hash="#/dashboard"; return; }
+  if(match.public && match.view===viewLogin && state.token){ location.hash=homeHash(); return; }
+  // Role guards: owners can only reach the #/my* screens; admins use the admin area.
+  if(!match.public){
+    if(!match.owner && !isAdmin()){ location.hash="#/my"; return; }
+    if(match.owner && isAdmin()){ location.hash="#/dashboard"; return; }
+  }
   closeModal();
   match.view.apply(null,params||[]);
 }
@@ -651,12 +694,10 @@ function viewLogin(){
     API.login(u,p).then(function(res){
       if(!res||!res.token) throw new ApiError("لم يُرجع الخادم أي رمز دخول.",0);
       var acc=res.account||{};
-      if(acc.role && acc.role!=="admin"){
-        throw new ApiError("هذا الحساب ليس حساب مدير.",403,"NOT_ADMIN");
-      }
       setSession(res.token,acc);
-      toast("مرحبًا، "+(acc.name||acc.username||"المدير"),"ok");
-      location.hash="#/dashboard";
+      var whoName=acc.name||acc.username;
+      toast(whoName?("مرحبًا، "+whoName):"مرحبًا بك","ok");
+      location.hash=homeHash();   // admin → dashboard, owner → لوحتي
     }).catch(function(err){
       btn.disabled=false; clear(btn); btn.textContent="تسجيل الدخول";
       errBox.appendChild(el("div",{class:"alert err",text:err.message||"فشل تسجيل الدخول."}));
@@ -666,7 +707,7 @@ function viewLogin(){
   var form=el("form",{onsubmit:submit},[
     el("div",{class:"logo-big",text:"M"}),
     el("h2",{text:"إدارة مولدتي"}),
-    el("p",{class:"tag",text:"سجّل الدخول لإدارة الحسابات والخطط"}),
+    el("p",{class:"tag",text:"سجّل الدخول بحساب المدير أو حساب التطبيق"}),
     errBox,
     el("div",{class:"field"},[el("label",{text:"اسم المستخدم"}),uIn]),
     el("div",{class:"field"},[el("label",{text:"كلمة المرور"}),pIn]),
@@ -680,7 +721,10 @@ function viewLogin(){
    ============================================================ */
 function viewDashboard(){
   shell("#/dashboard",loadingBlock("جارٍ تحميل لوحة التحكم…"));
-  Promise.all([API.users().catch(function(){return {users:[]};}), API.plans().catch(function(){return {plans:[]};})])
+  Promise.all([
+    API.users().catch(function(){return {users:[]};}),
+    API.plans().catch(function(){return {plans:[]};})
+  ])
   .then(function(res){
     var users=normalizeList(res[0],"users");
     var plans=normalizeList(res[1],"plans");
@@ -705,6 +749,15 @@ function viewDashboard(){
     grid.appendChild(statCard("المديرون",admins,"🔑"));
     grid.appendChild(statCard("الخطط النشطة",activePlans+"/"+plans.length,"📦"));
     content.appendChild(grid);
+
+    // Latest data uploaded (synced) from the apps — newest first, paginated.
+    content.appendChild(recentUploadsCard(API.recentData,{
+      ownerCol:true,
+      targetFor:function(it){
+        if(it.entity==="receipts") return "#/users/"+it.userId+"/data/receipts/detail/"+encodeURIComponent(it.localId);
+        return "#/users/"+it.userId+"/data/"+it.entity;
+      }
+    }));
 
     // pending requests panel
     var pendingUsers=users.filter(function(u){ return (u.subscription||{}).status==="pending"; });
@@ -1010,6 +1063,84 @@ function entityLabel(value){
   for(var i=0;i<SYNC_ENTITIES.length;i++){ if(SYNC_ENTITIES[i].value===value) return SYNC_ENTITIES[i].label; }
   return value;
 }
+// Owner-mode wording + icons for the same entities (nav, لوحتي cards, crumbs).
+var OWNER_ENTITIES=[
+  {value:"subscribers",label:"المشتركون",icon:"👥"},
+  {value:"boards",label:"البوردات",icon:"🔌"},
+  {value:"circuits",label:"الجوزات",icon:"🔗"},
+  {value:"receipts",label:"الوصولات",icon:"🧾"},
+  {value:"expenses",label:"المصروفات",icon:"💸"},
+  {value:"monthly_prices",label:"أسعار الأشهر",icon:"📅"}
+];
+function ownerEntityLabel(value){
+  for(var i=0;i<OWNER_ENTITIES.length;i++){ if(OWNER_ENTITIES[i].value===value) return OWNER_ENTITIES[i].label; }
+  return entityLabel(value);
+}
+
+/* Paginated "آخر البيانات المرفوعة من التطبيق" card, shared by the admin
+   dashboard (ownerCol:true, cross-account) and the owner home (own data).
+   fetchFn(limit,page) -> { items, total, page, limit }. */
+var RECENT_PAGE_LIMIT=10;
+function recentUploadsCard(fetchFn,opts){
+  opts=opts||{};
+  var card=el("div",{class:"card"});
+  var subEl=el("span",{class:"sub",text:""});
+  card.appendChild(el("div",{class:"card-h"},[
+    el("span",{text:"آخر البيانات المرفوعة من التطبيق"}),subEl
+  ]));
+  var body=el("div",{class:"card-b flush"});
+  card.appendChild(body);
+  var page=1;
+
+  function load(){
+    clear(body);
+    body.appendChild(el("div",{style:"padding:14px"},[loadingBlock("جارٍ التحميل…")]));
+    fetchFn(RECENT_PAGE_LIMIT,page).then(function(res){
+      var items=(res&&res.items)||[];
+      var total=(res&&res.total!=null)?res.total:items.length;
+      var pages=Math.max(1,Math.ceil(total/RECENT_PAGE_LIMIT));
+      subEl.textContent=total?(total+" عنصر"):"";
+      clear(body);
+      if(!items.length){
+        body.appendChild(el("div",{class:"empty",text:"لا توجد بيانات مرفوعة بعد."}));
+        return;
+      }
+      var tw=el("div",{class:"tbl-wrap"});
+      var tbl=el("table");
+      var headCells=[th("الوقت")];
+      if(opts.ownerCol) headCells.push(th("المالك"));
+      headCells.push(th("النوع"),th("العنصر"),th(""));
+      tbl.appendChild(el("thead",[el("tr",headCells)]));
+      var tb=el("tbody");
+      items.forEach(function(it){
+        var cells=[el("td",{class:"muted",text:fmtDate(it.updatedAt)})];
+        if(opts.ownerCol){
+          var ownerTxt=(it.userName||"—")+(it.generatorName?(" — "+it.generatorName):"");
+          cells.push(el("td",[el("a",{href:"#/users/"+it.userId,text:ownerTxt})]));
+        }
+        cells.push(
+          el("td",[el("span",{class:"badge blue",text:ownerEntityLabel(it.entity)})]),
+          el("td",{text:it.label||it.localId||"—"}),
+          el("td",{class:"right"},[el("a",{class:"btn sm ghost",href:opts.targetFor(it),text:"عرض"})])
+        );
+        tb.appendChild(el("tr",cells));
+      });
+      tbl.appendChild(tb); tw.appendChild(tbl); body.appendChild(tw);
+      if(pages>1){
+        body.appendChild(el("div",{class:"toolbar",style:"justify-content:center;margin:6px 0 10px"},[
+          el("button",{class:"btn neutral sm",disabled:page<=1?"":false,onclick:function(){ if(page>1){ page--; load(); } }},["السابق ›"]),
+          el("span",{class:"muted",style:"min-width:120px;text-align:center",text:"صفحة "+page+" / "+pages}),
+          el("button",{class:"btn neutral sm",disabled:page>=pages?"":false,onclick:function(){ if(page<pages){ page++; load(); } }},["‹ التالي"])
+        ]));
+      }
+    }).catch(function(err){
+      clear(body);
+      body.appendChild(el("div",{class:"empty",text:err.message||"تعذّر التحميل."}));
+    });
+  }
+  load();
+  return card;
+}
 function syncText(v){ return (v==null||v==="")?"—":String(v); }
 var SYNC_COLUMNS={
   subscribers:[
@@ -1284,7 +1415,8 @@ function viewReceiptDetail(id,localId){
     }
     var d=rec.data||{};
     // Resolve the subscriber name (best-effort) then render.
-    API.userData(id,"subscribers",{localId:d.subscriber_id}).then(function(sres){
+    var pSub=d.subscriber_id?API.userData(id,"subscribers",{localId:d.subscriber_id}):Promise.resolve(null);
+    pSub.then(function(sres){
       var sr=normalizeList(sres,"records")[0];
       renderReceiptDetail(id,u,rec,d,sr?(sr.data||{}).name:null);
     }).catch(function(){ renderReceiptDetail(id,u,rec,d,null); });
@@ -1302,6 +1434,13 @@ function renderReceiptDetail(id,u,rec,d,subName){
     el("a",{href:"#/users/"+id+"/data/receipts",text:"الوصولات"}),
     el("span",{text:" / #"+(d.receipt_no!=null?d.receipt_no:"")})
   ]));
+  content.appendChild(receiptDetailContent(rec,d,subName));
+  shell("#/users",content);
+}
+
+/* Shared receipt-detail body (page head + details card) — admin + owner screens. */
+function receiptDetailContent(rec,d,subName){
+  var content=el("div");
   content.appendChild(pageHead("وصل رقم #"+(d.receipt_no!=null?d.receipt_no:"—")));
 
   var status=(d.status||"valid");
@@ -1330,7 +1469,7 @@ function renderReceiptDetail(id,u,rec,d,subName){
     el("div",{class:"card-h"},[el("span",{text:"تفاصيل الوصل"})]),
     el("div",{class:"card-b"},[el("div",{class:"kv"},kv)])
   ]));
-  shell("#/users",content);
+  return content;
 }
 
 /* ============================================================
@@ -1406,42 +1545,6 @@ function viewUserStatement(id,subId){
     ]));
   }
 
-  function statementTable(records){
-    if(!records.length){
-      return el("div",{class:"card"},[el("div",{class:"card-b"},[
-        el("div",{class:"empty"},[el("div",{class:"big",text:"🧾"}),"لا توجد وصولات لهذا المشترك بعد."])
-      ])]);
-    }
-    var tw=el("div",{class:"tbl-wrap"});
-    var tbl=el("table");
-    tbl.appendChild(el("thead",[el("tr",[
-      th("رقم الوصل"),th("الشهر"),th("المدفوع"),th("المتبقي"),th("التاريخ"),th("الحالة"),th("")
-    ])]));
-    var tb=el("tbody");
-    records.forEach(function(r){
-      var d=r.data||{};
-      var st=(d.deleted||r.deleted)?"deleted":(d.status||"valid");
-      var stBadge=st==="deleted"
-        ? el("span",{class:"badge gray"},["محذوف"])
-        : el("span",{class:"badge "+(st==="valid"?"green":"red")},[st==="valid"?"صالح":st]);
-      var detailHref="#/users/"+id+"/data/receipts/detail/"+encodeURIComponent(r.localId);
-      tb.appendChild(el("tr",[
-        el("td",[el("a",{href:detailHref,style:"font-weight:700",text:(d.receipt_no!=null?"#"+d.receipt_no:"—")})]),
-        el("td",{class:"nowrap",text:syncText(d.month)}),
-        el("td",{class:"nowrap",text:d.paid_amount!=null?fmtPrice(d.paid_amount):"—"}),
-        el("td",{class:"nowrap",text:d.remaining_after!=null?fmtPrice(d.remaining_after):"—"}),
-        el("td",{class:"muted nowrap",text:d.issued_at?fmtDateShort(d.issued_at):fmtDateShort(r.updatedAt)}),
-        el("td",[stBadge]),
-        el("td",{class:"right"},[el("a",{class:"btn sm ghost",href:detailHref},["التفاصيل ›"])])
-      ]));
-    });
-    tbl.appendChild(tb); tw.appendChild(tbl);
-    return el("div",{class:"card"},[
-      el("div",{class:"card-h"},[el("span",{text:"سجل المدفوعات"})]),
-      el("div",{class:"card-b flush"},[tw])
-    ]);
-  }
-
   function loadReceipts(){
     clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
     clear(pagerWrap);
@@ -1451,7 +1554,7 @@ function viewUserStatement(id,subId){
       if(res&&res.page) page=res.page;
       paintPager(total);
       clear(tableWrap);
-      tableWrap.appendChild(statementTable(records));
+      tableWrap.appendChild(statementTable(records,function(lid){ return "#/users/"+id+"/data/receipts/detail/"+encodeURIComponent(lid); }));
     }).catch(function(err){
       if(err.status===401) return;
       clear(tableWrap); tableWrap.appendChild(errorBlock(err,loadReceipts));
@@ -1478,6 +1581,348 @@ function viewUserStatement(id,subId){
     if(err.status===401) return;
     clear(tableWrap); tableWrap.appendChild(errorBlock(err,function(){ viewUserStatement(id,subId); }));
   });
+}
+
+/* Shared statement table (receipt rows). `detailHref(localId)` builds the link
+   to the receipt-details screen (admin or owner scope). */
+function statementTable(records,detailHrefFor){
+  if(!records.length){
+    return el("div",{class:"card"},[el("div",{class:"card-b"},[
+      el("div",{class:"empty"},[el("div",{class:"big",text:"🧾"}),"لا توجد وصولات لهذا المشترك بعد."])
+    ])]);
+  }
+  var tw=el("div",{class:"tbl-wrap"});
+  var tbl=el("table");
+  tbl.appendChild(el("thead",[el("tr",[
+    th("رقم الوصل"),th("الشهر"),th("المدفوع"),th("المتبقي"),th("التاريخ"),th("الحالة"),th("")
+  ])]));
+  var tb=el("tbody");
+  records.forEach(function(r){
+    var d=r.data||{};
+    var st=(d.deleted||r.deleted)?"deleted":(d.status||"valid");
+    var stBadge=st==="deleted"
+      ? el("span",{class:"badge gray"},["محذوف"])
+      : el("span",{class:"badge "+(st==="valid"?"green":"red")},[st==="valid"?"صالح":st]);
+    var detailHref=detailHrefFor(r.localId);
+    tb.appendChild(el("tr",[
+      el("td",[el("a",{href:detailHref,style:"font-weight:700",text:(d.receipt_no!=null?"#"+d.receipt_no:"—")})]),
+      el("td",{class:"nowrap",text:syncText(d.month)}),
+      el("td",{class:"nowrap",text:d.paid_amount!=null?fmtPrice(d.paid_amount):"—"}),
+      el("td",{class:"nowrap",text:d.remaining_after!=null?fmtPrice(d.remaining_after):"—"}),
+      el("td",{class:"muted nowrap",text:d.issued_at?fmtDateShort(d.issued_at):fmtDateShort(r.updatedAt)}),
+      el("td",[stBadge]),
+      el("td",{class:"right"},[el("a",{class:"btn sm ghost",href:detailHref},["التفاصيل ›"])])
+    ]));
+  });
+  tbl.appendChild(tb); tw.appendChild(tbl);
+  return el("div",{class:"card"},[
+    el("div",{class:"card-h"},[el("span",{text:"سجل المدفوعات"})]),
+    el("div",{class:"card-b flush"},[tw])
+  ]);
+}
+
+/* ============================================================
+   Owner self-service area (#/my…)
+   An OWNER signed into the same panel sees ONLY their own mirrored
+   data via /api/account/* — read-only (no mirror deletes) and with
+   no admin features. Reuses the admin renderers (tables, statement,
+   receipt details) in owner scope.
+   ============================================================ */
+function viewMyDashboard(){
+  shell("#/my",loadingBlock("جارٍ تحميل لوحتك…"));
+  API.myStats().then(function(res){
+    var counts=(res&&(res.stats||res.counts))||res||{};
+    var me=state.me||{};
+    var sub=me.subscription||{};
+
+    var content=el("div");
+    content.appendChild(pageHead("لوحتي"));
+
+    // One stat card per entity, linking to its screen.
+    var grid=el("div",{class:"stats"});
+    OWNER_ENTITIES.forEach(function(e){
+      var v=counts[e.value];
+      grid.appendChild(el("a",{
+        class:"stat",
+        href:"#/my/data/"+e.value,
+        style:"text-decoration:none;cursor:pointer"
+      },[
+        el("div",{class:"ic",text:e.icon}),
+        el("div",{class:"lbl",text:e.label}),
+        el("div",{class:"val",text:String(v!=null?v:0)})
+      ]));
+    });
+    content.appendChild(grid);
+
+    // Account card: identity + plan/subscription.
+    var acc=el("div",{class:"card"});
+    acc.appendChild(el("div",{class:"card-h"},["حسابي"]));
+    acc.appendChild(el("div",{class:"card-b"},[el("div",{class:"kv"},[
+      kv("الاسم",me.name||"—"),
+      kv("اسم المولدة",me.generatorName||"—"),
+      kv("اسم المستخدم / الهاتف",me.username||me.phone||"—"),
+      kvNode("الخطة",sub.planCode?planChip(sub.planCode):el("span",{class:"muted",text:"لا يوجد"})),
+      kvNode("حالة الاشتراك",statusBadge(sub.status||"none")),
+      kv("تاريخ الانتهاء",fmtDateShort(sub.expiresAt))
+    ])]));
+    content.appendChild(acc);
+
+    // Latest data uploaded (synced) from this owner's app — newest first, paginated.
+    content.appendChild(recentUploadsCard(API.myRecent,{
+      targetFor:function(it){
+        if(it.entity==="receipts") return "#/my/data/receipts/detail/"+encodeURIComponent(it.localId);
+        if(it.entity==="subscribers") return "#/my/sub/"+encodeURIComponent(it.localId);
+        return "#/my/data/"+it.entity;
+      }
+    }));
+
+    shell("#/my",content);
+  }).catch(function(err){
+    if(err.status===401) return;
+    shell("#/my",errorBlock(err,viewMyDashboard));
+  });
+}
+
+/* Owner entity screen (#/my/data/:entity[/by/:relField/:relValue]).
+   Same search + pagination UX as the admin screen, but read-only. */
+function viewMyEntity(entity,relField,relValue){
+  var label=ownerEntityLabel(entity);
+  relField=relField||""; relValue=relValue||"";
+  var drillCfg=SYNC_DRILL[entity];
+  var drill=drillCfg?{
+    label:drillCfg.label,
+    onClick:function(r){ location.hash="#/my/data/"+drillCfg.entity+"/by/"+drillCfg.field+"/"+encodeURIComponent(r.localId); }
+  }:null;
+  // Subscribers: drill action opens the per-subscriber statement.
+  if(entity==="subscribers"){
+    drill={label:"كشف الحساب",onClick:function(r){ location.hash="#/my/sub/"+encodeURIComponent(r.localId); }};
+  }
+  // Receipts: drill action opens the single-receipt details screen.
+  if(entity==="receipts"){
+    drill={label:"التفاصيل",onClick:function(r){ location.hash="#/my/data/receipts/detail/"+encodeURIComponent(r.localId); }};
+  }
+
+  var query="";
+  var page=1;
+
+  var headWrap=el("div");
+  var tableWrap=el("div");
+  var pagerWrap=el("div");
+  var searchIn=el("input",{class:"input",type:"text",placeholder:"ابحث في "+label+"…",value:""});
+
+  function crumb(){
+    return el("div",{class:"crumb"},[
+      el("a",{href:"#/my",text:"لوحتي"}),
+      el("span",{text:" / "+label+(relField?" (مُصفّى)":"")})
+    ]);
+  }
+
+  function buildShell(){
+    var content=el("div");
+    content.appendChild(crumb());
+    content.appendChild(headWrap);
+    var toolbarKids=[
+      el("div",{class:"search"},[el("span",{class:"ic",text:"🔍"}),searchIn]),
+      el("div",{class:"grow"})
+    ];
+    if(relField){
+      toolbarKids.push(el("a",{class:"btn neutral sm",href:"#/my/data/"+entity},["كل "+label+" ›"]));
+    }
+    toolbarKids.push(el("button",{class:"btn ghost",onclick:function(){ load(); }},["تحديث"]));
+    content.appendChild(el("div",{class:"toolbar"},toolbarKids));
+    content.appendChild(tableWrap);
+    content.appendChild(pagerWrap);
+    shell("#/my/data/"+entity,content);
+  }
+
+  function paintHead(total){
+    clear(headWrap);
+    headWrap.appendChild(el("div",{class:"page-head"},[el("h1",{text:label+" ("+(total!=null?total:0)+")"})]));
+  }
+
+  function paintPager(total){
+    clear(pagerWrap);
+    var pages=Math.max(1,Math.ceil((total||0)/SYNC_PAGE_LIMIT));
+    if(!total) return;
+    pagerWrap.appendChild(el("div",{class:"toolbar",style:"justify-content:center;margin-top:6px"},[
+      el("button",{class:"btn neutral sm",disabled:page<=1?"":false,onclick:function(){ if(page>1){ page--; load(); } }},["السابق ›"]),
+      el("span",{class:"muted",style:"min-width:120px;text-align:center",text:"صفحة "+page+" / "+pages}),
+      el("button",{class:"btn neutral sm",disabled:page>=pages?"":false,onclick:function(){ if(page<pages){ page++; load(); } }},["‹ التالي"])
+    ]));
+  }
+
+  function load(){
+    clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
+    clear(pagerWrap);
+    API.myData(entity,{q:query,page:page,limit:SYNC_PAGE_LIMIT,relField:relField,relValue:relValue}).then(function(res){
+      var records=normalizeList(res,"records");
+      var total=(res&&typeof res.total==="number")?res.total:records.length;
+      if(res&&res.page) page=res.page;
+      paintHead(total);
+      paintPager(total);
+      clear(tableWrap);
+      // Read-only: no onDelete → renderSyncTable shows no delete buttons.
+      tableWrap.appendChild(renderSyncTable(entity,records,null,drill));
+    }).catch(function(err){
+      if(err.status===401) return;
+      clear(tableWrap); tableWrap.appendChild(errorBlock(err,load));
+    });
+  }
+
+  // debounced search -> reset to page 1
+  var debTimer=null;
+  searchIn.addEventListener("input",function(){
+    if(debTimer) clearTimeout(debTimer);
+    debTimer=setTimeout(function(){
+      query=searchIn.value.trim();
+      page=1;
+      load();
+    },300);
+  });
+
+  paintHead(0);
+  buildShell();
+  load();
+}
+
+/* Owner subscriber statement (#/my/sub/:subId). */
+function viewMyStatement(subId){
+  var page=1;
+  var sub=null;          // subscriber record data
+
+  var headWrap=el("div");
+  var infoWrap=el("div");
+  var tableWrap=el("div");
+  var pagerWrap=el("div");
+
+  function crumb(){
+    return el("div",{class:"crumb"},[
+      el("a",{href:"#/my",text:"لوحتي"}),el("span",{text:" / "}),
+      el("a",{href:"#/my/data/subscribers",text:"المشتركون"}),
+      el("span",{text:" / "+((sub&&sub.name)||"كشف الحساب")})
+    ]);
+  }
+
+  function buildShell(){
+    var content=el("div");
+    content.appendChild(headWrap);
+    content.appendChild(infoWrap);
+    content.appendChild(tableWrap);
+    content.appendChild(pagerWrap);
+    shell("#/my/data/subscribers",content);
+  }
+
+  function paintHead(){
+    clear(headWrap);
+    headWrap.appendChild(crumb());
+    headWrap.appendChild(pageHead("كشف حساب: "+((sub&&sub.name)||"مشترك"),[
+      el("a",{class:"btn neutral",href:"#/my/data/subscribers"},["كل المشتركين ›"]),
+      el("button",{class:"btn ghost",onclick:function(){ loadReceipts(); }},["تحديث"])
+    ]));
+  }
+
+  function paintInfo(){
+    clear(infoWrap);
+    var s=sub||{};
+    infoWrap.appendChild(el("div",{class:"card"},[
+      el("div",{class:"card-h"},[el("span",{text:"بيانات المشترك"})]),
+      el("div",{class:"card-b"},[el("div",{class:"kv"},[
+        kv("الاسم",s.name||"—"),
+        kv("الهاتف",s.phone||"—"),
+        kv("الأمبيرات",s.amps!=null?String(s.amps):"—"),
+        kv("اللوحة",s.board_id||"—"),
+        kv("الجوزة",s.circuit_id||"—"),
+        kvNode("الحالة", (s.status==="inactive"||s.active===false)
+          ? el("span",{class:"badge gray"},[el("span",{class:"dot"}),"غير نشط"])
+          : el("span",{class:"badge green"},[el("span",{class:"dot"}),"نشط"]))
+      ])])
+    ]));
+  }
+
+  function paintPager(total){
+    clear(pagerWrap);
+    var pages=Math.max(1,Math.ceil((total||0)/SYNC_PAGE_LIMIT));
+    if(!total) return;
+    pagerWrap.appendChild(el("div",{class:"toolbar",style:"justify-content:center;margin-top:6px"},[
+      el("button",{class:"btn neutral sm",disabled:page<=1?"":false,onclick:function(){ if(page>1){ page--; loadReceipts(); } }},["السابق ›"]),
+      el("span",{class:"muted",style:"min-width:120px;text-align:center",text:"صفحة "+page+" / "+pages}),
+      el("button",{class:"btn neutral sm",disabled:page>=pages?"":false,onclick:function(){ if(page<pages){ page++; loadReceipts(); } }},["‹ التالي"])
+    ]));
+  }
+
+  function loadReceipts(){
+    clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
+    clear(pagerWrap);
+    API.myData("receipts",{page:page,limit:SYNC_PAGE_LIMIT,relField:"subscriber_id",relValue:subId}).then(function(res){
+      var records=normalizeList(res,"records");
+      var total=(res&&typeof res.total==="number")?res.total:records.length;
+      if(res&&res.page) page=res.page;
+      paintPager(total);
+      clear(tableWrap);
+      tableWrap.appendChild(statementTable(records,function(lid){ return "#/my/data/receipts/detail/"+encodeURIComponent(lid); }));
+    }).catch(function(err){
+      if(err.status===401) return;
+      clear(tableWrap); tableWrap.appendChild(errorBlock(err,loadReceipts));
+    });
+  }
+
+  // Initial render: placeholder shell, then fetch the subscriber, then receipts.
+  paintHead();
+  paintInfo();
+  buildShell();
+  clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
+  API.myData("subscribers",{localId:subId}).then(function(res){
+    var sr=normalizeList(res,"records")[0];
+    sub=sr?(sr.data||{}):{};
+    paintHead();
+    paintInfo();
+    buildShell();
+    loadReceipts();
+  }).catch(function(err){
+    if(err.status===401) return;
+    clear(tableWrap); tableWrap.appendChild(errorBlock(err,function(){ viewMyStatement(subId); }));
+  });
+}
+
+/* Owner receipt details (#/my/data/receipts/detail/:localId). */
+function viewMyReceiptDetail(localId){
+  shell("#/my/data/receipts",loadingBlock("جارٍ التحميل…"));
+  API.myData("receipts",{localId:localId}).then(function(res){
+    var rec=normalizeList(res,"records")[0];
+    if(!rec){
+      var nf=el("div");
+      nf.appendChild(el("div",{class:"crumb"},[
+        el("a",{href:"#/my",text:"لوحتي"}),el("span",{text:" / "}),
+        el("a",{href:"#/my/data/receipts",text:"الوصولات"}),el("span",{text:" / غير موجود"})
+      ]));
+      nf.appendChild(pageHead("وصل"));
+      nf.appendChild(el("div",{class:"card"},[el("div",{class:"card-b"},[
+        el("div",{class:"empty"},[el("div",{class:"big",text:"🧾"}),"الوصل غير موجود في النسخة المتزامنة."])
+      ])]));
+      shell("#/my/data/receipts",nf);
+      return;
+    }
+    var d=rec.data||{};
+    // Resolve the subscriber name (best-effort) then render.
+    var pSub=d.subscriber_id?API.myData("subscribers",{localId:d.subscriber_id}):Promise.resolve(null);
+    pSub.then(function(sres){
+      var sr=normalizeList(sres,"records")[0];
+      renderMyReceiptDetail(rec,d,sr?(sr.data||{}).name:null);
+    }).catch(function(){ renderMyReceiptDetail(rec,d,null); });
+  }).catch(function(err){
+    if(err.status===401) return;
+    shell("#/my/data/receipts",errorBlock(err,function(){ viewMyReceiptDetail(localId); }));
+  });
+}
+function renderMyReceiptDetail(rec,d,subName){
+  var content=el("div");
+  content.appendChild(el("div",{class:"crumb"},[
+    el("a",{href:"#/my",text:"لوحتي"}),el("span",{text:" / "}),
+    el("a",{href:"#/my/data/receipts",text:"الوصولات"}),
+    el("span",{text:" / #"+(d.receipt_no!=null?d.receipt_no:"")})
+  ]));
+  content.appendChild(receiptDetailContent(rec,d,subName));
+  shell("#/my/data/receipts",content);
 }
 
 /* Set-plan modal (loads plans for the dropdown) */
@@ -1851,16 +2296,21 @@ function viewPublicReceiptHistory(uuid){
 function boot(){
   // Validate existing token against /me so a stale token doesn't show a broken UI.
   if(state.token && (!location.hash || location.hash==="#/login")){
-    location.hash="#/dashboard";
+    location.hash=homeHash();
   }
   render();
   if(state.token && !currentRouteIsPublic()){
-    connectEvents();   // start real-time notifications for the restored session
+    if(isAdmin()) connectEvents();   // real-time notifications (admin sessions only)
     API.me().then(function(res){
       var acc=(res&&res.account)||res;
       if(acc){
-        if(acc.role && acc.role!=="admin"){ toast("ليس حساب مدير","err"); doLogout(true); return; }
-        setSession(state.token,acc);
+        setSession(state.token,acc);   // owners are allowed; role kept in state.me
+        // Re-route if the refreshed role doesn't match the current area.
+        if(!currentRouteIsPublic()){
+          var ownerArea=/^#\/my(\/|$)/.test(location.hash||"");
+          if(isAdmin() && ownerArea) location.hash="#/dashboard";
+          else if(!isAdmin() && !ownerArea) location.hash="#/my";
+        }
       }
     }).catch(function(){ /* 401 handled inside api() */ });
   }
