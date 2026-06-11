@@ -15,6 +15,7 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Current plan system** — Settings → الاشتراك والخطة shows plan, status, start/expiry (verified: trial active, expires 2026-06-20).
 - ✅ **Upgrade plan flow** — request a different plan from the plan screen / subscription screen (linked to backend + API).
 - ✅ **Plans UI = horizontal cards** (pro-app style carousel).
+- ✅ **Plan-approval auto-refresh** — the plan-selection screen polls the subscription status (~12s, online-gated), so an admin approval is detected automatically and the app enters without a manual refresh.
 
 ## Auth & accounts
 - ✅ **Sign-up = name + phone + password only** (phone is the login identifier; login is by phone).
@@ -23,6 +24,8 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Plan time remaining on the dashboard banner** — the plan row shows e.g. `MONTHLY_29days` (or `MONTHLY_expired`), computed from the subscription expiry date.
 - ✅ Owner has full in-app **CRUD** (create/edit/delete board, circuit, subscriber).
 - ✅ **Periodic expiry/block re-check + auto-logout after long offline** — the app re-validates the session on a timer/foreground (online-gated `/auth/me`); a blocked account or inactive subscription signs out to login with a warning, and a device that stays offline past a grace window is auto-logged-out so a revoked account cannot keep running indefinitely on a stale cached session.
+- ✅ **Session re-check on bottom-nav navigation** — switching bottom-nav tabs triggers the same online expire/block re-validation as pull-to-refresh (throttled to once per 60s).
+- ✅ **Dev time overrides for session checks** — dart-defines `RECHECK_SECONDS` (default 900) and `OFFLINE_LOGOUT_SECONDS` (default 259200 = 3 days) make the periodic re-check and offline auto-logout testable; production builds (no defines) keep the defaults.
 
 ## Data & features
 - ✅ **GetX + pagination on every list screen** (subscribers, boards, circuits, expenses, users, receipt history, payment history).
@@ -32,6 +35,7 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Offline sync** — local SQLite source of truth, changes pushed to server mirror (`sync_outbox` triggers → `SyncService` → `/api/sync`); auto-sync on connectivity + 30s heartbeat; **ask-before-large-upload** (>100 pending) else silent.
 - ✅ **Two-way sync** — pull (server→device) restores a per-account mirror onto a device; outbox-suppressed so a pull never re-pushes.
 - ✅ **Delete local data (Settings)** + dashboard up-to-date status & pull-latest button.
+- ✅ **Dashboard banner sync area = two rows** — row 1: sync (push) button + pending-changes status; row 2: update (pull) button + last-update status.
 - ✅ **Admin panel: separate screen per synced entity** (Subscribers / Boards / Circuits / Receipts / Expenses / Monthly prices) at `#/users/:id/data/:entity`.
 - ✅ **Admin synced-data screens: search + server-side pagination + delete on all 6 entity screens** (read-only mirror; sync stays push-only). `GET /api/admin/users/:id/data` takes `q,page,limit` and returns `total,page,limit`; `DELETE /api/admin/users/:id/data/:entity/:localId` hard-deletes one mirrored record.
 - ✅ **Public receipt verification page** — scan the receipt QR (no login) to open `/admin/#/r/:uuid`, a standalone Arabic receipt page rendered without the sidebar/auth gate; backed by public `GET /api/public/receipt/:uuid` (no auth) that looks up the receipt by uuid across all accounts and returns receipt + subscriber name + generator name.

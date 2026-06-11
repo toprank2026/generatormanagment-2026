@@ -19,6 +19,18 @@ String _planWithDaysLeft(String base, String? expiresAt) {
   return '${base}_${left}days';
 }
 
+/// Compact "last pull" timestamp for the banner: `HH:mm` when it happened
+/// today, `d/M HH:mm` otherwise, or `never` when no pull has run yet.
+String _formatPullTime(String? iso) {
+  final t = iso == null ? null : DateTime.tryParse(iso);
+  if (t == null) return 'never'.tr;
+  final now = DateTime.now();
+  final hm = '${t.hour.toString().padLeft(2, '0')}:'
+      '${t.minute.toString().padLeft(2, '0')}';
+  final sameDay = t.year == now.year && t.month == now.month && t.day == now.day;
+  return sameDay ? hm : '${t.day}/${t.month} $hm';
+}
+
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
 
@@ -52,7 +64,7 @@ class DashboardScreen extends StatelessWidget {
             children: [
               // Banner / Carousel Placeholder
               Container(
-                height: 235,
+                height: 275,
                 width: double.infinity,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
@@ -147,51 +159,32 @@ class DashboardScreen extends StatelessWidget {
                                   }),
                                 ),
                                 const SizedBox(height: 10),
-                                // Sync status + push ("sync now") + pull ("update")
+                                // SYNC row: pending-changes status (push side)
+                                // + "sync now" button.
                                 Obx(() {
                                   final pending =
                                       syncController.pendingCount.value;
                                   final syncing =
                                       syncController.isSyncing.value;
-                                  final pulling =
-                                      syncController.isPulling.value;
-                                  final busy = syncing || pulling;
-
-                                  // Status icon: spinning sync while busy, else
-                                  // cloud_done when up to date, cloud_upload otherwise.
-                                  final IconData statusIcon = busy
-                                      ? Icons.sync
-                                      : (pending == 0
-                                          ? Icons.cloud_done
-                                          : Icons.cloud_upload);
-                                  // Status text mirrors the icon's three states.
-                                  final String statusText = pulling
-                                      ? 'pulling'.tr
-                                      : (syncing
-                                          ? 'syncing'.tr
-                                          : (pending == 0
-                                              ? 'up_to_date'.tr
-                                              : '$pending ${'sync_pending'.tr}'));
+                                  final busy =
+                                      syncing || syncController.isPulling.value;
 
                                   return Row(
                                     children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.2),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Icon(
-                                          statusIcon,
-                                          color: Colors.white,
-                                          size: 16,
-                                        ),
+                                      _bannerIconBox(
+                                        pending == 0
+                                            ? Icons.cloud_done
+                                            : Icons.cloud_upload,
+                                        busy: syncing,
                                       ),
                                       const SizedBox(width: 10),
                                       Expanded(
                                         child: Text(
-                                          statusText,
+                                          syncing
+                                              ? 'syncing'.tr
+                                              : (pending == 0
+                                                  ? 'up_to_date'.tr
+                                                  : '$pending ${'sync_pending'.tr}'),
                                           style: const TextStyle(
                                             color: Colors.white,
                                             fontSize: 12,
@@ -202,80 +195,54 @@ class DashboardScreen extends StatelessWidget {
                                       ),
                                       const SizedBox(width: 8),
                                       // Push pending local changes.
-                                      SizedBox(
-                                        height: 30,
-                                        child: ElevatedButton.icon(
-                                          onPressed: busy
-                                              ? null
-                                              : () => syncController.syncNow(),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.white,
-                                            foregroundColor:
-                                                const Color(0xFF1565C0),
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 12),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                            textStyle: const TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.bold),
+                                      _bannerButton(
+                                        onPressed: busy
+                                            ? null
+                                            : () => syncController.syncNow(),
+                                        busy: syncing,
+                                        icon: Icons.sync,
+                                        label: 'sync_now'.tr,
+                                      ),
+                                    ],
+                                  );
+                                }),
+                                const SizedBox(height: 10),
+                                // PULL row: last-pull time + "update" button.
+                                Obx(() {
+                                  final pulling =
+                                      syncController.isPulling.value;
+                                  final busy =
+                                      pulling || syncController.isSyncing.value;
+
+                                  return Row(
+                                    children: [
+                                      _bannerIconBox(
+                                        Icons.cloud_download,
+                                        busy: pulling,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          pulling
+                                              ? 'pulling'.tr
+                                              : '${'last_update'.tr}: ${_formatPullTime(syncController.lastPullAt.value)}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
                                           ),
-                                          icon: syncing
-                                              ? const SizedBox(
-                                                  width: 14,
-                                                  height: 14,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                    valueColor:
-                                                        AlwaysStoppedAnimation(
-                                                            Color(0xFF1565C0)),
-                                                  ),
-                                                )
-                                              : const Icon(Icons.sync, size: 16),
-                                          label: Text('sync_now'.tr),
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
                                       const SizedBox(width: 8),
                                       // Pull the latest server data ("update").
-                                      SizedBox(
-                                        height: 30,
-                                        child: ElevatedButton.icon(
-                                          onPressed: busy
-                                              ? null
-                                              : () => syncController.pull(),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.white,
-                                            foregroundColor:
-                                                const Color(0xFF1565C0),
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 12),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                            textStyle: const TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.bold),
-                                          ),
-                                          icon: pulling
-                                              ? const SizedBox(
-                                                  width: 14,
-                                                  height: 14,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                    valueColor:
-                                                        AlwaysStoppedAnimation(
-                                                            Color(0xFF1565C0)),
-                                                  ),
-                                                )
-                                              : const Icon(Icons.cloud_download,
-                                                  size: 16),
-                                          label: Text('update_now'.tr),
-                                        ),
+                                      _bannerButton(
+                                        onPressed: busy
+                                            ? null
+                                            : () => syncController.pull(),
+                                        busy: pulling,
+                                        icon: Icons.cloud_download,
+                                        label: 'update_now'.tr,
                                       ),
                                     ],
                                   );
@@ -388,17 +355,69 @@ class DashboardScreen extends StatelessWidget {
   Widget _bannerRow(IconData icon, Widget data) {
     return Row(
       children: [
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: Colors.white, size: 16),
-        ),
+        _bannerIconBox(icon),
         const SizedBox(width: 10),
         Expanded(child: data),
       ],
+    );
+  }
+
+  /// The banner rows' small icon box; shows a white spinner instead of
+  /// [icon] while [busy] (the sync/pull rows).
+  Widget _bannerIconBox(IconData icon, {bool busy = false}) {
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: busy
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation(Colors.white),
+              ),
+            )
+          : Icon(icon, color: Colors.white, size: 16),
+    );
+  }
+
+  /// Compact white action button for the banner's sync/pull rows; shows a
+  /// spinner instead of [icon] while [busy].
+  Widget _bannerButton({
+    required VoidCallback? onPressed,
+    required bool busy,
+    required IconData icon,
+    required String label,
+  }) {
+    return SizedBox(
+      height: 30,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: const Color(0xFF1565C0),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          textStyle:
+              const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        ),
+        icon: busy
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(Color(0xFF1565C0)),
+                ),
+              )
+            : Icon(icon, size: 16),
+        label: Text(label),
+      ),
     );
   }
 

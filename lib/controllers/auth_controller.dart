@@ -26,13 +26,21 @@ class AuthController extends GetxController {
   final isLoading = true.obs;
   final isSyncing = false.obs;
 
+  // The two durations below can be overridden with --dart-define for testing
+  // (e.g. --dart-define=RECHECK_SECONDS=30); production builds use the
+  // defaults (15 minutes / 3 days).
+  static const int _recheckSeconds =
+      int.fromEnvironment('RECHECK_SECONDS', defaultValue: 900);
+  static const int _offlineLogoutSeconds =
+      int.fromEnvironment('OFFLINE_LOGOUT_SECONDS', defaultValue: 259200); // 3 days
+
   /// How often we re-validate the session against the server while online.
-  static const _recheckInterval = Duration(minutes: 15);
+  static const _recheckInterval = Duration(seconds: _recheckSeconds);
 
   /// If the device stays offline (no successful online validation) longer than
   /// this, the session is ended and the user must sign in again. Keeps the
   /// offline-first contract for brief blips while still bounding offline use.
-  static const _offlineLogoutThreshold = Duration(days: 3);
+  static const _offlineLogoutThreshold = Duration(seconds: _offlineLogoutSeconds);
 
   /// Periodic online re-check timer (cancelled in [onClose]).
   Timer? _recheckTimer;
@@ -97,15 +105,16 @@ class AuthController extends GetxController {
   Future<void> _onRecheckTick() async {
     if (!isLoggedIn.value) return;
     if (await _net.isOnline()) {
-      await _guardedRecheck();
+      await guardedRecheck();
     } else {
       await _enforceOfflineLimit();
     }
   }
 
   /// Runs [recheckSession] unless one is already in flight (e.g. a concurrent
-  /// pull-to-refresh), so the periodic tick never overlaps with it.
-  Future<bool> _guardedRecheck() async {
+  /// pull-to-refresh or nav-bar tap), so callers never overlap. Safe to
+  /// fire-and-forget: offline / network errors leave the session untouched.
+  Future<bool> guardedRecheck() async {
     if (_recheckInFlight) return true;
     _recheckInFlight = true;
     try {
@@ -262,11 +271,15 @@ class AuthController extends GetxController {
     if (await _net.isOnline()) await _refreshFromServer();
   }
 
-  /// Pull-to-refresh online re-validation. Re-fetches the account and, if the
-  /// server now reports the account is **blocked**, or the subscription is **not
-  /// active** (expired / changed / revoked), signs the user out to the login
-  /// screen with a suitable warning (`logoutReason`). A benign plan change that
-  /// is still active just refreshes the banner. Offline or transient network
+  /// Pull-to-refresh / periodic / nav-switch online re-validation. Re-fetches
+  /// the account and signs the user out to the login screen with a suitable
+  /// warning (`logoutReason`) when the account is **blocked** or a
+  /// **previously-active** subscription is no longer active (expired / changed
+  /// / revoked). When the subscription was *already* inactive (user is on the
+  /// plan-selection screen awaiting approval or renewing) it only keeps the
+  /// subscription gate set — logging out there would kick a user who is
+  /// legitimately waiting for admin approval. A benign plan change that is
+  /// still active just refreshes the banner. Offline or transient network
   /// errors keep the session untouched.
   ///
   /// Returns `true` if the session is still valid (caller may keep going),
@@ -275,6 +288,7 @@ class AuthController extends GetxController {
     if (!await _net.isOnline()) return true; // only check "at home with internet"
     try {
       isSyncing.value = true;
+      final wasActive = account.value?.subscription.isActive ?? false;
       final acc = await _auth.me();
       await _cache.saveAccount(acc.toJson());
       // Refresh the in-memory account so the dashboard reflects any change.
@@ -287,8 +301,20 @@ class AuthController extends GetxController {
       );
       final reason = _sessionProblemReason(acc);
       if (reason != null) {
-        await logout(reason: reason);
-        return false;
+        final isBlocked = acc.blocked;
+        if (isBlocked || wasActive) {
+          // Blocked, or an active plan was revoked/expired mid-session →
+          // end the session with the warning.
+          await logout(reason: reason);
+          return false;
+        }
+        // Subscription was already inactive (none/pending/expired before this
+        // check): keep the session and the plan-selection gate so the user can
+        // request/renew and the approval poll can let them in.
+        subscriptionBlocked.value = true;
+        await _cache.setLastOnlineValidationAt(DateTime.now().toIso8601String());
+        update();
+        return true;
       }
       subscriptionBlocked.value = false; // active again → clear any gate
       // Successful online validation → reset the offline-too-long baseline.

@@ -606,6 +606,65 @@ stream route (`backend/src/routes/*` + controller), `backend/public/admin/index.
 
 ---
 
+## 23. Session re-check on bottom-nav navigation
+**Files:** `lib/views/screens/main_screen.dart`, `lib/controllers/auth_controller.dart`
+
+- Switching bottom-nav tabs now triggers the **same online expire/block
+  re-validation as pull-to-refresh** (§17.1 / §21): the tab change calls the
+  guarded `recheckSession()` path, so a **blocked** account or an **inactive**
+  subscription signs the user out to login with the matching warning banner,
+  while offline/network errors keep the cached session (offline-first).
+- **Throttled to once per 60s** — rapid tab switching does not spam `/auth/me`;
+  within the window the tab just switches with no network call. The existing
+  overlap guard (`_guardedRecheck()`) still prevents concurrent re-checks.
+
+---
+
+## 24. Dashboard banner — sync area restructured to two rows
+**File:** `lib/views/screens/dashboard_screen.dart`
+
+- The banner's sync area (§13: status + "مزامنة الآن" push + "تحديث" pull) is
+  restructured into **two rows**, one per direction:
+  - **Row 1 — push:** the **sync (push)** button + the **pending-changes**
+    status ("محدّث" / N pending).
+  - **Row 2 — pull:** the **update (pull)** button + the **last-update**
+    (last pull) status.
+- Behaviour is unchanged (same `SyncController` actions/observables); this is a
+  layout change so each button sits beside the status it acts on.
+
+---
+
+## 25. Plan-approval auto-refresh on the plan-selection screen
+**Files:** `lib/views/screens/plan_selection_screen.dart`, `lib/controllers/auth_controller.dart` (`refreshSubscription()`)
+
+- While the plan-selection screen is showing (subscription pending / blocked),
+  it **polls the subscription status ~every 12s, online-gated** (no polling
+  while offline). When the admin approves the requested plan, the refreshed
+  subscription clears `subscriptionBlocked` and the reactive root gate
+  (`root_handler.dart`) routes into `MainScreen` automatically — **no manual
+  refresh** needed.
+- The poll timer is cancelled when the screen is disposed (no background
+  polling once inside the app).
+
+---
+
+## 26. Dev time overrides for session checks (dart-defines)
+**File:** `lib/controllers/auth_controller.dart`
+
+- The two long session-check timings are now configurable via `--dart-define`
+  so they can be tested in minutes instead of days; **production builds (no
+  defines) keep the defaults**:
+  - `RECHECK_SECONDS` (default **900** = 15 min) → the periodic re-check
+    interval (`_recheckInterval`, §21).
+  - `OFFLINE_LOGOUT_SECONDS` (default **259200** = 3 days) → the offline
+    auto-logout grace window (`_offlineLogoutThreshold`, §21).
+- Example (compressed testing):
+  ```bash
+  flutter run --dart-define=RECHECK_SECONDS=30 --dart-define=OFFLINE_LOGOUT_SECONDS=120
+  ```
+
+---
+
 ## Test steps — verify each feature (step by step)
 
 > Setup: backend `cd backend && npm run dev` (in-memory Mongo); app
@@ -745,3 +804,41 @@ stream route (`backend/src/routes/*` + controller), `backend/public/admin/index.
    rows appear in the mirror (auto-synced).
 3. Scroll the in-app expenses list → confirm it **paginates** (loads more near the
    bottom; the count grows page by page) and resets when a filter changes.
+
+### U. Session re-check on bottom-nav navigation
+1. Sign in (active plan) and reach the main screen (online).
+2. In the admin panel, **block** the account
+   (`PUT /api/admin/users/:id/blocked {blocked:true}`).
+3. **Switch a bottom-nav tab** → confirm the app **signs out to the login
+   screen** with the warning banner ("Your account is disabled…").
+4. Sign back in (unblocked) and switch tabs rapidly → confirm the re-check fires
+   at most **once per 60s** (tabs still switch instantly; no `/auth/me` spam).
+5. Go offline and switch tabs → confirm the session is **kept** (no sign-out).
+
+### V. Dashboard banner — two-row sync area
+1. Sign in and open the dashboard.
+2. Confirm the banner's sync area shows **two rows**:
+   **row 1** = the **sync (push)** button beside the **pending-changes** status
+   ("محدّث" / N pending); **row 2** = the **update (pull)** button beside the
+   **last-update** status.
+3. Make a local change → row 1 shows pending; push → back to "محدّث". Tap the
+   pull button → row 2's last-update timestamp refreshes.
+
+### W. Plan-approval auto-refresh
+1. **Register** a new account → **request a plan** → the app sits on the
+   plan-selection screen (pending).
+2. In the admin panel, **approve** the plan request.
+3. **Without touching the app**, confirm that within ~12s it detects the
+   approval and **enters the main screen on its own** (no manual refresh /
+   re-login).
+
+### X. Compressed long-time session tests (dart-defines)
+1. **Periodic expire/block:** run with `--dart-define=RECHECK_SECONDS=30`;
+   sign in, leave the app open online, **block** the account in admin → within
+   ~30s the periodic re-check **signs out to login** with the warning banner.
+2. **Offline auto-logout:** run with `--dart-define=OFFLINE_LOGOUT_SECONDS=120`;
+   sign in, enable **airplane mode**, keep the app offline > 2 min → confirm it
+   **auto-logs-out**; staying offline *less* than the window must **keep** the
+   session (offline-first).
+3. Run without the defines → confirm the defaults apply (15-min re-check,
+   3-day offline window) — production behaviour unchanged.

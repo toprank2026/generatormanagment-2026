@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
@@ -6,9 +8,47 @@ import 'package:generatormanagment/data/models/plan.dart';
 
 /// Shown by the root gate when the account has no active subscription.
 /// Lists plans, shows pending/rejected status, lets the owner request a plan,
-/// and offers a manual re-check (after admin approval).
-class PlanSelectionScreen extends StatelessWidget {
+/// and offers a manual re-check (after admin approval). Also polls the server
+/// every ~12s (online-gated inside [AuthController.refreshSubscription]) so an
+/// admin approval is auto-detected and the root gate swaps to the main screen
+/// without any user action.
+class PlanSelectionScreen extends StatefulWidget {
   const PlanSelectionScreen({super.key});
+
+  @override
+  State<PlanSelectionScreen> createState() => _PlanSelectionScreenState();
+}
+
+class _PlanSelectionScreenState extends State<PlanSelectionScreen> {
+  Timer? _pollTimer;
+  bool _refreshing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshOnce(); // immediate check on screen open
+    _pollTimer = Timer.periodic(
+      const Duration(seconds: 12),
+      (_) => _refreshOnce(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Auto-poll tick: skipped while a previous refresh is still running.
+  Future<void> _refreshOnce() async {
+    if (_refreshing) return;
+    _refreshing = true;
+    try {
+      await Get.find<AuthController>().refreshSubscription();
+    } finally {
+      _refreshing = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +85,18 @@ class PlanSelectionScreen extends StatelessWidget {
               _StatusBanner(
                 status: sub?.status ?? 'none',
                 planCode: sub?.planCode,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.autorenew, size: 14, color: Colors.grey[500]),
+                  const SizedBox(width: 6),
+                  Text(
+                    'auto_checking_approval'.tr,
+                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               if (controller.isLoading.value)
