@@ -25,11 +25,88 @@ const getMyData = asyncHandler(async (req, res) => {
   res.status(200).json(await listUserData(req.user._id, req.query));
 });
 
+/** Coerce a mirrored (untyped) value to a finite number, defaulting to 0. */
+const num = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/**
+ * Builds the app-style dashboard for the caller's mirror, replicating the
+ * Flutter dashboard for the current month M with P = monthly_prices[M]
+ * (0 if absent): a subscriber is PAID when the sum of their month-M receipts'
+ * paid_amount is >= amps * P — so with P = 0 every subscriber counts as paid,
+ * exactly like the app. totalDue is kept raw (totalAmps * P - collected),
+ * which may go negative, again matching the app.
+ *
+ * @param {*} userId Mongo id of the caller.
+ * @param {object} counts Per-entity counts (reused for boards/circuits).
+ * @returns {Promise<object>} The `dashboard` payload for GET /api/account/stats.
+ */
+async function buildDashboard(userId, counts) {
+  const month = new Date().toISOString().slice(0, 7); // 'YYYY-MM' (UTC)
+
+  const [priceRow, subscribers, receipts, lastUpload] = await Promise.all([
+    // monthly_prices' device PK is the month string, so localId === month.
+    SyncRecord.findOne(
+      { user: userId, entity: 'monthly_prices', deleted: false, localId: month },
+      { data: 1 }
+    ),
+    SyncRecord.find({ user: userId, entity: 'subscribers', deleted: false }, { data: 1, localId: 1 }),
+    SyncRecord.find(
+      { user: userId, entity: 'receipts', deleted: false, 'data.month': month },
+      { data: 1 }
+    ),
+    // Most recent sync activity of any kind (incl. deletions) — "last upload".
+    SyncRecord.findOne({ user: userId }, { updatedAt: 1 }).sort({ updatedAt: -1 }),
+  ]);
+
+  const priceData = (priceRow && priceRow.data) || {};
+  const pricePerAmp = num(priceData.price_per_amp ?? priceData.price ?? 0);
+
+  // Sum paid_amount per subscriber for this month (and the overall total).
+  let collected = 0;
+  const paidBySubscriber = new Map();
+  for (const r of receipts) {
+    const data = r.data || {};
+    const paid = num(data.paid_amount);
+    collected += paid;
+    const sid = data.subscriber_id;
+    if (sid != null) paidBySubscriber.set(sid, (paidBySubscriber.get(sid) || 0) + paid);
+  }
+
+  let totalAmps = 0;
+  let paidCount = 0;
+  for (const s of subscribers) {
+    const data = s.data || {};
+    const amps = num(data.amps);
+    totalAmps += amps;
+    const paid = paidBySubscriber.get(data.id || s.localId) || 0;
+    if (paid >= amps * pricePerAmp) paidCount += 1;
+  }
+
+  return {
+    month,
+    pricePerAmp,
+    totalSubscribers: subscribers.length,
+    totalAmps,
+    paidCount,
+    unpaidCount: subscribers.length - paidCount,
+    totalDue: totalAmps * pricePerAmp - collected,
+    collected,
+    boards: counts.boards,
+    circuits: counts.circuits,
+    lastUploadAt: lastUpload ? lastUpload.updatedAt : null,
+  };
+}
+
 /**
  * GET /api/account/stats
  *
- * Per-entity counts of the caller's non-deleted mirrored rows, for the owner
- * panel dashboard. Entities with no rows are reported as 0.
+ * Per-entity counts of the caller's non-deleted mirrored rows, plus an
+ * app-style `dashboard` object (current month paid/unpaid/collected/due —
+ * see buildDashboard), for the owner panel dashboard. Entities with no rows
+ * are reported as 0.
  */
 const getMyStats = asyncHandler(async (req, res) => {
   const rows = await SyncRecord.aggregate([
@@ -41,7 +118,9 @@ const getMyStats = asyncHandler(async (req, res) => {
   for (const entity of STAT_ENTITIES) counts[entity] = 0;
   for (const row of rows) counts[row._id] = row.count;
 
-  res.status(200).json({ counts });
+  const dashboard = await buildDashboard(req.user._id, counts);
+
+  res.status(200).json({ counts, dashboard });
 });
 
 /**

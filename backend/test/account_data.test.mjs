@@ -3,7 +3,15 @@
  *
  *  - GET /api/account/stats          -> per-entity counts of the caller's own
  *                                       mirrored business data (subscribers,
- *                                       boards, receipts, ...).
+ *                                       boards, receipts, ...) plus a
+ *                                       `dashboard` object replicating the
+ *                                       Flutter app home screen: paid/unpaid
+ *                                       subscriber counts for the CURRENT
+ *                                       month (paid = sum of that month's
+ *                                       receipts.paid_amount >= amps *
+ *                                       price_per_amp; price 0 if the month
+ *                                       has no monthly_prices row), the
+ *                                       collected amount and price per amp.
  *  - GET /api/account/data?entity=E  -> the caller's own mirrored rows for one
  *                                       entity, with q (search), relField/
  *                                       relValue (relationship filter) and
@@ -58,6 +66,12 @@ let server; // http.Server
 let baseUrl; // e.g. http://127.0.0.1:54321
 let ownerA; // { token, account, ... }
 let ownerB;
+let ownerC; // dedicated to the dashboard tests so A/B count assertions stay valid
+
+// The dashboard is computed for the CURRENT month — derive 'YYYY-MM' exactly
+// like the backend does so these tests are date-independent.
+const NOW = new Date();
+const CURRENT_MONTH = `${NOW.getFullYear()}-${String(NOW.getMonth() + 1).padStart(2, '0')}`;
 
 let deviceCounter = 0;
 function makeDevice(overrides = {}) {
@@ -121,10 +135,33 @@ function extractCounts(body) {
   return body;
 }
 
+// The dashboard object of /api/account/stats; tolerate it living at the top
+// level or nested under a stats key.
+function extractDashboard(body) {
+  if (body && typeof body === 'object') {
+    if (body.dashboard && typeof body.dashboard === 'object') return body.dashboard;
+    if (body.stats && typeof body.stats === 'object' && body.stats.dashboard) {
+      return body.stats.dashboard;
+    }
+  }
+  return undefined;
+}
+
+// First value that is neither undefined nor null (key-name tolerance for the
+// boards/circuits dashboard counters).
+function firstDefined(...values) {
+  for (const v of values) {
+    if (v !== undefined && v !== null) return v;
+  }
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Boot / teardown. Owner A pushes 2 subscribers + 1 board + 1 receipt (linked
 // to a-sub-1 via data.subscriber_id); owner B pushes 1 subscriber. All later
-// tests assert against this fixed dataset.
+// tests assert against this fixed dataset. Owner C is a separate account used
+// only by the dashboard tests (current-month price + paid/unpaid receipts) so
+// the A/B count expectations above are never disturbed.
 // ---------------------------------------------------------------------------
 test.before(async () => {
   await connectDb();
@@ -138,6 +175,7 @@ test.before(async () => {
 
   ownerA = await registerOwner({ phone: '0700001001' });
   ownerB = await registerOwner({ phone: '0700001002' });
+  ownerC = await registerOwner({ phone: '0700001003' });
 
   const aPush = await api('POST', '/api/sync/push', {
     token: ownerA.token,
@@ -204,6 +242,89 @@ test.before(async () => {
   });
   assert.equal(bPush.status, 200, `B push should 200, got ${bPush.status} ${JSON.stringify(bPush.data)}`);
   assert.equal(bPush.data.count, 1);
+
+  // Owner C: a full current-month dashboard fixture. Price 1000/amp; c-sub-1
+  // (10A) fully paid via 10000; c-sub-2 (15A) only 5000 of 15000 -> unpaid.
+  const cPush = await api('POST', '/api/sync/push', {
+    token: ownerC.token,
+    body: {
+      records: [
+        {
+          entity: 'monthly_prices',
+          localId: CURRENT_MONTH,
+          deleted: false,
+          updatedAt: new Date().toISOString(),
+          data: { month: CURRENT_MONTH, price_per_amp: 1000 },
+        },
+        {
+          entity: 'boards',
+          localId: 'c-board-1',
+          deleted: false,
+          updatedAt: new Date().toISOString(),
+          data: { id: 'c-board-1', name: 'C Board', code: 'CB-01' },
+        },
+        {
+          entity: 'circuits',
+          localId: 'c-c1',
+          deleted: false,
+          updatedAt: new Date().toISOString(),
+          data: { id: 'c-c1', board_id: 'c-board-1', name: 'C Line 1', phase: 'A' },
+        },
+        {
+          entity: 'subscribers',
+          localId: 'c-sub-1',
+          deleted: false,
+          updatedAt: new Date().toISOString(),
+          data: { id: 'c-sub-1', name: 'Paid Person', phone: '0780000010', amps: 10, board_id: 'c-board-1', circuit_id: 'c-c1', status: 'active' },
+        },
+        {
+          entity: 'subscribers',
+          localId: 'c-sub-2',
+          deleted: false,
+          updatedAt: new Date().toISOString(),
+          data: { id: 'c-sub-2', name: 'Unpaid Person', phone: '0780000011', amps: 15, board_id: 'c-board-1', circuit_id: 'c-c1', status: 'active' },
+        },
+        {
+          entity: 'receipts',
+          localId: 'c-rec-1',
+          deleted: false,
+          updatedAt: new Date().toISOString(),
+          data: {
+            uuid: 'c-rec-1',
+            receipt_no: 1,
+            subscriber_id: 'c-sub-1',
+            month: CURRENT_MONTH,
+            amps_snapshot: 10,
+            price_snapshot: 1000,
+            paid_amount: 10000,
+            remaining_after: 0,
+            issued_at: `${CURRENT_MONTH}-01T00:00:00.000Z`,
+            status: 'valid',
+          },
+        },
+        {
+          entity: 'receipts',
+          localId: 'c-rec-2',
+          deleted: false,
+          updatedAt: new Date().toISOString(),
+          data: {
+            uuid: 'c-rec-2',
+            receipt_no: 2,
+            subscriber_id: 'c-sub-2',
+            month: CURRENT_MONTH,
+            amps_snapshot: 15,
+            price_snapshot: 1000,
+            paid_amount: 5000,
+            remaining_after: 10000,
+            issued_at: `${CURRENT_MONTH}-02T00:00:00.000Z`,
+            status: 'valid',
+          },
+        },
+      ],
+    },
+  });
+  assert.equal(cPush.status, 200, `C push should 200, got ${cPush.status} ${JSON.stringify(cPush.data)}`);
+  assert.equal(cPush.data.count, 7);
 });
 
 test.after(async () => {
@@ -239,6 +360,61 @@ test('GET /api/account/stats is isolated per account (owner B)', async () => {
   assert.equal(Number(counts.subscribers), 1, 'B pushed exactly 1 subscriber');
   assert.equal(Number(counts.boards || 0), 0, "B must not see A's board in its counts");
   assert.equal(Number(counts.receipts || 0), 0, "B must not see A's receipt in its counts");
+});
+
+// ---------------------------------------------------------------------------
+// /api/account/stats — `dashboard` object (app home-screen replica).
+//
+// Owner C fixture (pushed in test.before, current month M, P = 1000/amp):
+//   c-sub-1 (10A):  paid 10000 >= 10 * 1000 -> PAID
+//   c-sub-2 (15A):  paid  5000 <  15 * 1000 -> UNPAID
+//   collected for M = 10000 + 5000 = 15000
+// ---------------------------------------------------------------------------
+test('GET /api/account/stats dashboard applies the app paid/unpaid formula (owner C)', async () => {
+  const r = await api('GET', '/api/account/stats', { token: ownerC.token });
+  assert.equal(r.status, 200, `stats should 200, got ${r.status} ${JSON.stringify(r.data)}`);
+
+  const dashboard = extractDashboard(r.data);
+  assert.ok(
+    dashboard && typeof dashboard === 'object',
+    `stats response must include a dashboard object, got ${JSON.stringify(r.data)}`
+  );
+
+  assert.equal(Number(dashboard.totalSubscribers), 2, 'C pushed 2 subscribers');
+  assert.equal(Number(dashboard.paidCount), 1, 'only c-sub-1 covers amps * price (10000 >= 10000)');
+  assert.equal(Number(dashboard.unpaidCount), 1, 'c-sub-2 paid 5000 of 15000 -> unpaid');
+  assert.equal(Number(dashboard.collected), 15000, 'current-month collected = 10000 + 5000');
+  assert.equal(Number(dashboard.pricePerAmp), 1000, 'current-month price_per_amp');
+
+  const boardsCount = firstDefined(dashboard.totalBoards, dashboard.boards);
+  const circuitsCount = firstDefined(dashboard.totalCircuits, dashboard.circuits);
+  assert.equal(Number(boardsCount), 1, 'C pushed 1 board');
+  assert.equal(Number(circuitsCount), 1, 'C pushed 1 circuit');
+
+  // The plain per-entity counts must still be present alongside the dashboard.
+  const counts = extractCounts(r.data);
+  assert.equal(Number(counts.subscribers), 2);
+  assert.equal(Number(counts.receipts), 2);
+  assert.equal(Number(counts.monthly_prices), 1);
+});
+
+test('dashboard is per-account: owner B (no price row) counts everyone as paid', async () => {
+  const r = await api('GET', '/api/account/stats', { token: ownerB.token });
+  assert.equal(r.status, 200, `stats should 200, got ${r.status} ${JSON.stringify(r.data)}`);
+
+  const dashboard = extractDashboard(r.data);
+  assert.ok(
+    dashboard && typeof dashboard === 'object',
+    `stats response must include a dashboard object, got ${JSON.stringify(r.data)}`
+  );
+
+  // B never pushed monthly_prices -> P = 0 -> its single subscriber is PAID
+  // (sum 0 >= 20 * 0), exactly like the app. Nothing of C's data may leak in.
+  assert.equal(Number(dashboard.totalSubscribers), 1, 'B has exactly 1 subscriber');
+  assert.equal(Number(dashboard.paidCount), 1, 'price 0 -> every subscriber counts as paid');
+  assert.equal(Number(dashboard.unpaidCount), 0);
+  assert.equal(Number(dashboard.collected || 0), 0, 'B pushed no receipts');
+  assert.equal(Number(dashboard.pricePerAmp || 0), 0, 'no monthly_prices row for the current month');
 });
 
 // ---------------------------------------------------------------------------

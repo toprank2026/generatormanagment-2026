@@ -239,6 +239,74 @@
   .mt0{margin-top:0}.mb0{margin-bottom:0}
   hr.sep{border:none;border-top:1px solid var(--border);margin:18px 0}
   .pill-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+  /* ---------- owner app-like shell (phone-style, no sidebar) ---------- */
+  body.owner-mode{background:#eaf1fa}
+  body.owner-mode #toasts{bottom:84px}
+  .app-topbar{
+    position:fixed;top:0;left:0;right:0;z-index:60;background:var(--primary);color:#fff;
+    display:flex;align-items:center;gap:10px;padding:10px 16px;box-shadow:var(--shadow);
+  }
+  .app-topbar .brand{font-weight:800;font-size:17px;display:flex;align-items:center;gap:9px;flex:1}
+  .app-topbar .brand .logo{
+    width:26px;height:26px;border-radius:7px;background:#fff;color:var(--primary);
+    display:grid;place-items:center;font-weight:900;font-size:14px;
+  }
+  .app-topbar .logout{
+    background:rgba(255,255,255,.16);border:none;color:#fff;padding:7px 12px;border-radius:8px;font-weight:600;font-size:13px;
+  }
+  .app-topbar .logout:hover{background:rgba(255,255,255,.28)}
+  .app-wrap{max-width:600px;margin:0 auto;padding:64px 14px 96px}
+  .app-bottomnav{
+    position:fixed;bottom:0;left:0;right:0;z-index:60;background:#fff;border-top:1px solid var(--border);
+    display:flex;justify-content:space-around;padding:6px 4px calc(6px + env(safe-area-inset-bottom));
+    box-shadow:0 -2px 12px rgba(16,24,40,.08);
+  }
+  .app-bottomnav a,.app-bottomnav button{
+    flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;
+    color:var(--muted);font-size:11.5px;font-weight:700;padding:4px 2px;border-radius:10px;text-decoration:none;cursor:pointer;
+  }
+  .app-bottomnav a:hover,.app-bottomnav button:hover{text-decoration:none;color:var(--primary)}
+  .app-bottomnav .t-ic{font-size:20px;line-height:1.2}
+  .app-bottomnav .active{color:var(--primary)}
+  .app-sheet-back{position:fixed;inset:0;z-index:70;background:rgba(16,24,40,.35);animation:fade .15s}
+  .app-sheet{
+    position:fixed;left:0;right:0;bottom:0;z-index:71;background:#fff;border-radius:16px 16px 0 0;
+    box-shadow:var(--shadow-lg);max-width:600px;margin:0 auto;
+    padding:10px 14px calc(16px + env(safe-area-inset-bottom));animation:sheetup .2s ease;
+  }
+  @keyframes sheetup{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+  .app-sheet .s-grab{width:42px;height:4px;border-radius:99px;background:var(--border);margin:2px auto 12px}
+  .app-sheet a{display:flex;align-items:center;gap:12px;padding:13px 10px;border-radius:11px;color:var(--text);font-weight:700}
+  .app-sheet a:hover{background:var(--primary-light);text-decoration:none}
+  .app-sheet .s-ic{font-size:20px}
+
+  /* owner home: gradient banner + 2-column app stat cards */
+  .app-banner{
+    background:linear-gradient(135deg,#1565C0 0%,#42A5F5 100%);border-radius:16px;color:#fff;
+    padding:18px 20px;margin-bottom:18px;box-shadow:var(--shadow);
+  }
+  .app-banner .b-row{display:flex;align-items:center;gap:10px;padding:4px 0}
+  .app-banner .b-ic{font-size:18px}
+  .app-banner .b-name{font-weight:800;font-size:18px}
+  .app-banner .b-sub{font-size:14px;opacity:.95}
+  .app-section-title{font-weight:800;font-size:16px;margin:4px 2px 12px}
+  .app-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:18px}
+  .app-stat{
+    display:block;background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);
+    padding:14px;text-decoration:none;color:var(--text);
+  }
+  .app-stat:hover{text-decoration:none;box-shadow:var(--shadow-lg)}
+  .app-chip{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:19px;margin-bottom:10px}
+  .app-chip.blue{background:#e3f0fc}
+  .app-chip.green{background:#e8f5e9}
+  .app-chip.red{background:#fdecec}
+  .app-chip.indigo{background:#e8eaf6}
+  .app-chip.teal{background:#e0f2f1}
+  .app-chip.orange{background:#fff3e0}
+  .app-stat .num{font-size:26px;font-weight:800;line-height:1.2}
+  .app-stat .lbl{color:var(--muted);font-size:13px;font-weight:600;margin-top:2px}
+  .app-card{border-radius:16px}
 </style>
 </head>
 <body>
@@ -570,37 +638,25 @@ function confirmModal(opts){
    Layout shell
    ============================================================ */
 function shell(activeRoute,content){
+  // Owners get the app-like shell (top bar + bottom tabs, no sidebar); admins
+  // keep the right-sidebar layout exactly as before.
+  if(!isAdmin()){ ownerShell(activeRoute,content); return; }
+  setOwnerMode(false);
   var app=$("#app"); clear(app);
   var me=state.me||{};
-  var admin=isAdmin();
-  var nav;
-  if(admin){
-    nav=el("nav",[
-      navLink("#/dashboard","لوحة التحكم",activeRoute),
-      navLink("#/users","المستخدمون",activeRoute),
-      navLink("#/plans","الخطط",activeRoute)
-    ]);
-  } else {
-    // Owner mode: their dashboard + one screen per synced entity. No admin items.
-    var items=[navLink("#/my","لوحتي",activeRoute)];
-    OWNER_ENTITIES.forEach(function(e){
-      items.push(navLink("#/my/data/"+e.value,e.label,activeRoute));
-    });
-    nav=el("nav",items);
-  }
-  var who=admin
-    ? el("span",{class:"who",text:(me.name||me.username||"المدير")})
-    : el("div",{class:"who"},[
-        el("div",{text:(me.name||me.username||"مالك")}),
-        me.generatorName?el("div",{style:"font-weight:500;font-size:12.5px;opacity:.85",text:me.generatorName}):null
-      ]);
+  var nav=el("nav",[
+    navLink("#/dashboard","لوحة التحكم",activeRoute),
+    navLink("#/users","المستخدمون",activeRoute),
+    navLink("#/plans","الخطط",activeRoute)
+  ]);
+  var who=el("span",{class:"who",text:(me.name||me.username||"المدير")});
   var side=el("div",{class:"sidebar"},[
-    el("div",{class:"brand"},[el("span",{class:"logo",text:"M"}),admin?"إدارة مولدتي":"مولدتي"]),
+    el("div",{class:"brand"},[el("span",{class:"logo",text:"M"}),"إدارة مولدتي"]),
     nav,
     el("div",{class:"foot"},[
       who,
       el("button",{class:"logout",text:"تسجيل الخروج",onclick:function(){
-        confirmModal({title:"تسجيل الخروج",message:admin?"هل تريد إنهاء جلسة المدير؟":"هل تريد تسجيل الخروج من حسابك؟",confirmText:"تسجيل الخروج",onConfirm:function(){ doLogout(); return true; }});
+        confirmModal({title:"تسجيل الخروج",message:"هل تريد إنهاء جلسة المدير؟",confirmText:"تسجيل الخروج",onConfirm:function(){ doLogout(); return true; }});
       }})
     ])
   ]);
@@ -608,6 +664,76 @@ function shell(activeRoute,content){
   wrap.appendChild(content);
   app.appendChild(side);
   app.appendChild(wrap);
+}
+
+/* Toggles the phone-like page background/padding used only by the owner shell. */
+function setOwnerMode(on){ document.body.classList.toggle("owner-mode",!!on); }
+
+/* ---------- owner app-like shell (mirrors the Flutter app layout) ---------- */
+var OWNER_TABS=[
+  {href:"#/my",label:"الرئيسية",icon:"🏠",match:function(r){ return r==="#/my"; }},
+  {href:"#/my/data/subscribers",label:"المشتركون",icon:"👥",match:function(r){ return r.indexOf("#/my/data/subscribers")===0; }},
+  {href:"#/my/data/receipts",label:"الوصولات",icon:"🧾",match:function(r){ return r.indexOf("#/my/data/receipts")===0; }},
+  {href:"#/my/data/expenses",label:"المصروفات",icon:"💸",match:function(r){ return r.indexOf("#/my/data/expenses")===0; }}
+];
+var OWNER_MORE=[
+  {href:"#/my/data/boards",label:"البوردات",icon:"🔌"},
+  {href:"#/my/data/circuits",label:"الجوزات",icon:"🔗"},
+  {href:"#/my/data/monthly_prices",label:"أسعار الأشهر",icon:"📅"}
+];
+function ownerShell(activeRoute,content){
+  setOwnerMode(true);
+  closeOwnerSheet();
+  var app=$("#app"); clear(app);
+  var top=el("div",{class:"app-topbar"},[
+    el("span",{class:"brand"},[el("span",{class:"logo",text:"M"}),"مولدتي"]),
+    el("button",{class:"logout",text:"تسجيل الخروج",onclick:function(){
+      confirmModal({title:"تسجيل الخروج",message:"هل تريد تسجيل الخروج من حسابك؟",confirmText:"تسجيل الخروج",onConfirm:function(){ doLogout(); return true; }});
+    }})
+  ]);
+  var wrap=el("div",{class:"app-wrap"});
+  wrap.appendChild(content);
+  app.appendChild(top);
+  app.appendChild(wrap);
+  app.appendChild(ownerBottomNav(activeRoute||""));
+}
+function ownerBottomNav(activeRoute){
+  var nav=el("div",{class:"app-bottomnav"});
+  OWNER_TABS.forEach(function(t){
+    nav.appendChild(el("a",{href:t.href,class:t.match(activeRoute)?"active":""},[
+      el("span",{class:"t-ic",text:t.icon}),
+      el("span",{text:t.label})
+    ]));
+  });
+  var moreActive=false;
+  OWNER_MORE.forEach(function(m){ if(activeRoute.indexOf(m.href)===0) moreActive=true; });
+  nav.appendChild(el("button",{class:moreActive?"active":"",onclick:openOwnerMoreSheet},[
+    el("span",{class:"t-ic",text:"⋯"}),
+    el("span",{text:"المزيد"})
+  ]));
+  return nav;
+}
+/* Small bottom sheet for the "المزيد" tab (boards / circuits / monthly prices). */
+function openOwnerMoreSheet(){
+  closeOwnerSheet();
+  var back=el("div",{class:"app-sheet-back",id:"owner-sheet-back",onclick:closeOwnerSheet});
+  var sheet=el("div",{class:"app-sheet",id:"owner-sheet"},[
+    el("div",{class:"s-grab"}),
+    OWNER_MORE.map(function(m){
+      return el("a",{href:m.href,onclick:closeOwnerSheet},[
+        el("span",{class:"s-ic",text:m.icon}),
+        el("span",{text:m.label})
+      ]);
+    })
+  ]);
+  document.body.appendChild(back);
+  document.body.appendChild(sheet);
+}
+function closeOwnerSheet(){
+  var b=document.getElementById("owner-sheet-back");
+  if(b&&b.parentNode) b.parentNode.removeChild(b);
+  var s=document.getElementById("owner-sheet");
+  if(s&&s.parentNode) s.parentNode.removeChild(s);
 }
 function navLink(href,label,active){
   var isActive = active && (active===href || (href!=="#/dashboard" && href!=="#/my" && active.indexOf(href)===0));
@@ -671,6 +797,7 @@ function render(){
     if(match.owner && isAdmin()){ location.hash="#/dashboard"; return; }
   }
   closeModal();
+  closeOwnerSheet();
   match.view.apply(null,params||[]);
 }
 window.addEventListener("hashchange",render);
@@ -679,6 +806,7 @@ window.addEventListener("hashchange",render);
    View: Login
    ============================================================ */
 function viewLogin(){
+  setOwnerMode(false);
   var app=$("#app"); clear(app);
   var errBox=el("div");
   var uIn=el("input",{class:"input",type:"text",placeholder:"اسم المستخدم",autocomplete:"username"});
@@ -1120,7 +1248,8 @@ function recentUploadsCard(fetchFn,opts){
         }
         cells.push(
           el("td",[el("span",{class:"badge blue",text:ownerEntityLabel(it.entity)})]),
-          el("td",{text:it.label||it.localId||"—"}),
+          // Owner cards never show a raw localId/uuid — prefer the label, else "—".
+          el("td",{text:it.label||(opts.ownerCol?(it.localId||"—"):"—")}),
           el("td",{class:"right"},[el("a",{class:"btn sm ghost",href:opts.targetFor(it),text:"عرض"})])
         );
         tb.appendChild(el("tr",cells));
@@ -1154,7 +1283,8 @@ var SYNC_COLUMNS={
   ],
   circuits:[
     {label:"الاسم",get:function(d){ return syncText(d.name); }},
-    {label:"اللوحة",get:function(d){ return syncText(d.board_id); }},
+    // Resolved to the board NAME by syncColumnsFor() — never the raw board_id.
+    {label:"اللوحة",get:function(d){ return "—"; }},
     {label:"الطور",get:function(d){ return syncText(d.phase); }}
   ],
   receipts:[
@@ -1173,6 +1303,48 @@ var SYNC_COLUMNS={
     {label:"سعر الأمبير",get:function(d){ return (d.price_per_amp!=null?fmtPrice(d.price_per_amp):(d.price!=null?fmtPrice(d.price):"—")); }}
   ]
 };
+
+/* Prefetch {localId -> display name} maps for related entities (boards/circuits)
+   so tables and statements show NAMES, never raw UUIDs.
+   fetchFn(entity,opts) -> promise of the mirror endpoint (owner: API.myData,
+   admin: API.userData bound to the user id). Failures degrade to empty maps. */
+function loadNameMaps(fetchFn,entities){
+  return Promise.all(entities.map(function(en){
+    return fetchFn(en,{limit:200}).then(function(res){
+      var m={};
+      normalizeList(res,"records").forEach(function(r){
+        var d=(r&&r.data)||{};
+        var nm=d.name||d.code;
+        if(nm==null||nm==="") return;
+        if(r.localId!=null) m[r.localId]=nm;
+        if(d.id!=null) m[d.id]=nm;
+      });
+      return m;
+    }).catch(function(){ return {}; });
+  })).then(function(arr){
+    var out={};
+    entities.forEach(function(en,i){ out[en]=arr[i]; });
+    return out;
+  });
+}
+
+/* Columns for one entity, with foreign-key ids resolved to names when resolver
+   maps are provided. Returns a per-call copy for circuits so the shared
+   SYNC_COLUMNS defs stay untouched for the other entities. */
+function syncColumnsFor(entity,maps){
+  var cols=SYNC_COLUMNS[entity];
+  if(entity==="circuits"&&cols){
+    var boards=(maps&&maps.boards)||{};
+    cols=cols.map(function(c){
+      if(c.label!=="اللوحة") return c;
+      return {label:c.label,get:function(d){
+        // Board NAME via the prefetched map — never the raw board_id.
+        return syncText(d.board_id!=null?(boards[d.board_id]||null):null);
+      }};
+    });
+  }
+  return cols;
+}
 
 function syncedDataCard(u){
   // Separate screens: a grid of links, one per synced entity.
@@ -1200,8 +1372,9 @@ function syncedDataCard(u){
 }
 
 /* Shared renderer: a card/table of a user's synced records for one entity.
-   `onDelete(record)` adds a trailing per-row Delete (danger ghost) action. */
-function renderSyncTable(entity,records,onDelete,drill){
+   `onDelete(record)` adds a trailing per-row Delete (danger ghost) action.
+   `maps` (optional) = name maps from loadNameMaps() used to resolve FK ids. */
+function renderSyncTable(entity,records,onDelete,drill,maps){
   if(!records.length){
     return el("div",{class:"card"},[el("div",{class:"card-b"},[
       el("div",{class:"empty"},[el("div",{class:"big",text:"🗂️"}),"لا توجد بيانات ("+entityLabel(entity)+") متزامنة بعد."])
@@ -1214,7 +1387,7 @@ function renderSyncTable(entity,records,onDelete,drill){
     if(onDelete) btns.push(el("button",{class:"btn sm danger ghost",onclick:function(){ onDelete(r); }},["حذف"]));
     return el("td",{class:"right"},[el("div",{class:"acts"},btns)]);
   }
-  var cols=SYNC_COLUMNS[entity];
+  var cols=syncColumnsFor(entity,maps);
   var tw=el("div",{class:"tbl-wrap"});
   var tbl=el("table");
   var tb=el("tbody");
@@ -1287,6 +1460,17 @@ function viewUserEntity(id,entity,relField,relValue){
   var page=1;
   var user={};
 
+  // Board-name map for the circuits table (renders names, never raw board_id);
+  // fetched once per screen and reused across pagination/search reloads.
+  var relNameMaps=null;
+  function ensureRelMaps(){
+    if(entity!=="circuits") return Promise.resolve(null);
+    if(relNameMaps) return Promise.resolve(relNameMaps);
+    return loadNameMaps(function(en,opts){ return API.userData(id,en,opts); },["boards"]).then(function(maps){
+      relNameMaps=maps; return maps;
+    });
+  }
+
   // Stable DOM regions we repaint without rebuilding the whole screen.
   var headWrap=el("div");        // pageHead (title + count)
   var tableWrap=el("div");       // table card
@@ -1352,7 +1536,11 @@ function viewUserEntity(id,entity,relField,relValue){
   function load(){
     clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
     clear(pagerWrap);
-    API.userData(id,entity,{q:query,page:page,limit:SYNC_PAGE_LIMIT,relField:relField,relValue:relValue}).then(function(res){
+    Promise.all([
+      API.userData(id,entity,{q:query,page:page,limit:SYNC_PAGE_LIMIT,relField:relField,relValue:relValue}),
+      ensureRelMaps()
+    ]).then(function(both){
+      var res=both[0], maps=both[1];
       var records=normalizeList(res,"records");
       var total=(res&&typeof res.total==="number")?res.total:records.length;
       if(res&&res.page) page=res.page;
@@ -1361,7 +1549,7 @@ function viewUserEntity(id,entity,relField,relValue){
       paintHead(total);
       paintPager(total);
       clear(tableWrap);
-      tableWrap.appendChild(renderSyncTable(entity,records,doDelete,drill));
+      tableWrap.appendChild(renderSyncTable(entity,records,doDelete,drill,maps));
     }).catch(function(err){
       if(err.status===401) return;
       clear(tableWrap); tableWrap.appendChild(errorBlock(err,load));
@@ -1455,7 +1643,8 @@ function receiptDetailContent(rec,d,subName){
   }
   row("رقم الوصل", d.receipt_no);
   row("الحالة", badge);
-  row("المشترك", subName||d.subscriber_id||"—");
+  // Subscriber NAME only — never the raw subscriber_id uuid.
+  row("المشترك", subName||"—");
   row("الشهر", d.month);
   row("الأمبيرات", d.amps_snapshot);
   row("سعر الأمبير", d.price_snapshot!=null?fmtPrice(d.price_snapshot):"—");
@@ -1483,6 +1672,7 @@ function viewUserStatement(id,subId){
   var page=1;
   var user={};
   var sub=null;          // subscriber record data
+  var maps=null;         // boards/circuits name maps (id -> name, never raw ids)
 
   var headWrap=el("div");   // crumb + page head
   var infoWrap=el("div");   // subscriber info card
@@ -1519,14 +1709,17 @@ function viewUserStatement(id,subId){
   function paintInfo(){
     clear(infoWrap);
     var s=sub||{};
+    // Board/circuit NAMES via the prefetched maps — never the raw ids.
+    var boardName=(maps&&maps.boards&&s.board_id!=null)?maps.boards[s.board_id]:null;
+    var circuitName=(maps&&maps.circuits&&s.circuit_id!=null)?maps.circuits[s.circuit_id]:null;
     infoWrap.appendChild(el("div",{class:"card"},[
       el("div",{class:"card-h"},[el("span",{text:"بيانات المشترك"})]),
       el("div",{class:"card-b"},[el("div",{class:"kv"},[
         kv("الاسم",s.name||"—"),
         kv("الهاتف",s.phone||"—"),
         kv("الأمبيرات",s.amps!=null?String(s.amps):"—"),
-        kv("اللوحة",s.board_id||"—"),
-        kv("الجوزة",s.circuit_id||"—"),
+        kv("اللوحة",boardName||"—"),
+        kv("الجوزة",circuitName||"—"),
         kvNode("الحالة", (s.status==="inactive"||s.active===false)
           ? el("span",{class:"badge gray"},[el("span",{class:"dot"}),"غير نشط"])
           : el("span",{class:"badge green"},[el("span",{class:"dot"}),"نشط"]))
@@ -1568,11 +1761,13 @@ function viewUserStatement(id,subId){
   clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
   Promise.all([
     API.user(id).catch(function(){ return {user:{}}; }),
-    API.userData(id,"subscribers",{localId:subId}).catch(function(){ return {records:[]}; })
+    API.userData(id,"subscribers",{localId:subId}).catch(function(){ return {records:[]}; }),
+    loadNameMaps(function(en,opts){ return API.userData(id,en,opts); },["boards","circuits"])
   ]).then(function(res){
     user=(res[0]&&res[0].user)||res[0]||{};
     var sr=normalizeList(res[1],"records")[0];
     sub=sr?(sr.data||{}):{};
+    maps=res[2]||{};
     paintHead();
     paintInfo();
     buildShell();
@@ -1632,30 +1827,53 @@ function viewMyDashboard(){
   shell("#/my",loadingBlock("جارٍ تحميل لوحتك…"));
   API.myStats().then(function(res){
     var counts=(res&&(res.stats||res.counts))||res||{};
+    var dash=(res&&res.dashboard)||null;   // paid/unpaid app stats (newer backend)
     var me=state.me||{};
     var sub=me.subscription||{};
 
     var content=el("div");
-    content.appendChild(pageHead("لوحتي"));
 
-    // One stat card per entity, linking to its screen.
-    var grid=el("div",{class:"stats"});
-    OWNER_ENTITIES.forEach(function(e){
-      var v=counts[e.value];
-      grid.appendChild(el("a",{
-        class:"stat",
-        href:"#/my/data/"+e.value,
-        style:"text-decoration:none;cursor:pointer"
-      },[
-        el("div",{class:"ic",text:e.icon}),
-        el("div",{class:"lbl",text:e.label}),
-        el("div",{class:"val",text:String(v!=null?v:0)})
+    // App-style gradient banner: generator name + phone + plan time remaining.
+    content.appendChild(el("div",{class:"app-banner"},[
+      bannerRow("⚡",me.generatorName||me.name||"مولدتي",true),
+      bannerRow("📱",me.username||me.phone||"—",false),
+      bannerRow("🏅",planRemainingText(sub),false),
+      bannerRow("☁️","آخر رفع: "+((dash&&dash.lastUploadAt)?fmtDate(dash.lastUploadAt):"—"),false)
+    ]));
+
+    // "نظرة عامة": 2-column app stat cards. With the dashboard object we show
+    // the app's paid/unpaid stats; otherwise fall back to entity counts only.
+    content.appendChild(el("div",{class:"app-section-title",text:"نظرة عامة"}));
+    var cards;
+    if(dash){
+      cards=[
+        {label:"إجمالي المشتركين",value:dash.totalSubscribers,icon:"👥",chip:"blue",href:"#/my/data/subscribers"},
+        {label:"المشتركين المسددين",value:dash.paidCount,icon:"✅",chip:"green",href:"#/my/data/subscribers"},
+        {label:"المشتركين غير المسددين",value:dash.unpaidCount,icon:"❗",chip:"red",href:"#/my/data/subscribers"},
+        {label:"إجمالي البوردات",value:dash.boards,icon:"🔌",chip:"indigo",href:"#/my/data/boards"},
+        {label:"الجوزات",value:dash.circuits,icon:"🔗",chip:"teal",href:"#/my/data/circuits"},
+        {label:"الوصولات",value:counts.receipts,icon:"🧾",chip:"orange",href:"#/my/data/receipts"}
+      ];
+    } else {
+      cards=[
+        {label:"إجمالي المشتركين",value:counts.subscribers,icon:"👥",chip:"blue",href:"#/my/data/subscribers"},
+        {label:"إجمالي البوردات",value:counts.boards,icon:"🔌",chip:"indigo",href:"#/my/data/boards"},
+        {label:"الجوزات",value:counts.circuits,icon:"🔗",chip:"teal",href:"#/my/data/circuits"},
+        {label:"الوصولات",value:counts.receipts,icon:"🧾",chip:"orange",href:"#/my/data/receipts"}
+      ];
+    }
+    var grid=el("div",{class:"app-grid"});
+    cards.forEach(function(c){
+      grid.appendChild(el("a",{class:"app-stat",href:c.href},[
+        el("div",{class:"app-chip "+c.chip,text:c.icon}),
+        el("div",{class:"num",text:String(c.value!=null?c.value:0)}),
+        el("div",{class:"lbl",text:c.label})
       ]));
     });
     content.appendChild(grid);
 
-    // Account card: identity + plan/subscription.
-    var acc=el("div",{class:"card"});
+    // Account card: identity + plan/subscription (app-like rounded card).
+    var acc=el("div",{class:"card app-card"});
     acc.appendChild(el("div",{class:"card-h"},["حسابي"]));
     acc.appendChild(el("div",{class:"card-b"},[el("div",{class:"kv"},[
       kv("الاسم",me.name||"—"),
@@ -1667,20 +1885,29 @@ function viewMyDashboard(){
     ])]));
     content.appendChild(acc);
 
-    // Latest data uploaded (synced) from this owner's app — newest first, paginated.
-    content.appendChild(recentUploadsCard(API.myRecent,{
-      targetFor:function(it){
-        if(it.entity==="receipts") return "#/my/data/receipts/detail/"+encodeURIComponent(it.localId);
-        if(it.entity==="subscribers") return "#/my/sub/"+encodeURIComponent(it.localId);
-        return "#/my/data/"+it.entity;
-      }
-    }));
-
     shell("#/my",content);
   }).catch(function(err){
     if(err.status===401) return;
     shell("#/my",errorBlock(err,viewMyDashboard));
   });
+}
+/* One icon+text row inside the owner gradient banner. */
+function bannerRow(icon,text,big){
+  return el("div",{class:"b-row"},[
+    el("span",{class:"b-ic",text:icon}),
+    el("span",{class:big?"b-name":"b-sub",text:text})
+  ]);
+}
+/* Plan banner text like the app: planCode_Ndays (days left from expiresAt),
+   e.g. MONTHLY_29days, or planCode_expired once past the expiry date. */
+function planRemainingText(sub){
+  sub=sub||{};
+  var code=sub.planCode;
+  if(!code) return "لا توجد خطة";
+  var exp=sub.expiresAt?new Date(sub.expiresAt):null;
+  if(!exp||isNaN(exp.getTime())) return code;
+  var days=Math.ceil((exp.getTime()-Date.now())/86400000);
+  return days>0?(code+"_"+days+"days"):(code+"_expired");
 }
 
 /* Owner entity screen (#/my/data/:entity[/by/:relField/:relValue]).
@@ -1704,6 +1931,17 @@ function viewMyEntity(entity,relField,relValue){
 
   var query="";
   var page=1;
+
+  // Board-name map for the circuits table (renders names, never raw board_id);
+  // fetched once per screen and reused across pagination/search reloads.
+  var relNameMaps=null;
+  function ensureRelMaps(){
+    if(entity!=="circuits") return Promise.resolve(null);
+    if(relNameMaps) return Promise.resolve(relNameMaps);
+    return loadNameMaps(function(en,opts){ return API.myData(en,opts); },["boards"]).then(function(maps){
+      relNameMaps=maps; return maps;
+    });
+  }
 
   var headWrap=el("div");
   var tableWrap=el("div");
@@ -1754,7 +1992,11 @@ function viewMyEntity(entity,relField,relValue){
   function load(){
     clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
     clear(pagerWrap);
-    API.myData(entity,{q:query,page:page,limit:SYNC_PAGE_LIMIT,relField:relField,relValue:relValue}).then(function(res){
+    Promise.all([
+      API.myData(entity,{q:query,page:page,limit:SYNC_PAGE_LIMIT,relField:relField,relValue:relValue}),
+      ensureRelMaps()
+    ]).then(function(both){
+      var res=both[0], maps=both[1];
       var records=normalizeList(res,"records");
       var total=(res&&typeof res.total==="number")?res.total:records.length;
       if(res&&res.page) page=res.page;
@@ -1762,7 +2004,7 @@ function viewMyEntity(entity,relField,relValue){
       paintPager(total);
       clear(tableWrap);
       // Read-only: no onDelete → renderSyncTable shows no delete buttons.
-      tableWrap.appendChild(renderSyncTable(entity,records,null,drill));
+      tableWrap.appendChild(renderSyncTable(entity,records,null,drill,maps));
     }).catch(function(err){
       if(err.status===401) return;
       clear(tableWrap); tableWrap.appendChild(errorBlock(err,load));
@@ -1789,6 +2031,7 @@ function viewMyEntity(entity,relField,relValue){
 function viewMyStatement(subId){
   var page=1;
   var sub=null;          // subscriber record data
+  var maps=null;         // boards/circuits name maps (id -> name, never raw ids)
 
   var headWrap=el("div");
   var infoWrap=el("div");
@@ -1824,14 +2067,17 @@ function viewMyStatement(subId){
   function paintInfo(){
     clear(infoWrap);
     var s=sub||{};
-    infoWrap.appendChild(el("div",{class:"card"},[
+    // Board/circuit NAMES via the prefetched maps — never the raw ids.
+    var boardName=(maps&&maps.boards&&s.board_id!=null)?maps.boards[s.board_id]:null;
+    var circuitName=(maps&&maps.circuits&&s.circuit_id!=null)?maps.circuits[s.circuit_id]:null;
+    infoWrap.appendChild(el("div",{class:"card app-card"},[
       el("div",{class:"card-h"},[el("span",{text:"بيانات المشترك"})]),
       el("div",{class:"card-b"},[el("div",{class:"kv"},[
         kv("الاسم",s.name||"—"),
         kv("الهاتف",s.phone||"—"),
         kv("الأمبيرات",s.amps!=null?String(s.amps):"—"),
-        kv("اللوحة",s.board_id||"—"),
-        kv("الجوزة",s.circuit_id||"—"),
+        kv("اللوحة",boardName||"—"),
+        kv("الجوزة",circuitName||"—"),
         kvNode("الحالة", (s.status==="inactive"||s.active===false)
           ? el("span",{class:"badge gray"},[el("span",{class:"dot"}),"غير نشط"])
           : el("span",{class:"badge green"},[el("span",{class:"dot"}),"نشط"]))
@@ -1871,9 +2117,13 @@ function viewMyStatement(subId){
   paintInfo();
   buildShell();
   clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
-  API.myData("subscribers",{localId:subId}).then(function(res){
-    var sr=normalizeList(res,"records")[0];
+  Promise.all([
+    API.myData("subscribers",{localId:subId}),
+    loadNameMaps(function(en,opts){ return API.myData(en,opts); },["boards","circuits"])
+  ]).then(function(res){
+    var sr=normalizeList(res[0],"records")[0];
     sub=sr?(sr.data||{}):{};
+    maps=res[1]||{};
     paintHead();
     paintInfo();
     buildShell();
@@ -2157,6 +2407,7 @@ function normalizeList(res,key){
    Standalone Arabic card; no sidebar/nav. Fetches the public endpoint.
    ============================================================ */
 function viewPublicReceipt(uuid){
+  setOwnerMode(false);
   var app=$("#app"); clear(app);
   var screen=el("div",{class:"receipt-screen"});
   var card=el("div",{class:"receipt-card"});
@@ -2231,6 +2482,7 @@ function viewPublicReceipt(uuid){
 
 /* Public subscriber invoice history (#/r/:uuid/history) — no login. */
 function viewPublicReceiptHistory(uuid){
+  setOwnerMode(false);
   var app=$("#app"); clear(app);
   var screen=el("div",{class:"receipt-screen"});
   var card=el("div",{class:"receipt-card"});

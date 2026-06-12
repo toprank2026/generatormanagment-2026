@@ -145,18 +145,38 @@ Errors: `400` missing `entity`.
 
 ### GET `/api/account/stats`  (auth)
 
-Per-entity counts of the caller's **non-deleted** mirrored rows (dashboard
-stats). Entities with no rows are reported as `0`.
+Per-entity counts of the caller's **non-deleted** mirrored rows, plus an
+app-style `dashboard` object for the **current month** (server time, UTC)
+that replicates the Flutter dashboard. Entities with no rows are reported
+as `0`.
+
+Paid/unpaid formula (same as the app): with `P = monthly_prices[month]`
+(`data.price_per_amp`, `0` if there is no row for the month), a subscriber is
+**paid** when the sum of their `paid_amount` over that month's receipts is
+`>= amps * P` — so with `P = 0` every subscriber counts as paid. `totalDue`
+is kept raw (`totalAmps * P - collected`) and may go negative, like the app.
 ```jsonc
 // 200 response
 {
-  "counts": {
+  "counts": {                  // unchanged — per-entity row counts
     "subscribers": 12,
     "boards": 3,
     "circuits": 9,
     "receipts": 240,
     "expenses": 31,
     "monthly_prices": 6
+  },
+  "dashboard": {
+    "month": "2026-06",        // current month, 'YYYY-MM' (server UTC)
+    "pricePerAmp": 5000,       // monthly_prices row for that month, 0 if absent
+    "totalSubscribers": 12,
+    "totalAmps": 180,          // sum of subscriber amps
+    "paidCount": 9,            // per the formula above
+    "unpaidCount": 3,
+    "totalDue": 200000,        // totalAmps * pricePerAmp - collected (raw)
+    "collected": 700000,       // sum of paid_amount over that month's receipts
+    "boards": 3,
+    "circuits": 9
   }
 }
 ```

@@ -723,6 +723,71 @@ route-guarded.
 
 ---
 
+## 28. Owner panel — app-style dashboard stats (paid/unpaid, server-side)
+
+**Files:** `backend/src/controllers/accountController.js`, `backend/public/admin/index.html`
+
+- `GET /api/account/stats` (auth, JWT-scoped — §27.1) now **also returns a
+  `dashboard` object**, computed **server-side from the account's mirror** with
+  the **app's exact paid/unpaid formula**, so the owner panel's numbers always
+  match the Flutter dashboard:
+  - For the current month `M`, `P = monthly_prices[M].price_per_amp`
+    (`0` when no price row exists for `M`).
+  - A subscriber is **PAID** when
+    `SUM(receipts.paid_amount WHERE subscriber_id = s.id AND month = M) >= s.amps * P`,
+    else **UNPAID**. (With `P = 0` every subscriber counts as **paid** — same
+    as the app.)
+  - The object carries the dashboard counts: total subscribers, **paid**
+    subscribers (المشتركين المسددين), **unpaid** subscribers
+    (المشتركين غير المسددين), and total boards.
+- The owner dashboard (`#/my`) renders these as its **نظرة عامة stat cards** —
+  including the new green المشتركين المسددين / red المشتركين غير المسددين
+  cards — instead of plain mirror row-counts.
+
+---
+
+## 29. Panel tables — human board/circuit names (no raw UUIDs)
+
+**File:** `backend/public/admin/index.html`
+
+- The **circuits** tables — owner (`#/my/data/circuits`) **and** admin
+  (`#/users/:id/data/circuits`) — now resolve each circuit's `board_id` to the
+  **board's name**.
+- The **subscriber statement** views (owner + admin, §9/§27.2) resolve the
+  subscriber's `board_id` / `circuit_id` to the board / circuit **names**.
+- Raw UUIDs are **no longer shown** on these screens. Implementation: the
+  screens fetch the relevant `boards` / `circuits` mirror entities, build an
+  id → name lookup, and apply it at render time (an id with no matching parent
+  record falls back gracefully instead of breaking the table).
+
+---
+
+## 30. Owner panel UI — Flutter-app look (banner, stat cards, bottom nav)
+
+**File:** `backend/public/admin/index.html`
+
+- Owner mode (§27.2) is restyled to **look like the Flutter app's dashboard**,
+  clearly distinct from the admin UI (which is **unchanged** — RTL sidebar
+  layout, §8):
+  - **Blue gradient banner** (blue.shade800 → blue.shade400, rounded 16) with
+    icon + data rows: ⚡ generator name (bold), 📱 phone, 🏅 plan with the
+    remaining time as `plan_Ndays` (e.g. `MONTHLY_29days`), mirroring the app
+    banner (§5.3 / §17.2).
+  - "**نظرة عامة**" heading + a **2-column grid of white rounded-16 stat
+    cards** — each a small colored icon chip + big bold number + grey label
+    (إجمالي المشتركين blue · المشتركين المسددين green · المشتركين غير المسددين
+    red · إجمالي البوردات indigo) — fed by `stats.dashboard` (§28).
+  - A **fixed bottom navigation bar** with 5 tabs — الرئيسية / المشتركون /
+    الوصولات / المصروفات / المزيد — replaces the sidebar **for owners only**;
+    the active tab highlights blue (app-style), and المزيد reaches the
+    remaining owner screens (boards, circuits, monthly prices, logout).
+  - **Phone-like centered layout:** owner content renders in a centered
+    max-width column so the panel reads like the app on any screen.
+- No backend route changes; admin routes/screens keep the sidebar and all
+  admin features exactly as before.
+
+---
+
 ## Test steps — verify each feature (step by step)
 
 > Setup: backend `cd backend && npm run dev` (in-memory Mongo); app
@@ -915,3 +980,27 @@ route-guarded.
    **redirects to `#/my`**.
 5. Log out and log in as **admin** → confirm the admin panel is unchanged
    (Users / Plans / SSE pop-up / mirror deletes all present).
+
+### Z. Owner panel — app-look dashboard + bottom nav
+1. Open `http://<host>:4000/admin` and log in with an **owner** (app) account.
+2. Confirm the dashboard **looks like the Flutter app**: blue gradient banner
+   (⚡ generator name, 📱 phone, 🏅 plan as `plan_Ndays`), the **نظرة عامة**
+   2-column stat cards, and a **fixed bottom navigation bar**
+   (الرئيسية / المشتركون / الوصولات / المصروفات / المزيد) — **no sidebar**,
+   content centered phone-style.
+3. Confirm the **المشتركين المسددين / غير المسددين** card numbers **match the
+   app's dashboard** for the same account and month (same formula; with no
+   monthly price set for the month, **all** subscribers count as paid in both).
+4. Tap each bottom-nav tab → confirm it navigates to the matching owner screen
+   and the active tab highlights **blue**.
+5. Log out and log in as **admin** → confirm the admin UI is **unchanged**
+   (RTL sidebar, same screens, no bottom nav, no gradient banner).
+
+### AA. Human board/circuit names (no raw UUIDs)
+1. As an **owner**, open `#/my/data/circuits` → confirm the board column shows
+   the **board NAME**, not a UUID.
+2. Open a **subscriber statement** (كشف الحساب) → confirm the subscriber's
+   board / circuit appear as **names**.
+3. As **admin**, open the same screens (`#/users/:id/data/circuits` + a
+   statement) → confirm names there too; raw `board_id`/`circuit_id` UUIDs no
+   longer appear on these screens.
