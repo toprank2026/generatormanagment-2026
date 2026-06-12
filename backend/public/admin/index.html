@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="color-scheme" content="light" />
 <title>لوحة تحكم مولدتي</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,300..600,0..1,0">
 <style>
+  /* Material Symbols icon helper (FILL 1 → matches the app's filled Icons.*) */
+  .msi{font-family:'Material Symbols Outlined';font-weight:500;font-style:normal;display:inline-block;line-height:1;letter-spacing:normal;text-transform:none;white-space:nowrap;word-wrap:normal;direction:ltr;-webkit-font-smoothing:antialiased;font-variation-settings:'FILL' 1;vertical-align:middle}
   :root{
     --primary:#1565C0;
     --primary-dark:#0d47a1;
@@ -127,7 +130,7 @@
   .stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;position:relative;overflow:hidden}
   .stat .lbl{color:var(--muted);font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
   .stat .val{font-size:34px;font-weight:800;margin-top:6px;color:var(--primary)}
-  .stat .ic{position:absolute;left:14px;top:14px;width:40px;height:40px;border-radius:11px;background:var(--primary-light);display:grid;place-items:center;font-size:20px}
+  .stat .ic{position:absolute;left:14px;top:14px;width:40px;height:40px;border-radius:11px;background:var(--primary-light);display:grid;place-items:center;font-size:22px;color:var(--primary)}
 
   /* ---------- table ---------- */
   .tbl-wrap{overflow-x:auto}
@@ -157,7 +160,8 @@
   .toolbar .grow{flex:1}
   .search{position:relative;flex:1;min-width:200px;max-width:340px}
   .search input{padding-right:36px}
-  .search .ic{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:var(--muted)}
+  .search .ic{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:var(--muted);display:flex;align-items:center}
+  .search .ic .msi{font-size:18px}
 
   .empty{padding:48px 20px;text-align:center;color:var(--muted)}
   .empty .big{font-size:40px;margin-bottom:8px;opacity:.6}
@@ -209,7 +213,7 @@
     border-radius:14px;box-shadow:var(--shadow-lg);padding:16px 18px;display:flex;gap:14px;align-items:flex-start;
     animation:popdrop .3s cubic-bezier(.2,.9,.3,1.4);
   }
-  .popup .pic{width:44px;height:44px;border-radius:12px;background:var(--success-light);color:var(--success);display:grid;place-items:center;font-size:24px;flex-shrink:0}
+  .popup .pic{width:44px;height:44px;border-radius:12px;background:var(--success-light);color:var(--success);display:grid;place-items:center;font-size:26px;flex-shrink:0}
   .popup .ptxt{flex:1;min-width:0}
   .popup .ptitle{font-weight:800;font-size:15px;color:var(--text);margin-bottom:3px}
   .popup .pname{font-weight:700;color:var(--success);word-break:break-word}
@@ -264,10 +268,11 @@
   }
   .app-bottomnav a,.app-bottomnav button{
     flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;
-    color:var(--muted);font-size:11.5px;font-weight:700;padding:4px 2px;border-radius:10px;text-decoration:none;cursor:pointer;
+    color:var(--muted);font-size:10.5px;font-weight:700;padding:4px 1px;border-radius:10px;text-decoration:none;cursor:pointer;
+    min-width:0;white-space:nowrap;
   }
   .app-bottomnav a:hover,.app-bottomnav button:hover{text-decoration:none;color:var(--primary)}
-  .app-bottomnav .t-ic{font-size:20px;line-height:1.2}
+  .app-bottomnav .t-ic{font-size:22px;line-height:1.2;display:flex;align-items:center;justify-content:center}
   .app-bottomnav .active{color:var(--primary)}
   .app-sheet-back{position:fixed;inset:0;z-index:70;background:rgba(16,24,40,.35);animation:fade .15s}
   .app-sheet{
@@ -279,7 +284,7 @@
   .app-sheet .s-grab{width:42px;height:4px;border-radius:99px;background:var(--border);margin:2px auto 12px}
   .app-sheet a{display:flex;align-items:center;gap:12px;padding:13px 10px;border-radius:11px;color:var(--text);font-weight:700}
   .app-sheet a:hover{background:var(--primary-light);text-decoration:none}
-  .app-sheet .s-ic{font-size:20px}
+  .app-sheet .s-ic{font-size:22px;color:var(--primary);display:flex;align-items:center}
 
   /* owner home: gradient banner + 2-column app stat cards */
   .app-banner{
@@ -287,7 +292,7 @@
     padding:18px 20px;margin-bottom:18px;box-shadow:var(--shadow);
   }
   .app-banner .b-row{display:flex;align-items:center;gap:10px;padding:4px 0}
-  .app-banner .b-ic{font-size:18px}
+  .app-banner .b-ic{font-size:20px;display:flex;align-items:center}
   .app-banner .b-name{font-weight:800;font-size:18px}
   .app-banner .b-sub{font-size:14px;opacity:.95}
   .app-section-title{font-weight:800;font-size:16px;margin:4px 2px 12px}
@@ -297,16 +302,36 @@
     padding:14px;text-decoration:none;color:var(--text);
   }
   .app-stat:hover{text-decoration:none;box-shadow:var(--shadow-lg)}
-  .app-chip{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:19px;margin-bottom:10px}
-  .app-chip.blue{background:#e3f0fc}
-  .app-chip.green{background:#e8f5e9}
-  .app-chip.red{background:#fdecec}
-  .app-chip.indigo{background:#e8eaf6}
-  .app-chip.teal{background:#e0f2f1}
-  .app-chip.orange{background:#fff3e0}
+  .app-chip{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:22px;margin-bottom:10px}
+  .app-chip.blue{background:#e3f0fc;color:#1565C0}
+  .app-chip.green{background:#e8f5e9;color:#2e7d32}
+  .app-chip.red{background:#fdecec;color:#d32f2f}
+  .app-chip.indigo{background:#e8eaf6;color:#3949ab}
+  .app-chip.teal{background:#e0f2f1;color:#00897b}
+  .app-chip.orange{background:#fff3e0;color:#fb8c00}
   .app-stat .num{font-size:26px;font-weight:800;line-height:1.2}
+  .app-stat .num.sm{font-size:18px}
   .app-stat .lbl{color:var(--muted);font-size:13px;font-weight:600;margin-top:2px}
   .app-card{border-radius:16px}
+
+  /* owner monthly reports (#/my/reports): month picker + SVG/div charts */
+  .rep-month{display:flex;align-items:center;justify-content:space-between;direction:ltr;padding:10px 12px;margin-bottom:14px}
+  .rep-month .rep-chev{
+    width:38px;height:38px;border:1px solid var(--border);border-radius:10px;background:#fff;
+    color:var(--primary);font-size:20px;font-weight:800;cursor:pointer;line-height:1;
+  }
+  .rep-month .rep-chev:hover{background:var(--primary-light)}
+  .rep-month .rep-month-lbl{font-weight:800;font-size:17px}
+  .rep-center{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .rep-chart-lbl{color:var(--muted);font-weight:700;font-size:13px}
+  .rep-legend{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;font-size:13px;font-weight:700}
+  .rep-legend .dot2{display:inline-block;width:10px;height:10px;border-radius:99px;margin-inline-end:6px}
+  .rep-bars{display:flex;align-items:flex-end;justify-content:space-around;gap:10px;width:100%;padding-top:4px}
+  .rep-bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+  .rep-bar-val{font-size:12px;font-weight:800;white-space:nowrap}
+  .rep-bar-track{height:150px;width:34px;display:flex;align-items:flex-end;background:#f1f4f8;border-radius:8px;overflow:hidden}
+  .rep-bar-fill{width:100%;border-radius:8px 8px 0 0}
+  .rep-bar-lbl{color:var(--muted);font-size:12.5px;font-weight:700;text-align:center}
 </style>
 </head>
 <body>
@@ -361,6 +386,8 @@ function appendChildren(n,children){
     n.appendChild(typeof c==="string"||typeof c==="number"?document.createTextNode(String(c)):c);
   });
 }
+/* Material Symbols icon: the text content is the icon NAME (ligature). */
+function mi(name,style){ return el("span",{class:"msi","aria-hidden":"true",style:style||"",text:name}); }
 function esc(s){
   if(s==null) return "";
   return String(s).replace(/[&<>"']/g,function(c){
@@ -386,7 +413,7 @@ function toast(msg,type){
 function newAccountPopup(name,username){
   var root=$("#popups"); if(!root) return;
   var p=el("div",{class:"popup"},[
-    el("div",{class:"pic",text:"🎉"}),
+    el("div",{class:"pic"},[mi("celebration")]),
     el("div",{class:"ptxt"},[
       el("div",{class:"ptitle",text:"حساب جديد"}),
       el("div",{class:"pname",text:(name||username||"مستخدم جديد")}),
@@ -486,7 +513,7 @@ var API={
   login:function(username,password){ return api("POST","/api/auth/login",{username:username,password:password}); },
   me:function(){ return api("GET","/api/auth/me"); },
   // Owner self-service: the signed-in account's own stats + mirrored data.
-  myStats:function(){ return api("GET","/api/account/stats"); },
+  myStats:function(month){ return api("GET","/api/account/stats"+(month?("?month="+encodeURIComponent(month)):"")); },
   myData:function(entity,opts){ return api("GET","/api/account/data"+syncDataQuery(entity,opts)); },
   myRecent:function(limit,page){ return api("GET","/api/account/recent?limit="+(limit||10)+"&page="+(page||1)); },
   users:function(){ return api("GET","/api/admin/users"); },
@@ -671,15 +698,16 @@ function setOwnerMode(on){ document.body.classList.toggle("owner-mode",!!on); }
 
 /* ---------- owner app-like shell (mirrors the Flutter app layout) ---------- */
 var OWNER_TABS=[
-  {href:"#/my",label:"الرئيسية",icon:"🏠",match:function(r){ return r==="#/my"; }},
-  {href:"#/my/data/subscribers",label:"المشتركون",icon:"👥",match:function(r){ return r.indexOf("#/my/data/subscribers")===0; }},
-  {href:"#/my/data/receipts",label:"الوصولات",icon:"🧾",match:function(r){ return r.indexOf("#/my/data/receipts")===0; }},
-  {href:"#/my/data/expenses",label:"المصروفات",icon:"💸",match:function(r){ return r.indexOf("#/my/data/expenses")===0; }}
+  {href:"#/my",label:"الرئيسية",icon:"home",match:function(r){ return r==="#/my"; }},
+  {href:"#/my/data/subscribers",label:"المشتركون",icon:"groups",match:function(r){ return r.indexOf("#/my/data/subscribers")===0; }},
+  {href:"#/my/data/receipts",label:"الوصولات",icon:"receipt_long",match:function(r){ return r.indexOf("#/my/data/receipts")===0; }},
+  {href:"#/my/data/expenses",label:"المصروفات",icon:"payments",match:function(r){ return r.indexOf("#/my/data/expenses")===0; }},
+  {href:"#/my/reports",label:"التقارير",icon:"bar_chart",match:function(r){ return r.indexOf("#/my/reports")===0; }}
 ];
 var OWNER_MORE=[
-  {href:"#/my/data/boards",label:"البوردات",icon:"🔌"},
-  {href:"#/my/data/circuits",label:"الجوزات",icon:"🔗"},
-  {href:"#/my/data/monthly_prices",label:"أسعار الأشهر",icon:"📅"}
+  {href:"#/my/data/boards",label:"البوردات",icon:"grid_view"},
+  {href:"#/my/data/circuits",label:"الجوزات",icon:"electrical_services"},
+  {href:"#/my/data/monthly_prices",label:"أسعار الأشهر",icon:"calendar_month"}
 ];
 function ownerShell(activeRoute,content){
   setOwnerMode(true);
@@ -701,14 +729,14 @@ function ownerBottomNav(activeRoute){
   var nav=el("div",{class:"app-bottomnav"});
   OWNER_TABS.forEach(function(t){
     nav.appendChild(el("a",{href:t.href,class:t.match(activeRoute)?"active":""},[
-      el("span",{class:"t-ic",text:t.icon}),
+      el("span",{class:"t-ic"},[mi(t.icon)]),
       el("span",{text:t.label})
     ]));
   });
   var moreActive=false;
   OWNER_MORE.forEach(function(m){ if(activeRoute.indexOf(m.href)===0) moreActive=true; });
   nav.appendChild(el("button",{class:moreActive?"active":"",onclick:openOwnerMoreSheet},[
-    el("span",{class:"t-ic",text:"⋯"}),
+    el("span",{class:"t-ic"},[mi("more_horiz")]),
     el("span",{text:"المزيد"})
   ]));
   return nav;
@@ -721,7 +749,7 @@ function openOwnerMoreSheet(){
     el("div",{class:"s-grab"}),
     OWNER_MORE.map(function(m){
       return el("a",{href:m.href,onclick:closeOwnerSheet},[
-        el("span",{class:"s-ic",text:m.icon}),
+        el("span",{class:"s-ic"},[mi(m.icon)]),
         el("span",{text:m.label})
       ]);
     })
@@ -760,6 +788,7 @@ var routes=[
   {re:/^#\/r\/([^\/]+)$/, view:viewPublicReceipt, public:true},
   // Owner self-service area (#/my…) — the signed-in owner's own data only.
   {re:/^#\/my$/, view:viewMyDashboard, owner:true},
+  {re:/^#\/my\/reports$/, view:viewMyReports, owner:true},
   {re:/^#\/my\/data\/receipts\/detail\/([^\/]+)$/, view:viewMyReceiptDetail, owner:true},
   {re:/^#\/my\/data\/([^\/]+)\/by\/([^\/]+)\/([^\/]+)$/, view:viewMyEntity, owner:true},
   {re:/^#\/my\/data\/([^\/]+)$/, view:viewMyEntity, owner:true},
@@ -870,12 +899,12 @@ function viewDashboard(){
     var content=el("div");
     content.appendChild(pageHead("لوحة التحكم"));
     var grid=el("div",{class:"stats"});
-    grid.appendChild(statCard("إجمالي المستخدمين",total,"👥"));
-    grid.appendChild(statCard("اشتراكات نشطة",active,"✅"));
-    grid.appendChild(statCard("خطط قيد الانتظار",pending,"⏳"));
-    grid.appendChild(statCard("المحظورون",blocked,"🚫"));
-    grid.appendChild(statCard("المديرون",admins,"🔑"));
-    grid.appendChild(statCard("الخطط النشطة",activePlans+"/"+plans.length,"📦"));
+    grid.appendChild(statCard("إجمالي المستخدمين",total,"groups"));
+    grid.appendChild(statCard("اشتراكات نشطة",active,"check_circle"));
+    grid.appendChild(statCard("خطط قيد الانتظار",pending,"hourglass_top"));
+    grid.appendChild(statCard("المحظورون",blocked,"block"));
+    grid.appendChild(statCard("المديرون",admins,"key"));
+    grid.appendChild(statCard("الخطط النشطة",activePlans+"/"+plans.length,"inventory_2"));
     content.appendChild(grid);
 
     // Latest data uploaded (synced) from the apps — newest first, paginated.
@@ -925,8 +954,9 @@ function viewDashboard(){
   });
 }
 function statCard(lbl,val,icon){
+  // `icon` is a Material Symbols NAME (e.g. "groups"), rendered as a ligature.
   return el("div",{class:"stat"},[
-    el("div",{class:"ic",text:icon}),
+    el("div",{class:"ic"},[mi(icon)]),
     el("div",{class:"lbl",text:lbl}),
     el("div",{class:"val",text:String(val)})
   ]);
@@ -981,7 +1011,7 @@ function viewUsers(){
       });
       clear(tbody);
       if(!rows.length){
-        tbody.appendChild(el("tr",[el("td",{colspan:"6"},[el("div",{class:"empty"},[el("div",{class:"big",text:"🔍"}),"لا يوجد مستخدمون يطابقون عوامل التصفية."])])]));
+        tbody.appendChild(el("tr",[el("td",{colspan:"6"},[el("div",{class:"empty"},[el("div",{class:"big"},[mi("search")]),"لا يوجد مستخدمون يطابقون عوامل التصفية."])])]));
         return;
       }
       rows.forEach(function(u){
@@ -1002,7 +1032,7 @@ function viewUsers(){
     blockSel.addEventListener("change",paint);
 
     content.appendChild(el("div",{class:"toolbar"},[
-      el("div",{class:"search"},[el("span",{class:"ic",text:"🔍"}),searchIn]),
+      el("div",{class:"search"},[el("span",{class:"ic"},[mi("search")]),searchIn]),
       statusSel, blockSel,
       el("div",{class:"grow"}),
       el("span",{class:"muted",text:users.length+" إجمالاً"})
@@ -1096,7 +1126,7 @@ function viewUserDetail(id){
     var devBody=el("div",{class:"card-b flush"});
     if(!devices.length){
       devBody.className="card-b";
-      devBody.appendChild(el("div",{class:"empty"},[el("div",{class:"big",text:"📱"}),"لا توجد أجهزة مرتبطة."]));
+      devBody.appendChild(el("div",{class:"empty"},[el("div",{class:"big"},[mi("phone_android")]),"لا توجد أجهزة مرتبطة."]));
     } else {
       var tw=el("div",{class:"tbl-wrap"});
       var tbl=el("table");
@@ -1193,12 +1223,12 @@ function entityLabel(value){
 }
 // Owner-mode wording + icons for the same entities (nav, لوحتي cards, crumbs).
 var OWNER_ENTITIES=[
-  {value:"subscribers",label:"المشتركون",icon:"👥"},
-  {value:"boards",label:"البوردات",icon:"🔌"},
-  {value:"circuits",label:"الجوزات",icon:"🔗"},
-  {value:"receipts",label:"الوصولات",icon:"🧾"},
-  {value:"expenses",label:"المصروفات",icon:"💸"},
-  {value:"monthly_prices",label:"أسعار الأشهر",icon:"📅"}
+  {value:"subscribers",label:"المشتركون",icon:"groups"},
+  {value:"boards",label:"البوردات",icon:"grid_view"},
+  {value:"circuits",label:"الجوزات",icon:"electrical_services"},
+  {value:"receipts",label:"الوصولات",icon:"receipt_long"},
+  {value:"expenses",label:"المصروفات",icon:"payments"},
+  {value:"monthly_prices",label:"أسعار الأشهر",icon:"calendar_month"}
 ];
 function ownerEntityLabel(value){
   for(var i=0;i<OWNER_ENTITIES.length;i++){ if(OWNER_ENTITIES[i].value===value) return OWNER_ENTITIES[i].label; }
@@ -1361,7 +1391,7 @@ function syncedDataCard(u){
       href:"#/users/"+u.id+"/data/"+e.value,
       style:"text-decoration:none;cursor:pointer"
     },[
-      el("div",{class:"ic",text:"🗂️"}),
+      el("div",{class:"ic"},[mi("folder_open")]),
       el("div",{class:"lbl",text:e.label}),
       el("div",{class:"val",style:"font-size:16px",text:"فتح ←"})
     ]));
@@ -1377,7 +1407,7 @@ function syncedDataCard(u){
 function renderSyncTable(entity,records,onDelete,drill,maps){
   if(!records.length){
     return el("div",{class:"card"},[el("div",{class:"card-b"},[
-      el("div",{class:"empty"},[el("div",{class:"big",text:"🗂️"}),"لا توجد بيانات ("+entityLabel(entity)+") متزامنة بعد."])
+      el("div",{class:"empty"},[el("div",{class:"big"},[mi("folder_open")]),"لا توجد بيانات ("+entityLabel(entity)+") متزامنة بعد."])
     ])]);
   }
   var hasActions=!!(onDelete||drill);
@@ -1490,7 +1520,7 @@ function viewUserEntity(id,entity,relField,relValue){
     content.appendChild(crumb());
     content.appendChild(headWrap);
     var toolbarKids=[
-      el("div",{class:"search"},[el("span",{class:"ic",text:"🔍"}),searchIn]),
+      el("div",{class:"search"},[el("span",{class:"ic"},[mi("search")]),searchIn]),
       el("div",{class:"grow"})
     ];
     if(relField){
@@ -1596,7 +1626,7 @@ function viewReceiptDetail(id,localId){
       ]));
       nf.appendChild(pageHead("وصل"));
       nf.appendChild(el("div",{class:"card"},[el("div",{class:"card-b"},[
-        el("div",{class:"empty"},[el("div",{class:"big",text:"🧾"}),"الوصل غير موجود في النسخة المتزامنة."])
+        el("div",{class:"empty"},[el("div",{class:"big"},[mi("receipt_long")]),"الوصل غير موجود في النسخة المتزامنة."])
       ])]));
       shell("#/users",nf);
       return;
@@ -1783,7 +1813,7 @@ function viewUserStatement(id,subId){
 function statementTable(records,detailHrefFor){
   if(!records.length){
     return el("div",{class:"card"},[el("div",{class:"card-b"},[
-      el("div",{class:"empty"},[el("div",{class:"big",text:"🧾"}),"لا توجد وصولات لهذا المشترك بعد."])
+      el("div",{class:"empty"},[el("div",{class:"big"},[mi("receipt_long")]),"لا توجد وصولات لهذا المشترك بعد."])
     ])]);
   }
   var tw=el("div",{class:"tbl-wrap"});
@@ -1835,10 +1865,10 @@ function viewMyDashboard(){
 
     // App-style gradient banner: generator name + phone + plan time remaining.
     content.appendChild(el("div",{class:"app-banner"},[
-      bannerRow("⚡",me.generatorName||me.name||"مولدتي",true),
-      bannerRow("📱",me.username||me.phone||"—",false),
-      bannerRow("🏅",planRemainingText(sub),false),
-      bannerRow("☁️","آخر رفع: "+((dash&&dash.lastUploadAt)?fmtDate(dash.lastUploadAt):"—"),false)
+      bannerRow("bolt",me.generatorName||me.name||"مولدتي",true),
+      bannerRow("phone_android",me.username||me.phone||"—",false),
+      bannerRow("workspace_premium",planRemainingText(sub),false),
+      bannerRow("cloud_done","آخر رفع: "+((dash&&dash.lastUploadAt)?fmtDate(dash.lastUploadAt):"—"),false)
     ]));
 
     // "نظرة عامة": 2-column app stat cards. With the dashboard object we show
@@ -1847,43 +1877,30 @@ function viewMyDashboard(){
     var cards;
     if(dash){
       cards=[
-        {label:"إجمالي المشتركين",value:dash.totalSubscribers,icon:"👥",chip:"blue",href:"#/my/data/subscribers"},
-        {label:"المشتركين المسددين",value:dash.paidCount,icon:"✅",chip:"green",href:"#/my/data/subscribers"},
-        {label:"المشتركين غير المسددين",value:dash.unpaidCount,icon:"❗",chip:"red",href:"#/my/data/subscribers"},
-        {label:"إجمالي البوردات",value:dash.boards,icon:"🔌",chip:"indigo",href:"#/my/data/boards"},
-        {label:"الجوزات",value:dash.circuits,icon:"🔗",chip:"teal",href:"#/my/data/circuits"},
-        {label:"الوصولات",value:counts.receipts,icon:"🧾",chip:"orange",href:"#/my/data/receipts"}
+        {label:"إجمالي المشتركين",value:dash.totalSubscribers,icon:"groups",chip:"blue",href:"#/my/data/subscribers"},
+        {label:"المشتركين المسددين",value:dash.paidCount,icon:"check_circle",chip:"green",href:"#/my/data/subscribers"},
+        {label:"المشتركين غير المسددين",value:dash.unpaidCount,icon:"error",chip:"red",href:"#/my/data/subscribers"},
+        {label:"إجمالي البوردات",value:dash.boards,icon:"grid_view",chip:"indigo",href:"#/my/data/boards"},
+        {label:"الجوزات",value:dash.circuits,icon:"electrical_services",chip:"teal",href:"#/my/data/circuits"},
+        {label:"الوصولات",value:counts.receipts,icon:"receipt_long",chip:"orange",href:"#/my/data/receipts"}
       ];
     } else {
       cards=[
-        {label:"إجمالي المشتركين",value:counts.subscribers,icon:"👥",chip:"blue",href:"#/my/data/subscribers"},
-        {label:"إجمالي البوردات",value:counts.boards,icon:"🔌",chip:"indigo",href:"#/my/data/boards"},
-        {label:"الجوزات",value:counts.circuits,icon:"🔗",chip:"teal",href:"#/my/data/circuits"},
-        {label:"الوصولات",value:counts.receipts,icon:"🧾",chip:"orange",href:"#/my/data/receipts"}
+        {label:"إجمالي المشتركين",value:counts.subscribers,icon:"groups",chip:"blue",href:"#/my/data/subscribers"},
+        {label:"إجمالي البوردات",value:counts.boards,icon:"grid_view",chip:"indigo",href:"#/my/data/boards"},
+        {label:"الجوزات",value:counts.circuits,icon:"electrical_services",chip:"teal",href:"#/my/data/circuits"},
+        {label:"الوصولات",value:counts.receipts,icon:"receipt_long",chip:"orange",href:"#/my/data/receipts"}
       ];
     }
     var grid=el("div",{class:"app-grid"});
     cards.forEach(function(c){
       grid.appendChild(el("a",{class:"app-stat",href:c.href},[
-        el("div",{class:"app-chip "+c.chip,text:c.icon}),
+        el("div",{class:"app-chip "+c.chip},[mi(c.icon)]),
         el("div",{class:"num",text:String(c.value!=null?c.value:0)}),
         el("div",{class:"lbl",text:c.label})
       ]));
     });
     content.appendChild(grid);
-
-    // Account card: identity + plan/subscription (app-like rounded card).
-    var acc=el("div",{class:"card app-card"});
-    acc.appendChild(el("div",{class:"card-h"},["حسابي"]));
-    acc.appendChild(el("div",{class:"card-b"},[el("div",{class:"kv"},[
-      kv("الاسم",me.name||"—"),
-      kv("اسم المولدة",me.generatorName||"—"),
-      kv("اسم المستخدم / الهاتف",me.username||me.phone||"—"),
-      kvNode("الخطة",sub.planCode?planChip(sub.planCode):el("span",{class:"muted",text:"لا يوجد"})),
-      kvNode("حالة الاشتراك",statusBadge(sub.status||"none")),
-      kv("تاريخ الانتهاء",fmtDateShort(sub.expiresAt))
-    ])]));
-    content.appendChild(acc);
 
     shell("#/my",content);
   }).catch(function(err){
@@ -1894,7 +1911,7 @@ function viewMyDashboard(){
 /* One icon+text row inside the owner gradient banner. */
 function bannerRow(icon,text,big){
   return el("div",{class:"b-row"},[
-    el("span",{class:"b-ic",text:icon}),
+    el("span",{class:"b-ic"},[mi(icon)]),
     el("span",{class:big?"b-name":"b-sub",text:text})
   ]);
 }
@@ -1908,6 +1925,167 @@ function planRemainingText(sub){
   if(!exp||isNaN(exp.getTime())) return code;
   var days=Math.ceil((exp.getTime()-Date.now())/86400000);
   return days>0?(code+"_"+days+"days"):(code+"_expired");
+}
+
+/* ---------- owner monthly reports (#/my/reports) ----------
+   Gauges/charts + totals for a picked month, all derived from the
+   month-aware /api/account/stats dashboard object (no new tables). */
+function repMonthNow(){
+  var d=new Date();
+  return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2);
+}
+function repMonthShift(month,delta){
+  var p=/^(\d{4})-(\d{2})$/.exec(month||"");
+  var d=p?new Date(Number(p[1]),Number(p[2])-1+delta,1):new Date();
+  return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2);
+}
+function repNum(v){ var n=Number(v); return isNaN(n)?0:n; }
+/* Semi-circular gauge (inline SVG): grey track + value arc + % in the middle. */
+function repGauge(rate,label){
+  rate=Math.min(1,Math.max(0,repNum(rate)));
+  var r=70,cx=90,cy=92,sw=16,len=Math.PI*r;
+  var arc="M "+(cx-r)+" "+cy+" A "+r+" "+r+" 0 0 1 "+(cx+r)+" "+cy;
+  var svg='<svg viewBox="0 0 180 104" width="210" height="121" aria-hidden="true">'+
+    '<path d="'+arc+'" fill="none" stroke="#e4e9f0" stroke-width="'+sw+'" stroke-linecap="round"/>';
+  if(rate>0){
+    svg+='<path d="'+arc+'" fill="none" stroke="#1565C0" stroke-width="'+sw+'" stroke-linecap="round"'+
+      ' stroke-dasharray="'+(rate*len).toFixed(1)+' '+(len+sw).toFixed(1)+'"/>';
+  }
+  svg+='<text x="'+cx+'" y="'+(cy-10)+'" text-anchor="middle" font-size="28" font-weight="800" fill="#1565C0">'+
+    Math.round(rate*100)+'%</text></svg>';
+  return el("div",{class:"rep-center"},[
+    el("div",{html:svg}),
+    el("div",{class:"rep-chart-lbl",text:label})
+  ]);
+}
+/* Donut (SVG stroke-dasharray): paid green vs unpaid red, total in the center. */
+function repDonut(paid,unpaid,total){
+  paid=Math.max(0,repNum(paid)); unpaid=Math.max(0,repNum(unpaid));
+  var r=40,c=2*Math.PI*r,sum=paid+unpaid;
+  var svg='<svg viewBox="0 0 120 120" width="150" height="150" aria-hidden="true">'+
+    '<circle cx="60" cy="60" r="'+r+'" fill="none" stroke="#e4e9f0" stroke-width="18"/>';
+  if(sum>0){
+    var pf=paid/sum*c;
+    if(paid>0) svg+='<circle cx="60" cy="60" r="'+r+'" fill="none" stroke="#2e7d32" stroke-width="18"'+
+      ' stroke-dasharray="'+pf.toFixed(2)+' '+c.toFixed(2)+'" transform="rotate(-90 60 60)"/>';
+    if(unpaid>0) svg+='<circle cx="60" cy="60" r="'+r+'" fill="none" stroke="#e53935" stroke-width="18"'+
+      ' stroke-dasharray="'+(unpaid/sum*c).toFixed(2)+' '+c.toFixed(2)+'" stroke-dashoffset="'+(-pf).toFixed(2)+'"'+
+      ' transform="rotate(-90 60 60)"/>';
+  }
+  svg+='<text x="60" y="58" text-anchor="middle" font-size="24" font-weight="800" fill="#102a43">'+repNum(total)+'</text>'+
+    '<text x="60" y="76" text-anchor="middle" font-size="11" font-weight="700" fill="#69748a">مشترك</text></svg>';
+  return el("div",{class:"rep-center"},[
+    el("div",{html:svg}),
+    el("div",{class:"rep-legend"},[
+      el("span",[el("span",{class:"dot2",style:"background:#2e7d32"}),"مسدد: "+paid]),
+      el("span",[el("span",{class:"dot2",style:"background:#e53935"}),"غير مسدد: "+unpaid])
+    ])
+  ]);
+}
+/* Vertical div-bars scaled to the max value; negative values show a red signed
+   label with the bar clamped to zero height. */
+function repBars(items){
+  var max=0;
+  items.forEach(function(it){ if(it.value>max) max=it.value; });
+  var box=el("div",{class:"rep-bars"});
+  items.forEach(function(it){
+    var h=max>0?(Math.max(0,it.value)/max*100):0;
+    box.appendChild(el("div",{class:"rep-bar-col"},[
+      el("div",{class:"rep-bar-val",style:it.value<0?"color:#c62828":null,text:fmtPrice(it.value)}),
+      el("div",{class:"rep-bar-track"},[
+        el("div",{class:"rep-bar-fill",style:"height:"+h.toFixed(1)+"%;background:"+it.color})
+      ]),
+      el("div",{class:"rep-bar-lbl",text:it.label})
+    ]));
+  });
+  return box;
+}
+function repChartCard(title,body){
+  return el("div",{class:"card app-card"},[
+    el("div",{class:"card-h"},[el("span",{text:title})]),
+    el("div",{class:"card-b"},[body])
+  ]);
+}
+function viewMyReports(){
+  var month=repMonthNow();   // view-local state; chevrons reload the same view
+  function monthPicker(){
+    return el("div",{class:"card app-card rep-month"},[
+      el("button",{class:"rep-chev",text:"‹",title:"الشهر السابق",onclick:function(){ month=repMonthShift(month,-1); load(); }}),
+      el("div",{class:"rep-month-lbl",text:month}),
+      el("button",{class:"rep-chev",text:"›",title:"الشهر التالي",onclick:function(){ month=repMonthShift(month,1); load(); }})
+    ]);
+  }
+  function paint(inner){
+    var content=el("div");
+    content.appendChild(el("div",{class:"app-section-title",text:"التقارير الشهرية"}));
+    content.appendChild(monthPicker());
+    content.appendChild(inner);
+    shell("#/my/reports",content);
+  }
+  function load(){
+    var reqMonth=month;
+    paint(loadingBlock("جارٍ تحميل تقرير "+reqMonth+"…"));
+    API.myStats(reqMonth).then(function(res){
+      if(reqMonth!==month) return;          // stale response after another switch
+      paint(reportBody(res));
+    }).catch(function(err){
+      if(err.status===401) return;
+      if(reqMonth!==month) return;
+      paint(errorBlock(err,load));
+    });
+  }
+  function reportBody(res){
+    var dash=(res&&res.dashboard)||null;
+    var wrap=el("div");
+    if(!dash){
+      wrap.appendChild(el("div",{class:"card app-card"},[el("div",{class:"card-b"},[
+        el("div",{class:"alert info",text:"بيانات التقرير غير متوفرة لهذا الحساب — يتطلب هذا التقرير نسخة أحدث من الخادم."})
+      ])]));
+      return wrap;
+    }
+    var paid=repNum(dash.paidCount), unpaid=repNum(dash.unpaidCount);
+    var totalSubs=dash.totalSubscribers!=null?repNum(dash.totalSubscribers):(paid+unpaid);
+    var expected=repNum(dash.totalAmps)*repNum(dash.pricePerAmp);
+    var collected=repNum(dash.collected);
+    var remaining=repNum(dash.totalDue);
+    var hasExpenses=dash.expensesTotal!=null;          // older backends omit these
+    var expenses=repNum(dash.expensesTotal);
+    var hasNet=dash.netProfit!=null||hasExpenses;
+    var net=dash.netProfit!=null?repNum(dash.netProfit):(collected-expenses);
+
+    // collection rate: collected / expected, clamped 0..1, divide-by-zero -> 0
+    var rate=((remaining+collected)>0&&expected>0)?Math.min(1,Math.max(0,collected/expected)):0;
+
+    wrap.appendChild(repChartCard("نسبة التحصيل",repGauge(rate,"نسبة التحصيل لشهر "+month)));
+    wrap.appendChild(repChartCard("المسددون وغير المسددين",repDonut(paid,unpaid,totalSubs)));
+
+    var bars=[{label:"المحصّل",value:collected,color:"#1565C0"}];
+    if(hasExpenses) bars.push({label:"المصروفات",value:expenses,color:"#FB8C00"});
+    if(hasNet) bars.push({label:"صافي الربح",value:net,color:"#00897B"});
+    wrap.appendChild(repChartCard("المحصّل والمصروفات والأرباح",repBars(bars)));
+
+    var cards=[
+      {label:"المتوقع",value:fmtPrice(expected),icon:"account_balance_wallet",chip:"blue"},
+      {label:"المحصّل",value:fmtPrice(collected),icon:"check_circle",chip:"green"},
+      {label:"المتبقي",value:fmtPrice(remaining),icon:"hourglass_top",chip:"red"}
+    ];
+    if(hasExpenses) cards.push({label:"المصروفات",value:fmtPrice(expenses),icon:"payments",chip:"orange"});
+    if(hasNet) cards.push({label:"صافي الربح",value:fmtPrice(net),icon:"trending_up",chip:"teal",neg:net<0});
+    cards.push({label:"سعر الأمبير",value:fmtPrice(dash.pricePerAmp),icon:"bolt",chip:"indigo"});
+
+    wrap.appendChild(el("div",{class:"app-section-title",text:"إجماليات الشهر"}));
+    var grid=el("div",{class:"app-grid"});
+    cards.forEach(function(c){
+      grid.appendChild(el("div",{class:"app-stat"},[
+        el("div",{class:"app-chip "+c.chip},[mi(c.icon)]),
+        el("div",{class:"num sm",style:c.neg?"color:#c62828":null,text:c.value}),
+        el("div",{class:"lbl",text:c.label})
+      ]));
+    });
+    wrap.appendChild(grid);
+    return wrap;
+  }
+  load();
 }
 
 /* Owner entity screen (#/my/data/:entity[/by/:relField/:relValue]).
@@ -1960,7 +2138,7 @@ function viewMyEntity(entity,relField,relValue){
     content.appendChild(crumb());
     content.appendChild(headWrap);
     var toolbarKids=[
-      el("div",{class:"search"},[el("span",{class:"ic",text:"🔍"}),searchIn]),
+      el("div",{class:"search"},[el("span",{class:"ic"},[mi("search")]),searchIn]),
       el("div",{class:"grow"})
     ];
     if(relField){
@@ -2147,7 +2325,7 @@ function viewMyReceiptDetail(localId){
       ]));
       nf.appendChild(pageHead("وصل"));
       nf.appendChild(el("div",{class:"card"},[el("div",{class:"card-b"},[
-        el("div",{class:"empty"},[el("div",{class:"big",text:"🧾"}),"الوصل غير موجود في النسخة المتزامنة."])
+        el("div",{class:"empty"},[el("div",{class:"big"},[mi("receipt_long")]),"الوصل غير موجود في النسخة المتزامنة."])
       ])]));
       shell("#/my/data/receipts",nf);
       return;
@@ -2289,7 +2467,7 @@ function viewPlans(){
     var b=el("div",{class:"card-b flush"});
     if(!plans.length){
       b.className="card-b";
-      b.appendChild(el("div",{class:"empty"},[el("div",{class:"big",text:"📦"}),"لا توجد خطط بعد. أنشئ خطتك الأولى."]));
+      b.appendChild(el("div",{class:"empty"},[el("div",{class:"big"},[mi("inventory_2")]),"لا توجد خطط بعد. أنشئ خطتك الأولى."]));
     } else {
       var tw=el("div",{class:"tbl-wrap"});
       var tbl=el("table");
@@ -2426,7 +2604,7 @@ function viewPublicReceipt(uuid){
 
     if(!found){
       card.appendChild(el("div",{class:"r-empty"},[
-        el("div",{class:"big",text:"🧾"}),
+        el("div",{class:"big"},[mi("receipt_long")]),
         el("div",{style:"font-weight:700;font-size:16px;color:var(--text)",text:"غير موجود"}),
         el("div",{style:"margin-top:6px",text:"تعذّر العثور على هذا الوصل."})
       ]));
@@ -2473,7 +2651,7 @@ function viewPublicReceipt(uuid){
       el("p",{class:"tag",text:"التحقق من الوصل"})
     ]));
     card.appendChild(el("div",{class:"r-empty"},[
-      el("div",{class:"big",text:"⚠️"}),
+      el("div",{class:"big"},[mi("warning")]),
       el("div",{style:"font-weight:700;font-size:16px;color:var(--text)",text:"تعذّر التحقق"}),
       el("div",{style:"margin-top:6px",text:err.message||"حدث خطأ أثناء جلب الوصل."})
     ]));
@@ -2501,7 +2679,7 @@ function viewPublicReceiptHistory(uuid){
     var recs=(res&&res.receipts)||[];
     if(!res||!res.found||!recs.length){
       card.appendChild(el("div",{class:"r-empty"},[
-        el("div",{class:"big",text:"🧾"}),
+        el("div",{class:"big"},[mi("receipt_long")]),
         el("div",{style:"font-weight:700;font-size:16px;color:var(--text)",text:"لا توجد فواتير"})
       ]));
     } else {
@@ -2535,7 +2713,7 @@ function viewPublicReceiptHistory(uuid){
       el("p",{class:"tag",text:"الفواتير السابقة"})
     ]));
     card.appendChild(el("div",{class:"r-empty"},[
-      el("div",{class:"big",text:"⚠️"}),
+      el("div",{class:"big"},[mi("warning")]),
       el("div",{style:"font-weight:700;font-size:16px;color:var(--text)",text:"تعذّر التحميل"}),
       el("div",{style:"margin-top:6px",text:err.message||"حدث خطأ."})
     ]));

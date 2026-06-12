@@ -18,6 +18,15 @@ const register = asyncHandler(async (req, res) => {
     throw new HttpError(409, 'Username already taken', 'USERNAME_TAKEN');
   }
 
+  // Phone numbers are unique account identifiers too (the app signs up with
+  // username == phone, but enforce it for any client / payload shape).
+  if (phone) {
+    const phoneTaken = await User.findOne({ phone: String(phone) });
+    if (phoneTaken) {
+      throw new HttpError(409, 'Phone number already registered', 'PHONE_TAKEN');
+    }
+  }
+
   const passwordHash = await bcrypt.hash(password, 10);
   const user = new User({
     name,

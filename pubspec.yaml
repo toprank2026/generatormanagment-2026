@@ -77,9 +77,9 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "images/app_icon_breaker.png"
+  image_path: "images/app_icon_white.png"
   adaptive_icon_background: "#1565C0"
-  adaptive_icon_foreground: "images/app_icon_breaker_fg.png"
+  adaptive_icon_foreground: "images/app_icon_white_fg.png"
   remove_alpha_ios: true
   background_color_ios: "#1565C0"
   min_sdk_android: 21
@@ -95,6 +95,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Brand logo used inside the app (login/register + dashboard title).
+  assets:
+    - images/blue.png
 
   # Cairo (Arabic-first variable font, OFL) bundled for offline use.
   fonts:

@@ -12,6 +12,13 @@
  *                                       price_per_amp; price 0 if the month
  *                                       has no monthly_prices row), the
  *                                       collected amount and price per amp.
+ *                                       An optional ?month=YYYY-MM selects
+ *                                       which month the dashboard describes
+ *                                       (invalid values fall back to the
+ *                                       current month); the dashboard also
+ *                                       carries expensesTotal (sum of that
+ *                                       month's expenses) and netProfit
+ *                                       (collected - expensesTotal).
  *  - GET /api/account/data?entity=E  -> the caller's own mirrored rows for one
  *                                       entity, with q (search), relField/
  *                                       relValue (relationship filter) and
@@ -119,7 +126,7 @@ async function registerOwner({ phone, deviceOverrides } = {}) {
   const password = 'secret1';
   const device = makeDevice(deviceOverrides);
   const r = await api('POST', '/api/auth/register', {
-    body: { name: 'Owner Name', phone: phone || '0770', username, password, device },
+    body: { name: 'Owner Name', phone: phone || username, username, password, device },
   });
   assert.equal(r.status, 201, `register should 201, got ${r.status} ${JSON.stringify(r.data)}`);
   return { token: r.data.token, account: r.data.account, username, password, device };
@@ -490,4 +497,160 @@ test('account endpoints without Authorization header return 401', async () => {
 
   const data = await api('GET', '/api/account/data?entity=subscribers');
   assert.equal(data.status, 401, `anonymous data must 401, got ${data.status}`);
+});
+
+// ---------------------------------------------------------------------------
+// /api/account/stats — monthly report fields (expensesTotal / netProfit) and
+// the optional ?month=YYYY-MM selector.
+//
+// These tests PUSH additional fixtures for owner C. node:test runs tests
+// sequentially in declaration order, so pushing inside these test bodies
+// (declared last) keeps every earlier dashboard/count assertion untouched.
+// ---------------------------------------------------------------------------
+test('dashboard.expensesTotal sums only the selected month; netProfit = collected - expenses', async () => {
+  // Two current-month expenses (2000 + 1000) and one from 2020-01 (999) that
+  // must be excluded. amount '1000' is pushed as a string on purpose — the
+  // mirror is untyped, so the backend must coerce numbers.
+  const push = await api('POST', '/api/sync/push', {
+    token: ownerC.token,
+    body: {
+      records: [
+        {
+          entity: 'expenses',
+          localId: 'c-exp-1',
+          deleted: false,
+          updatedAt: new Date().toISOString(),
+          data: { id: 'c-exp-1', category: 'fuel', amount: 2000, note: null, date: `${CURRENT_MONTH}-05` },
+        },
+        {
+          entity: 'expenses',
+          localId: 'c-exp-2',
+          deleted: false,
+          updatedAt: new Date().toISOString(),
+          data: { id: 'c-exp-2', category: 'oil', amount: '1000', note: 'stringy amount', date: `${CURRENT_MONTH}-05` },
+        },
+        {
+          entity: 'expenses',
+          localId: 'c-exp-old',
+          deleted: false,
+          updatedAt: new Date().toISOString(),
+          data: { id: 'c-exp-old', category: 'maintenance', amount: 999, note: 'other month', date: '2020-01-15' },
+        },
+      ],
+    },
+  });
+  assert.equal(push.status, 200, `expense push should 200, got ${push.status} ${JSON.stringify(push.data)}`);
+  assert.equal(push.data.count, 3);
+
+  const r = await api('GET', '/api/account/stats', { token: ownerC.token });
+  assert.equal(r.status, 200, `stats should 200, got ${r.status} ${JSON.stringify(r.data)}`);
+
+  const dashboard = extractDashboard(r.data);
+  assert.ok(
+    dashboard && typeof dashboard === 'object',
+    `stats response must include a dashboard object, got ${JSON.stringify(r.data)}`
+  );
+
+  assert.equal(Number(dashboard.expensesTotal), 3000, '2000 + 1000; the 2020-01 expense is excluded');
+  assert.equal(Number(dashboard.collected), 15000, 'current-month collected is unchanged by expenses');
+  assert.equal(Number(dashboard.netProfit), 12000, 'netProfit = collected (15000) - expenses (3000)');
+
+  const counts = extractCounts(r.data);
+  assert.equal(Number(counts.expenses), 3, 'all 3 expense rows are mirrored regardless of month');
+});
+
+test('?month=YYYY-MM selects the dashboard month without mixing in other months', async () => {
+  // Backfill a complete '2025-01' month for owner C: price 500/amp, one extra
+  // subscriber (c-old-sub, 10A) and a 5000 receipt that fully pays them.
+  const push = await api('POST', '/api/sync/push', {
+    token: ownerC.token,
+    body: {
+      records: [
+        {
+          entity: 'monthly_prices',
+          localId: '2025-01',
+          deleted: false,
+          updatedAt: new Date().toISOString(),
+          data: { month: '2025-01', price_per_amp: 500 },
+        },
+        {
+          entity: 'subscribers',
+          localId: 'c-old-sub',
+          deleted: false,
+          updatedAt: new Date().toISOString(),
+          data: { id: 'c-old-sub', name: 'Old Month Person', phone: '0780000012', amps: 10, board_id: 'c-board-1', circuit_id: 'c-c1', status: 'active' },
+        },
+        {
+          entity: 'receipts',
+          localId: 'c-rec-old',
+          deleted: false,
+          updatedAt: new Date().toISOString(),
+          data: {
+            uuid: 'c-rec-old',
+            receipt_no: 3,
+            subscriber_id: 'c-old-sub',
+            month: '2025-01',
+            amps_snapshot: 10,
+            price_snapshot: 500,
+            paid_amount: 5000,
+            remaining_after: 0,
+            issued_at: '2025-01-10T00:00:00.000Z',
+            status: 'valid',
+          },
+        },
+      ],
+    },
+  });
+  assert.equal(push.status, 200, `2025-01 push should 200, got ${push.status} ${JSON.stringify(push.data)}`);
+  assert.equal(push.data.count, 3);
+
+  const r = await api('GET', '/api/account/stats?month=2025-01', { token: ownerC.token });
+  assert.equal(r.status, 200, `stats should 200, got ${r.status} ${JSON.stringify(r.data)}`);
+
+  const dashboard = extractDashboard(r.data);
+  assert.ok(
+    dashboard && typeof dashboard === 'object',
+    `stats response must include a dashboard object, got ${JSON.stringify(r.data)}`
+  );
+
+  assert.equal(dashboard.month, '2025-01', 'dashboard must describe the requested month');
+  assert.equal(Number(dashboard.pricePerAmp), 500, "2025-01's monthly_prices row, not the current month's 1000");
+  assert.equal(Number(dashboard.collected), 5000, 'only the 2025-01 receipt — the 15000 of the current month must not leak in');
+  assert.equal(Number(dashboard.expensesTotal || 0), 0, 'no 2025-01 expenses (the 2020-01 one stays excluded)');
+  assert.equal(Number(dashboard.netProfit), 5000, 'netProfit = 5000 collected - 0 expenses');
+
+  // Subscribers have no month, so all 3 are evaluated against P(2025-01)=500:
+  // only c-old-sub (10A) has 2025-01 receipts covering 10 * 500.
+  assert.equal(Number(dashboard.totalSubscribers), 3, 'c-sub-1 + c-sub-2 + c-old-sub');
+  assert.equal(Number(dashboard.paidCount), 1, 'only c-old-sub paid 5000 >= 10 * 500 in 2025-01');
+  assert.equal(Number(dashboard.unpaidCount), 2, 'c-sub-1/c-sub-2 have no 2025-01 receipts');
+
+  // And the default (no ?month) must still be the CURRENT month, with the
+  // 2025-01 backfill excluded from its money totals. The new subscriber has
+  // no current-month receipt, so the current month now counts them as unpaid.
+  const cur = await api('GET', '/api/account/stats', { token: ownerC.token });
+  assert.equal(cur.status, 200);
+  const curDash = extractDashboard(cur.data);
+  assert.equal(curDash.month, CURRENT_MONTH);
+  assert.equal(Number(curDash.collected), 15000, 'the 2025-01 receipt must not be mixed into the current month');
+  assert.equal(Number(curDash.pricePerAmp), 1000);
+  assert.equal(Number(curDash.totalSubscribers), 3);
+  assert.equal(Number(curDash.paidCount), 1, 'c-old-sub has no current-month receipt -> unpaid');
+  assert.equal(Number(curDash.unpaidCount), 2);
+  assert.equal(Number(curDash.expensesTotal), 3000);
+  assert.equal(Number(curDash.netProfit), 12000);
+});
+
+test('invalid ?month falls back to the current month', async () => {
+  const r = await api('GET', '/api/account/stats?month=20xx-99', { token: ownerC.token });
+  assert.equal(r.status, 200, `stats should 200, got ${r.status} ${JSON.stringify(r.data)}`);
+
+  const dashboard = extractDashboard(r.data);
+  assert.ok(
+    dashboard && typeof dashboard === 'object',
+    `stats response must include a dashboard object, got ${JSON.stringify(r.data)}`
+  );
+
+  assert.equal(dashboard.month, CURRENT_MONTH, "month '20xx-99' fails /^\\d{4}-\\d{2}$/ -> current month");
+  assert.equal(Number(dashboard.collected), 15000, 'and the data is the current-month data');
 });

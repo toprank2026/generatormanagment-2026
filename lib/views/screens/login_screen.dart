@@ -113,7 +113,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     );
                   }),
-                  const Icon(Icons.bolt, size: 80, color: Color(0xFF1565C0)),
+                  Image.asset('images/blue.png', height: 96),
                   const SizedBox(height: 24),
                   Text(
                     'sign_in_to_account'.tr,

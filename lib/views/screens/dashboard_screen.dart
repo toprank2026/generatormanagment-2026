@@ -43,9 +43,16 @@ class DashboardScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(
-          'dashboard'.tr,
-          style: const TextStyle(fontWeight: FontWeight.bold),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset('images/blue.png', height: 28),
+            const SizedBox(width: 8),
+            Text(
+              'dashboard'.tr,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ],
         ),
         elevation: 0,
       ),

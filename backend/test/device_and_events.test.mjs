@@ -117,7 +117,7 @@ test('reinstall on the same handset (same deviceId, new installId) -> 200 and st
   const reg = await api('POST', '/api/auth/register', {
     body: {
       name: 'Owner Name',
-      phone: '0770',
+      phone: username,
       username,
       password,
       device: { deviceId: 'dev-A', installId: 'install-1', platform: 'android' },
@@ -159,7 +159,7 @@ test('login from a DIFFERENT handset (new deviceId) -> 403 DEVICE_LIMIT', async 
   const reg = await api('POST', '/api/auth/register', {
     body: {
       name: 'Owner Name',
-      phone: '0770',
+      phone: username,
       username,
       password,
       device: { deviceId: 'dev-A', installId: 'install-1', platform: 'android' },

@@ -788,6 +788,89 @@ route-guarded.
 
 ---
 
+## 31. Monthly reports & statistics (التقارير) — app tab + owner-panel tab
+
+A month-by-month report: the user picks a month (`YYYY-MM`) and gets **gauges and
+charts + totals** — paid/unpaid subscribers, expected total
+(`totalAmps × pricePerAmp`), collected (sum of that month's receipts
+`paid_amount`), remaining (expected − collected), the month's expenses total, and
+**NET PROFIT = collected − expenses** — plus the month's payments list. Paid/unpaid
+uses the **app's exact formula** (subscriber paid for month `M` ⇔
+`SUM(receipts.paid_amount WHERE subscriber_id = s.id AND month = M) >=
+s.amps × pricePerAmp(M)`; no price row for `M` ⇒ everyone paid).
+
+> **Sync/backup note (important):** reports are **DERIVED** from the existing
+> synced tables (`receipts`, `expenses`, `subscribers`, `monthly_prices`) — **no
+> new tables, no SQLite version bump, nothing new to sync**. The existing
+> push/pull mirror and cloud/local backups already cover every report input.
+
+### 31.1 App — التقارير bottom-nav tab → offline Reports screen
+**Files (new):** `lib/controllers/reports_controller.dart`, `lib/views/widgets/report_charts.dart`, `lib/views/screens/reports_screen.dart`
+**Files (edited):** `lib/views/screens/main_screen.dart` (new tab), `lib/core/app_binding.dart` (register controller), `lib/utils/translations.dart` (new keys, both maps)
+
+- `ReportsController` (GetxController, registered `lazyPut(fenix: true)` in
+  `AppBinding`; screens resolve with `Get.find<ReportsController>()`):
+  - Rx state: `month` (RxString `'yyyy-MM'`, init = current month), `isLoading`,
+    `totalSubscribers`, `paidCount`, `unpaidCount`, `totalAmps`, `pricePerAmp`,
+    `expectedTotal`, `collectedTotal`, `remainingTotal`, `expensesTotal`,
+    `netProfit`, and `receipts` (RxList<Receipt> — that month's receipts, newest
+    first).
+  - Methods: `loadReport()`, `setMonth(String m)` (sets month + reloads),
+    `prevMonth()`, `nextMonth()`; initial load in `onReady()`.
+  - **Everything is computed OFFLINE from local SQLite** via the existing
+    repositories/DbHelper (receipts / expenses / subscribers / monthly_prices) —
+    no network involved.
+- `report_charts.dart` — **pure `CustomPainter` chart widgets, NO new pub
+  dependencies:**
+  - `GaugeChart({required double value /*0..1 clamped*/, required String label,
+    String? centerText, Color color = Color(0xFF1565C0), double size = 160})` —
+    semi-circular gauge: value arc over a grey track, big bold center text
+    (defaults to the percent), label underneath.
+  - `DonutChart({required List<DonutSegment> segments, double size = 150,
+    String? centerText})` + `DonutSegment(label, value, color)` — donut with a
+    legend row(s) under it (color dot + label + value).
+  - `BarCompareChart({required List<BarItem> items, double height = 150})` +
+    `BarItem(label, value, color)` — vertical bars scaled to `max(|value|)` with
+    the signed value label on top (negative values clamp the bar at 0 but still
+    show the signed number).
+- `reports_screen.dart` — the التقارير screen: month picker (prev/next +
+  current `yyyy-MM`), **gauge** = collection rate (`collected / expected`),
+  **donut** = paid vs unpaid subscribers, **bars** = collected / expenses /
+  net profit, a totals grid (expected, collected, remaining, expenses,
+  net profit), and the month's payments list, all inside `Obx`.
+- `main_screen.dart`: a **التقارير** tab added to the bottom nav alongside
+  Dashboard / Monthly pricing / Expenses / Settings.
+- Strings via `'key'.tr`; reuses existing keys (`net_profit`, `total_expenses`,
+  `collected_revenue`, `remaining_fees`, `paid_subscribers`,
+  `unpaid_subscribers`, `total_subscribers`) and adds the new report keys to
+  **both** maps (e.g. `reports`, `collection_rate`, `expected_total`,
+  `month_payments`).
+
+### 31.2 Backend — month-scoped stats + expenses/net-profit on the dashboard
+**File:** `backend/src/controllers/accountController.js` (the endpoint contract lives in `backend/API_CONTRACT.md`)
+
+- `GET /api/account/stats?month=YYYY-MM` (auth, JWT-scoped — §27.1/§28): new
+  **optional `month` query param** (validated `/^\d{4}-\d{2}$/`, default =
+  **current UTC month**) that selects which month the `dashboard` object
+  describes (price, paid/unpaid, totals — same formula as §28, now for the
+  requested month).
+- The `dashboard` object additionally returns:
+  - `expensesTotal` — sum of the mirror's `expenses` `data.amount` whose
+    `data.date` **starts with** the month (numbers coerced).
+  - `netProfit` — `collected − expensesTotal`.
+
+### 31.3 Owner panel — التقارير tab → `#/my/reports` (SVG charts from the mirror)
+**File:** `backend/public/admin/index.html`
+
+- A **التقارير** tab added to the owner bottom nav (§30) → new owner route
+  **`#/my/reports`**: the same month picker + **gauge / donut / bars rendered as
+  inline SVG** + totals + the month's payments list, fed by
+  `GET /api/account/stats?month=…` (and the receipts mirror for the list) — so
+  the panel's report for a month shows the **same numbers as the app**.
+- Owner-mode only; the admin UI is unchanged.
+
+---
+
 ## Test steps — verify each feature (step by step)
 
 > Setup: backend `cd backend && npm run dev` (in-memory Mongo); app
@@ -1004,3 +1087,27 @@ route-guarded.
 3. As **admin**, open the same screens (`#/users/:id/data/circuits` + a
    statement) → confirm names there too; raw `board_id`/`circuit_id` UUIDs no
    longer appear on these screens.
+
+### AB. Monthly reports & statistics (التقارير)
+1. Prepare known data: a monthly price for month `M`, a few subscribers with
+   known amps, some receipts in `M` (at least one subscriber fully paid, one
+   not), and a few expenses dated in `M`.
+2. In the app, open the **التقارير** bottom-nav tab and pick month `M`
+   (prev/next arrows or picker) → confirm the numbers match the data:
+   **paid/unpaid** counts per the formula (`sum(paid_amount) >= amps × price`),
+   **expected** = totalAmps × pricePerAmp, **collected** = sum of `M`'s receipts
+   `paid_amount`, **remaining** = expected − collected, **expenses** = sum of
+   `M`'s expenses, **net profit** = collected − expenses.
+3. Confirm the charts agree: the **gauge** shows collected/expected, the
+   **donut** splits paid vs unpaid, the **bars** show collected / expenses /
+   net profit (a negative net profit shows its signed label), and the **month
+   payments list** shows exactly `M`'s receipts, newest first.
+4. Switch to a month with **no monthly price** → confirm everyone counts as
+   **paid** and expected is 0 (formula edge case, same as the dashboard).
+5. Open the **owner panel** (`/admin`, owner login) → **التقارير** bottom-nav
+   tab (`#/my/reports`) → pick the **same month `M`** → confirm the SVG
+   gauges/charts and totals show the **same numbers as the app** (data fully
+   synced first).
+6. **Offline:** enable airplane mode and open the app's التقارير tab → confirm
+   the report still renders fully and the numbers are unchanged (computed from
+   local SQLite — no network needed).

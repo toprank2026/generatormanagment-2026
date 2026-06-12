@@ -46,9 +46,13 @@ class _SignupScreenState extends State<SignupScreen> {
     if (result['success'] == true) {
       Get.offAll(() => const RootHandler());
     } else {
+      // 409 = the phone number (login identifier) is already registered.
+      final message = result['statusCode'] == 409
+          ? 'phone_taken'.tr
+          : (result['message'] ?? 'error'.tr).toString();
       Get.snackbar(
         'signup_failed'.tr,
-        (result['message'] ?? 'error'.tr).toString(),
+        message,
         snackPosition: SnackPosition.BOTTOM,
         backgroundColor: Colors.red.withValues(alpha: 0.1),
         colorText: Colors.red,
@@ -75,7 +79,7 @@ class _SignupScreenState extends State<SignupScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(Icons.bolt, size: 72, color: Color(0xFF1565C0)),
+                  Image.asset('images/blue.png', height: 88),
                   const SizedBox(height: 16),
                   Text(
                     'create_account'.tr,

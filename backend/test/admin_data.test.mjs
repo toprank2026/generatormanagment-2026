@@ -99,7 +99,7 @@ async function registerOwner(deviceOverrides) {
   const password = 'secret1';
   const device = makeDevice(deviceOverrides);
   const r = await api('POST', '/api/auth/register', {
-    body: { name: 'Owner Name', phone: '0770', username, password, device },
+    body: { name: 'Owner Name', phone: username, username, password, device },
   });
   assert.equal(r.status, 201, `register should 201, got ${r.status} ${JSON.stringify(r.data)}`);
   return { token: r.data.token, account: r.data.account, username, password, device };

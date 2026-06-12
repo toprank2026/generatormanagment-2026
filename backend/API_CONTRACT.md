@@ -146,9 +146,14 @@ Errors: `400` missing `entity`.
 ### GET `/api/account/stats`  (auth)
 
 Per-entity counts of the caller's **non-deleted** mirrored rows, plus an
-app-style `dashboard` object for the **current month** (server time, UTC)
-that replicates the Flutter dashboard. Entities with no rows are reported
-as `0`.
+app-style `dashboard` object for one month that replicates the Flutter
+dashboard. Entities with no rows are reported as `0`.
+
+Query params:
+- `month` (optional): `YYYY-MM` — the month the `dashboard` object describes
+  (monthly reports). Validated against `/^\d{4}-\d{2}$/`; when absent or
+  malformed it falls back to the **current month** (server time, UTC).
+  `dashboard.month` always echoes the month actually used.
 
 Paid/unpaid formula (same as the app): with `P = monthly_prices[month]`
 (`data.price_per_amp`, `0` if there is no row for the month), a subscriber is
@@ -167,7 +172,7 @@ is kept raw (`totalAmps * P - collected`) and may go negative, like the app.
     "monthly_prices": 6
   },
   "dashboard": {
-    "month": "2026-06",        // current month, 'YYYY-MM' (server UTC)
+    "month": "2026-06",        // requested ?month, else current month ('YYYY-MM', server UTC)
     "pricePerAmp": 5000,       // monthly_prices row for that month, 0 if absent
     "totalSubscribers": 12,
     "totalAmps": 180,          // sum of subscriber amps
@@ -175,8 +180,11 @@ is kept raw (`totalAmps * P - collected`) and may go negative, like the app.
     "unpaidCount": 3,
     "totalDue": 200000,        // totalAmps * pricePerAmp - collected (raw)
     "collected": 700000,       // sum of paid_amount over that month's receipts
+    "expensesTotal": 150000,   // sum of expenses' data.amount whose data.date starts with the month
+    "netProfit": 550000,       // collected - expensesTotal (may go negative)
     "boards": 3,
-    "circuits": 9
+    "circuits": 9,
+    "lastUploadAt": "ISO"      // most recent sync activity of any kind, null if none
   }
 }
 ```

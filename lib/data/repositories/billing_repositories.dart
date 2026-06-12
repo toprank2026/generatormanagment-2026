@@ -78,6 +78,21 @@ class ReceiptRepository {
     return max + 1;
   }
 
+  // Get receipts for a specific month, newest first (for reports), with
+  // optional limit/offset for pagination.
+  Future<List<Receipt>> getByMonth(String month, {int? limit, int? offset}) async {
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'receipts',
+      where: 'month = ?',
+      whereArgs: [month],
+      orderBy: 'issued_at DESC',
+      limit: limit,
+      offset: offset,
+    );
+    return List.generate(maps.length, (i) => Receipt.fromMap(maps[i]));
+  }
+
   // Get total collected amount for a specific month
   Future<double> getCollectedSum(String month) async {
     final db = await _dbHelper.database;

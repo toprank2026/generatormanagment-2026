@@ -4,6 +4,7 @@ import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/expense_controller.dart';
+import 'package:generatormanagment/controllers/reports_controller.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
 import 'package:generatormanagment/controllers/subscription_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
@@ -24,6 +25,7 @@ class AppBinding extends Bindings {
     Get.lazyPut<DashboardController>(() => DashboardController(), fenix: true);
     Get.lazyPut<BillingController>(() => BillingController(), fenix: true);
     Get.lazyPut<ExpenseController>(() => ExpenseController(), fenix: true);
+    Get.lazyPut<ReportsController>(() => ReportsController(), fenix: true);
     Get.lazyPut<SettingsController>(() => SettingsController(), fenix: true);
     Get.lazyPut<SubscriptionController>(() => SubscriptionController(), fenix: true);
   }

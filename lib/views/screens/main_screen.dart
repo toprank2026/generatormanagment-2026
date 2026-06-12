@@ -6,6 +6,7 @@ import 'package:generatormanagment/controllers/main_nav_controller.dart';
 import 'package:generatormanagment/views/screens/dashboard_screen.dart';
 import 'package:generatormanagment/views/screens/monthly_pricing_screen.dart'; // Using as Payments/Pricing tab for now
 import 'package:generatormanagment/views/screens/expenses_screen.dart';
+import 'package:generatormanagment/views/screens/reports_screen.dart';
 import 'package:generatormanagment/views/screens/settings_screen.dart';
 
 class MainScreen extends StatelessWidget {
@@ -15,6 +16,7 @@ class MainScreen extends StatelessWidget {
     DashboardScreen(),
     MonthlyPricingScreen(), // Payments
     ExpensesScreen(),
+    ReportsScreen(),
     SettingsScreen(),
   ];
 
@@ -48,6 +50,11 @@ class MainScreen extends StatelessWidget {
               icon: const Icon(Iconsax.receipt),
               activeIcon: const Icon(Iconsax.receipt5),
               label: 'expenses'.tr,
+            ),
+            BottomNavigationBarItem(
+              icon: const Icon(Iconsax.chart_2),
+              activeIcon: const Icon(Iconsax.chart_26),
+              label: 'reports'.tr,
             ),
             BottomNavigationBarItem(
               icon: const Icon(Iconsax.setting),

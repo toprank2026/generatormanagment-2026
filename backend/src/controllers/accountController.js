@@ -33,7 +33,7 @@ const num = (value) => {
 
 /**
  * Builds the app-style dashboard for the caller's mirror, replicating the
- * Flutter dashboard for the current month M with P = monthly_prices[M]
+ * Flutter dashboard for month M with P = monthly_prices[M]
  * (0 if absent): a subscriber is PAID when the sum of their month-M receipts'
  * paid_amount is >= amps * P — so with P = 0 every subscriber counts as paid,
  * exactly like the app. totalDue is kept raw (totalAmps * P - collected),
@@ -41,12 +41,11 @@ const num = (value) => {
  *
  * @param {*} userId Mongo id of the caller.
  * @param {object} counts Per-entity counts (reused for boards/circuits).
+ * @param {string} month The month to report on, 'YYYY-MM' (already validated).
  * @returns {Promise<object>} The `dashboard` payload for GET /api/account/stats.
  */
-async function buildDashboard(userId, counts) {
-  const month = new Date().toISOString().slice(0, 7); // 'YYYY-MM' (UTC)
-
-  const [priceRow, subscribers, receipts, lastUpload] = await Promise.all([
+async function buildDashboard(userId, counts, month) {
+  const [priceRow, subscribers, receipts, expenses, lastUpload] = await Promise.all([
     // monthly_prices' device PK is the month string, so localId === month.
     SyncRecord.findOne(
       { user: userId, entity: 'monthly_prices', deleted: false, localId: month },
@@ -55,6 +54,12 @@ async function buildDashboard(userId, counts) {
     SyncRecord.find({ user: userId, entity: 'subscribers', deleted: false }, { data: 1, localId: 1 }),
     SyncRecord.find(
       { user: userId, entity: 'receipts', deleted: false, 'data.month': month },
+      { data: 1 }
+    ),
+    // Expense rows whose data.date starts with the month ('YYYY-MM...').
+    // month is validated digits+dash, so the regex needs no escaping.
+    SyncRecord.find(
+      { user: userId, entity: 'expenses', deleted: false, 'data.date': { $regex: '^' + month } },
       { data: 1 }
     ),
     // Most recent sync activity of any kind (incl. deletions) — "last upload".
@@ -85,6 +90,9 @@ async function buildDashboard(userId, counts) {
     if (paid >= amps * pricePerAmp) paidCount += 1;
   }
 
+  let expensesTotal = 0;
+  for (const e of expenses) expensesTotal += num((e.data || {}).amount);
+
   return {
     month,
     pricePerAmp,
@@ -94,6 +102,8 @@ async function buildDashboard(userId, counts) {
     unpaidCount: subscribers.length - paidCount,
     totalDue: totalAmps * pricePerAmp - collected,
     collected,
+    expensesTotal,
+    netProfit: collected - expensesTotal,
     boards: counts.boards,
     circuits: counts.circuits,
     lastUploadAt: lastUpload ? lastUpload.updatedAt : null,
@@ -101,14 +111,20 @@ async function buildDashboard(userId, counts) {
 }
 
 /**
- * GET /api/account/stats
+ * GET /api/account/stats[?month=YYYY-MM]
  *
  * Per-entity counts of the caller's non-deleted mirrored rows, plus an
- * app-style `dashboard` object (current month paid/unpaid/collected/due —
- * see buildDashboard), for the owner panel dashboard. Entities with no rows
- * are reported as 0.
+ * app-style `dashboard` object (paid/unpaid/collected/due/expenses/net —
+ * see buildDashboard) for the requested month (`?month=YYYY-MM`, defaulting
+ * to the current UTC month when absent or malformed), for the owner panel
+ * dashboard and monthly reports. Entities with no rows are reported as 0.
  */
 const getMyStats = asyncHandler(async (req, res) => {
+  const requested = String(req.query.month || '');
+  const month = /^\d{4}-\d{2}$/.test(requested)
+    ? requested
+    : new Date().toISOString().slice(0, 7); // 'YYYY-MM' (UTC)
+
   const rows = await SyncRecord.aggregate([
     { $match: { user: req.user._id, deleted: false } },
     { $group: { _id: '$entity', count: { $sum: 1 } } },
@@ -118,7 +134,7 @@ const getMyStats = asyncHandler(async (req, res) => {
   for (const entity of STAT_ENTITIES) counts[entity] = 0;
   for (const row of rows) counts[row._id] = row.count;
 
-  const dashboard = await buildDashboard(req.user._id, counts);
+  const dashboard = await buildDashboard(req.user._id, counts, month);
 
   res.status(200).json({ counts, dashboard });
 });
