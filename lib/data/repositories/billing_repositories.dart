@@ -93,11 +93,13 @@ class ReceiptRepository {
     return List.generate(maps.length, (i) => Receipt.fromMap(maps[i]));
   }
 
-  // Get total collected amount for a specific month
+  // Get total collected amount for a specific month. Only 'valid' receipts
+  // count, matching the paid/unpaid status query — so a refunded receipt never
+  // inflates the collected total.
   Future<double> getCollectedSum(String month) async {
     final db = await _dbHelper.database;
     final result = await db.rawQuery(
-      'SELECT SUM(paid_amount) as total FROM receipts WHERE month = ?',
+      "SELECT SUM(paid_amount) as total FROM receipts WHERE month = ? AND status = 'valid'",
       [month],
     );
     if (result.isNotEmpty && result.first['total'] != null) {

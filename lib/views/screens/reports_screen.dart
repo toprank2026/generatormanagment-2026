@@ -85,6 +85,37 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // No price set for this month → nothing is due, so everyone
+                      // shows as "paid". Make that explicit so the all-paid state
+                      // isn't mistaken for actual collection.
+                      if (controller.pricePerAmp.value <= 0)
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3E0),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFFFCC80)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.info_outline,
+                                  color: Color(0xFFEF6C00)),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'no_price_for_month'.tr,
+                                  style: const TextStyle(
+                                    color: Color(0xFFB45309),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
                       // a) Collection-rate gauge.
                       _chartCard(
                         GaugeChart(

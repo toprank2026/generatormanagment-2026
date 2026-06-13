@@ -52,8 +52,17 @@ async function buildDashboard(userId, counts, month) {
       { data: 1 }
     ),
     SyncRecord.find({ user: userId, entity: 'subscribers', deleted: false }, { data: 1, localId: 1 }),
+    // Only non-refunded receipts count toward collected + paid/unpaid, matching
+    // the app (a refunded receipt must not inflate the totals). $ne also keeps
+    // receipts with no explicit status (treated as valid).
     SyncRecord.find(
-      { user: userId, entity: 'receipts', deleted: false, 'data.month': month },
+      {
+        user: userId,
+        entity: 'receipts',
+        deleted: false,
+        'data.month': month,
+        'data.status': { $ne: 'refunded' },
+      },
       { data: 1 }
     ),
     // Expense rows whose data.date starts with the month ('YYYY-MM...').
