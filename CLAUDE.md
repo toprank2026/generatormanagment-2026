@@ -25,7 +25,7 @@ dart format .
 flutter test                          # NOTE: default counter test fails (see gotcha)
 flutter build apk --release
 ```
-`API_BASE_URL` defaults to `http://192.168.1.99:4000` (see `lib/core/api_config.dart`) if no `--dart-define` is given.
+`API_BASE_URL` defaults to the **live production server** `https://generator.tikritstore.shop` (see `lib/core/api_config.dart`) when no `--dart-define` is given — so a plain `flutter build apk --release` ships pointed at production. Pass `--dart-define=API_BASE_URL=...` only to point at a local/LAN backend for dev.
 
 ### Backend (`backend/`)
 ```bash
