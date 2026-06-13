@@ -348,13 +348,36 @@ The Flutter receipt QR encodes `${API_BASE_URL}/admin/#/r/<uuid>`; the admin SPA
   "planCode": "monthly|null",
   "status": "none|pending|active|rejected|expired",
   "startedAt": "ISO|null",
-  "expiresAt": "ISO|null"
+  "expiresAt": "ISO|null",
+  "features": {                // resolved LIVE from the active plan's flags
+    "sync": true,              // online data sync (push/pull)
+    "backup": true,            // cloud backup
+    "ownerPanel": true         // owner self-service panel (#/my*, /api/account/*)
+  }
 }
 ```
+`features` is attached on the **Account** returned by
+`/api/auth/register`, `/api/auth/login`, and `/api/auth/me`. It mirrors the
+**active** plan's capability flags (each `= plan.<x>Enabled !== false`). With no
+active subscription (or no plan), every flag defaults to `true`. The backend
+enforces these via `requireFeature(name)` (403 `code=FEATURE_DISABLED`,
+`message:'هذه الميزة غير متوفرة في خطتك'`, `feature:name`).
+
 ### Plan
 ```jsonc
-{ "code": "monthly", "name": "Monthly", "durationDays": 30, "maxDevices": 1, "price": 0, "description": "...", "active": true }
+{
+  "code": "monthly", "name": "Monthly", "durationDays": 30, "maxDevices": 1,
+  "price": 0, "description": "...", "active": true,
+  "syncEnabled": true,         // plan includes online data sync
+  "backupEnabled": true,       // plan includes cloud backup
+  "ownerPanelEnabled": true    // plan includes the owner self-service panel
+}
 ```
+The three capability flags are Booleans that **default `true`** (existing plans
+keep all capabilities). Admins set them per-plan via
+`PUT /api/admin/plans` (each `optional().isBoolean()`); an edit that omits a flag
+leaves it unchanged. An account's **active** plan drives
+`subscription.features` (above) everywhere.
 ### Device
 ```jsonc
 { "deviceId": "...", "installId": "...", "platform": "android", "model": "...", "brand": "...", "osVersion": "...", "imei": null, "mac": null, "boundAt": "ISO", "lastSeen": "ISO", "current": true }

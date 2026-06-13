@@ -167,12 +167,14 @@ test('register -> 201 { token, account } with bound device', async () => {
   assert.equal(acc.name, 'Reg User');
   assert.equal(acc.role, 'owner');
   assert.equal(acc.blocked, false);
-  // fresh subscription is "none" with null dates.
+  // fresh subscription is "none" with null dates; features default all-true
+  // (no active plan => no capability is restricted).
   assert.deepEqual(acc.subscription, {
     planCode: null,
     status: 'none',
     startedAt: null,
     expiresAt: null,
+    features: { sync: true, backup: true, ownerPanel: true },
   });
   // calling device is bound + marked current.
   assert.equal(acc.devices.length, 1);

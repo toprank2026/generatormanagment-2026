@@ -357,62 +357,83 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
 
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 8, bottom: 8),
-                child: Text(
-                  'backup'.tr,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blueGrey,
+            // Backup section: only shown when the active plan enables cloud
+            // backup (Obx so it reacts if the plan changes).
+            Obx(() {
+              if (!auth.canBackup) return const SizedBox.shrink();
+              return Column(
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8, bottom: 8),
+                      child: Text(
+                        'backup'.tr,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blueGrey,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: ListTile(
-                leading: const Icon(Icons.backup, color: Color(0xFF1565C0)),
-                title: Text('backup'.tr),
-                subtitle: Text('backup_subtitle'.tr),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Get.to(() => const BackupScreen()),
-              ),
-            ),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: ListTile(
+                      leading:
+                          const Icon(Icons.backup, color: Color(0xFF1565C0)),
+                      title: Text('backup'.tr),
+                      subtitle: Text('backup_subtitle'.tr),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Get.to(() => const BackupScreen()),
+                    ),
+                  ),
+                ],
+              );
+            }),
 
             // Sync + Manage Devices (online account features)
             if (auth.isLoggedIn.value) ...[
-              const SizedBox(height: 24),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 8, bottom: 8),
-                  child: Text(
-                    'sync'.tr,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blueGrey,
+              // Sync tile: only shown when the active plan enables sync.
+              // Hidden in "offline-only" mode (Obx so it reacts to plan
+              // changes). Manage Devices / delete-local stay regardless.
+              Obx(() {
+                if (!auth.canSync) return const SizedBox.shrink();
+                return Column(
+                  children: [
+                    const SizedBox(height: 24),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8, bottom: 8),
+                        child: Text(
+                          'sync'.tr,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blueGrey,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: ListTile(
-                  leading: const Icon(Icons.sync, color: Color(0xFF1565C0)),
-                  title: Text('sync'.tr),
-                  subtitle: Text('sync_subtitle'.tr),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Get.to(() => const SyncScreen()),
-                ),
-              ),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: ListTile(
+                        leading:
+                            const Icon(Icons.sync, color: Color(0xFF1565C0)),
+                        title: Text('sync'.tr),
+                        subtitle: Text('sync_subtitle'.tr),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Get.to(() => const SyncScreen()),
+                      ),
+                    ),
+                  ],
+                );
+              }),
               const SizedBox(height: 24),
               _buildManageDevicesSection(),
               const SizedBox(height: 24),

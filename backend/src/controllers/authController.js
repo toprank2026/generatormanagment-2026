@@ -5,6 +5,7 @@ const User = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
 const { signToken } = require('../utils/token');
 const { serializeAccount } = require('../utils/serialize');
+const { featuresForUser } = require('../utils/planFeatures');
 const { upsertDevice } = require('../utils/devices');
 const { adminEvents } = require('../utils/events');
 const { HttpError } = require('../middleware/error');
@@ -56,10 +57,9 @@ const register = asyncHandler(async (req, res) => {
   });
 
   const token = signToken(user);
-  res.status(201).json({
-    token,
-    account: serializeAccount(user, device && device.deviceId),
-  });
+  const account = serializeAccount(user, device && device.deviceId);
+  account.subscription.features = await featuresForUser(user);
+  res.status(201).json({ token, account });
 });
 
 /** POST /api/auth/login (public) */
@@ -86,15 +86,16 @@ const login = asyncHandler(async (req, res) => {
   await user.save();
 
   const token = signToken(user);
-  res.status(200).json({
-    token,
-    account: serializeAccount(user, device && device.deviceId),
-  });
+  const account = serializeAccount(user, device && device.deviceId);
+  account.subscription.features = await featuresForUser(user);
+  res.status(200).json({ token, account });
 });
 
 /** GET /api/auth/me (auth) */
 const me = asyncHandler(async (req, res) => {
-  res.status(200).json({ account: serializeAccount(req.user) });
+  const account = serializeAccount(req.user);
+  account.subscription.features = await featuresForUser(req.user);
+  res.status(200).json({ account });
 });
 
 module.exports = { register, login, me };

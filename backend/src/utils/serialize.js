@@ -75,6 +75,9 @@ function serializePlan(plan) {
     price: p.price ?? 0,
     description: p.description || '',
     active: p.active !== false,
+    syncEnabled: p.syncEnabled !== false,
+    backupEnabled: p.backupEnabled !== false,
+    ownerPanelEnabled: p.ownerPanelEnabled !== false,
   };
 }
 

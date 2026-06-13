@@ -166,90 +166,108 @@ class DashboardScreen extends StatelessWidget {
                                   }),
                                 ),
                                 const SizedBox(height: 10),
-                                // SYNC row: pending-changes status (push side)
-                                // + "sync now" button.
+                                // SYNC area: only shown when the active plan
+                                // enables sync. Otherwise the app is in
+                                // "offline-only" mode and we show a single
+                                // muted row instead of the push/pull rows.
                                 Obx(() {
+                                  if (!authController.canSync) {
+                                    // Offline-only mode: single muted row.
+                                    return _bannerRow(
+                                      Icons.cloud_off,
+                                      Text(
+                                        'offline_only_mode'.tr,
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.75),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    );
+                                  }
+
                                   final pending =
                                       syncController.pendingCount.value;
                                   final syncing =
                                       syncController.isSyncing.value;
-                                  final busy =
-                                      syncing || syncController.isPulling.value;
-
-                                  return Row(
-                                    children: [
-                                      _bannerIconBox(
-                                        pending == 0
-                                            ? Icons.cloud_done
-                                            : Icons.cloud_upload,
-                                        busy: syncing,
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          syncing
-                                              ? 'syncing'.tr
-                                              : (pending == 0
-                                                  ? 'up_to_date'.tr
-                                                  : '$pending ${'sync_pending'.tr}'),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      // Push pending local changes.
-                                      _bannerButton(
-                                        onPressed: busy
-                                            ? null
-                                            : () => syncController.syncNow(),
-                                        busy: syncing,
-                                        icon: Icons.sync,
-                                        label: 'sync_now'.tr,
-                                      ),
-                                    ],
-                                  );
-                                }),
-                                const SizedBox(height: 10),
-                                // PULL row: last-pull time + "update" button.
-                                Obx(() {
                                   final pulling =
                                       syncController.isPulling.value;
-                                  final busy =
-                                      pulling || syncController.isSyncing.value;
+                                  final busy = syncing || pulling;
 
-                                  return Row(
+                                  return Column(
                                     children: [
-                                      _bannerIconBox(
-                                        Icons.cloud_download,
-                                        busy: pulling,
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          pulling
-                                              ? 'pulling'.tr
-                                              : '${'last_update'.tr}: ${_formatPullTime(syncController.lastPullAt.value)}',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
+                                      // SYNC row: pending-changes status
+                                      // (push side) + "sync now" button.
+                                      Row(
+                                        children: [
+                                          _bannerIconBox(
+                                            pending == 0
+                                                ? Icons.cloud_done
+                                                : Icons.cloud_upload,
+                                            busy: syncing,
                                           ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              syncing
+                                                  ? 'syncing'.tr
+                                                  : (pending == 0
+                                                      ? 'up_to_date'.tr
+                                                      : '$pending ${'sync_pending'.tr}'),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          // Push pending local changes.
+                                          _bannerButton(
+                                            onPressed: busy
+                                                ? null
+                                                : () => syncController.syncNow(),
+                                            busy: syncing,
+                                            icon: Icons.sync,
+                                            label: 'sync_now'.tr,
+                                          ),
+                                        ],
                                       ),
-                                      const SizedBox(width: 8),
-                                      // Pull the latest server data ("update").
-                                      _bannerButton(
-                                        onPressed: busy
-                                            ? null
-                                            : () => syncController.pull(),
-                                        busy: pulling,
-                                        icon: Icons.cloud_download,
-                                        label: 'update_now'.tr,
+                                      const SizedBox(height: 10),
+                                      // PULL row: last-pull time + "update".
+                                      Row(
+                                        children: [
+                                          _bannerIconBox(
+                                            Icons.cloud_download,
+                                            busy: pulling,
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              pulling
+                                                  ? 'pulling'.tr
+                                                  : '${'last_update'.tr}: ${_formatPullTime(syncController.lastPullAt.value)}',
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          // Pull the latest server data.
+                                          _bannerButton(
+                                            onPressed: busy
+                                                ? null
+                                                : () => syncController.pull(),
+                                            busy: pulling,
+                                            icon: Icons.cloud_download,
+                                            label: 'update_now'.tr,
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   );

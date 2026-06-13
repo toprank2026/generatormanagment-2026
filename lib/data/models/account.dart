@@ -9,15 +9,28 @@ class Subscription {
   final String? startedAt;
   final String? expiresAt;
 
+  /// Per-plan capability flags resolved from the account's active plan
+  /// (sync / backup / ownerPanel). Each capability is enabled unless the map
+  /// explicitly says `false`, so an absent/unknown flag stays TRUE for
+  /// backward compatibility with accounts whose plan predates the feature.
+  final Map<String, dynamic> features;
+
   Subscription({
     this.status = 'none',
     this.planCode,
     this.startedAt,
     this.expiresAt,
-  });
+    Map<String, dynamic>? features,
+  }) : features = features ?? const {};
 
   bool get isActive => status == 'active';
   bool get isPending => status == 'pending';
+
+  /// TRUE unless [features] explicitly disables [k] (absent/unknown => true).
+  bool _feat(String k) => features[k] != false;
+  bool get syncEnabled => _feat('sync');
+  bool get backupEnabled => _feat('backup');
+  bool get ownerPanelEnabled => _feat('ownerPanel');
 
   factory Subscription.fromJson(Map<String, dynamic>? j) {
     if (j == null) return Subscription();
@@ -26,6 +39,9 @@ class Subscription {
       planCode: (j['planCode'] ?? j['plan'])?.toString(),
       startedAt: j['startedAt'] as String?,
       expiresAt: j['expiresAt'] as String?,
+      features: j['features'] is Map
+          ? (j['features'] as Map).cast<String, dynamic>()
+          : const {},
     );
   }
 
@@ -34,6 +50,7 @@ class Subscription {
         'planCode': planCode,
         'startedAt': startedAt,
         'expiresAt': expiresAt,
+        'features': features,
       };
 }
 

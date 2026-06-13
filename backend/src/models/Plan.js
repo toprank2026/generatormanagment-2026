@@ -13,6 +13,11 @@ const PlanSchema = new Schema(
     price: { type: Number, default: 0 },
     description: { type: String, default: '' },
     active: { type: Boolean, default: true },
+    // Per-plan capability flags (default true so existing plans keep all
+    // capabilities). Resolved live from the account's active plan.
+    syncEnabled: { type: Boolean, default: true },
+    backupEnabled: { type: Boolean, default: true },
+    ownerPanelEnabled: { type: Boolean, default: true },
   },
   { timestamps: true }
 );

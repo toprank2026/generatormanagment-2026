@@ -347,7 +347,18 @@ const listPlans = asyncHandler(async (req, res) => {
 
 /** PUT /api/admin/plans — upsert a plan by code (body = Plan). */
 const upsertPlan = asyncHandler(async (req, res) => {
-  const { code, name, durationDays, maxDevices, price, description, active } = req.body;
+  const {
+    code,
+    name,
+    durationDays,
+    maxDevices,
+    price,
+    description,
+    active,
+    syncEnabled,
+    backupEnabled,
+    ownerPanelEnabled,
+  } = req.body;
 
   const update = {
     name,
@@ -356,6 +367,9 @@ const upsertPlan = asyncHandler(async (req, res) => {
     price: price ?? 0,
     description: description || '',
     active: active !== false,
+    syncEnabled,
+    backupEnabled,
+    ownerPanelEnabled,
   };
   // Drop undefined so a partial PUT only changes provided fields on update.
   Object.keys(update).forEach((k) => update[k] === undefined && delete update[k]);

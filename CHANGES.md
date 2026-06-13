@@ -871,6 +871,138 @@ s.amps × pricePerAmp(M)`; no price row for `M` ⇒ everyone paid).
 
 ---
 
+## 32. Per-plan capability flags — gate sync / backup / owner-panel by the active plan
+
+When an admin creates/edits a **plan** they choose whether that plan includes each
+of three capabilities; the account's **active** plan then enables/disables that
+capability **everywhere**:
+
+  1. **sync** — online data sync (push/pull to the server mirror). Off ⇒ the app
+     works **offline-only** (local SQLite only) and the backend rejects sync.
+  2. **backup** — cloud backup (upload/list/restore/delete). Off ⇒ backup hidden
+     in the app + the backend rejects.
+  3. **ownerPanel** — the owner self-service dashboard in the admin panel (`#/my…`,
+     `/api/account/*`). Off ⇒ those endpoints 403 and the panel shows "not in your
+     plan".
+
+> **Data note (important):** the sync / backup / reports **DATA and behaviour are
+> unchanged** — these flags only **gate** the feature on/off; nothing about the
+> records, the mirror, the schema, or the report math changes. **No SQLite version
+> bump** (the flags live on the backend `Plan` + the account JSON, resolved **live**
+> from the active plan — no User-schema change, no snapshot). Defaults are **all
+> true**, so every existing plan keeps every capability.
+
+### 32.1 Backend — Plan flags + serializer
+
+**Files:** `backend/src/models/Plan.js`, `backend/src/utils/serialize.js`, `backend/src/scripts/seedPlans.js` (or wherever plans are seeded — supporting)
+
+- `Plan` model gains three `Boolean` fields, **default `true`**: `syncEnabled`,
+  `backupEnabled`, `ownerPanelEnabled`.
+- `serializePlan()` adds the three **flat booleans** using `p.x !== false`
+  (so a missing/legacy field serializes as `true`):
+  ```js
+  syncEnabled: p.syncEnabled !== false,
+  backupEnabled: p.backupEnabled !== false,
+  ownerPanelEnabled: p.ownerPanelEnabled !== false,
+  ```
+
+### 32.2 Backend — `planFeatures` util (resolve live from the active plan)
+
+**File (new):** `backend/src/utils/planFeatures.js`
+
+- `async function planFeaturesByCode(code) → { sync, backup, ownerPanel }` — looks
+  up the plan by `code`; each flag = `plan.<x>Enabled !== false`; **a missing plan
+  ⇒ all `true`**.
+- `async function featuresForUser(user) → { sync, backup, ownerPanel }` — if the
+  user has `subscription.status === 'active'` **and** `subscription.planCode`, it
+  returns `planFeaturesByCode(that code)`; **otherwise `{ sync:true, backup:true,
+  ownerPanel:true }`** (no active plan ⇒ everything on, matching the
+  no-active-plan default elsewhere).
+
+### 32.3 Backend — `account.subscription.features` on the account JSON
+
+**File:** `backend/src/controllers/authController.js`
+
+- On **login / register / `/auth/me`**, after building the account JSON via
+  `serializeAccount`, the controller attaches
+  `account.subscription.features = await featuresForUser(user)` — i.e.
+  `{ sync, backup, ownerPanel }` resolved live from the active plan. This is the
+  single source the app reads (it never recomputes flags).
+
+### 32.4 Backend — `requireFeature` middleware on the gated routers
+
+**File (new):** `backend/src/middleware/requireFeature.js`
+**Files (edited):** `backend/src/routes/sync.js`, `backend/src/routes/account.js`, `backend/src/routes/backup.js`
+
+- `requireFeature(name)` → `async (req, res, next)`:
+  ```js
+  const f = await featuresForUser(req.user);
+  if (!f[name]) return res.status(403).json({
+    message: 'هذه الميزة غير متوفرة في خطتك',
+    code: 'FEATURE_DISABLED',
+    feature: name,
+  });
+  next();
+  ```
+- Mounted **after** `requireAuth` on each router:
+  - `routes/sync.js` → `requireFeature('sync')` (push **and** pull rejected when
+    the active plan has sync off).
+  - `routes/account.js` → `requireFeature('ownerPanel')` (the owner-panel data +
+    stats endpoints 403 when owner-panel is off).
+  - `routes/backup.js` → `requireFeature('backup')` (upload/list/restore/delete
+    all 403 when backup is off).
+- The 403 body is the **fixed contract** (`code:'FEATURE_DISABLED'`, `feature:<name>`)
+  so the app/panel can detect it precisely and the message is the Arabic
+  "هذه الميزة غير متوفرة في خطتك".
+
+### 32.5 App — `Subscription` features + `AuthController` getters
+
+**Files:** `lib/data/models/account.dart` (the `Subscription` model), `lib/controllers/auth_controller.dart`
+
+- `Subscription` gains three `bool` getters read from `json['features']`, each
+  **defaulting to `true` when the key/object is absent** (so an older
+  server / cached session keeps everything on):
+  `syncEnabled`, `backupEnabled`, `ownerPanelEnabled`.
+- `AuthController` exposes the convenience getters
+  `bool get canSync` / `bool get canBackup` / `bool get canOwnerPanel`
+  (each `=> account.value?.subscription.<x> ?? true`).
+
+### 32.6 App — switch to offline-only when sync is off; hide backup when off
+
+**Files:** `lib/controllers/sync_controller.dart`, `lib/views/screens/sync_screen.dart`, `lib/views/screens/dashboard_screen.dart`, `lib/views/screens/settings_screen.dart`, `lib/views/screens/backup_screen.dart`
+
+- **Sync off (`canSync == false`):** the app runs **offline-only** — `SyncController`
+  short-circuits push/pull (no `/api/sync` calls), and the **sync UI is hidden**
+  (the dashboard sync row(s) and the Settings → المزامنة tile/screen) so there is no
+  control to invoke a disabled capability. Local SQLite remains the source of truth;
+  nothing in the offline experience changes.
+- **Backup off (`canBackup == false`):** the **backup tile is hidden** in Settings
+  (the cloud upload/list/restore/delete UI is not reachable); the backend would also
+  reject it (32.4). Local file export/import is unaffected.
+- Reads the new getters from `AuthController` (32.5); reactive (`Obx`) so the UI
+  reflects a plan change after the next `/auth/me` refresh.
+
+### 32.7 Admin panel — plan editor toggles + plan-list capability chips; owner "not in your plan"
+
+**File:** `backend/public/admin/index.html`
+
+- **Plan editor (create/edit):** three **toggles** — sync / backup / owner-panel —
+  bound to `syncEnabled` / `backupEnabled` / `ownerPanelEnabled` (default **on**),
+  sent in the plan create/update payload.
+- **Plans list:** each plan row shows **capability chips** for the enabled
+  capabilities (so an admin sees at a glance which plan includes sync / backup /
+  owner-panel).
+- **Owner panel — "not in your plan":** when the owner's active plan has
+  **owner-panel off**, `/api/account/*` returns `403 FEATURE_DISABLED` (32.4); the
+  owner mode detects this and renders a **"not in your plan" (هذه الميزة غير متوفرة
+  في خطتك)** message instead of the dashboard/screens.
+
+> Translation keys (added via `'key'.tr` in both maps — see `translationKeys`),
+> not raw strings, for any new app/panel-facing copy (offline-only notice,
+> feature-disabled / not-in-your-plan message, plan-editor toggle labels).
+
+---
+
 ## Test steps — verify each feature (step by step)
 
 > Setup: backend `cd backend && npm run dev` (in-memory Mongo); app
@@ -1111,3 +1243,37 @@ s.amps × pricePerAmp(M)`; no price row for `M` ⇒ everyone paid).
 6. **Offline:** enable airplane mode and open the app's التقارير tab → confirm
    the report still renders fully and the numbers are unchanged (computed from
    local SQLite — no network needed).
+
+### AC. Per-plan capability flags (sync / backup / owner-panel)
+
+> Reminder: the flags only **gate** the feature; the data/behaviour of sync,
+> backup, and reports is unchanged. Defaults are all **on**, so a plan keeps every
+> capability unless a flag is explicitly turned off.
+
+1. **Create a plan with a flag off (admin):** in the admin panel → Plans →
+   create/edit a plan and turn **off** one capability — e.g. **sync off** — leaving
+   backup + owner-panel on. Save and confirm the plan-list **capability chips**
+   reflect only the enabled capabilities (no sync chip).
+2. **Assign it:** make an owner account's **active** plan that new plan (approve a
+   request for it / set its `planCode` active). Have the app re-fetch `/auth/me`
+   (pull-to-refresh / re-login) so `subscription.features` updates.
+3. **Verify the SYNC gate (app offline-only + sync UI hidden):**
+   - Confirm the app's **sync UI is hidden** — no sync row on the dashboard, no
+     المزامنة tile/screen in Settings — and the app behaves **offline-only**:
+     local edits still save to SQLite, but **no** `/api/sync` push/pull fires.
+   - Hit `POST /api/sync/push` (or `GET /api/sync/pull`) directly with that
+     account's token → confirm **`403`** with
+     `{ code:'FEATURE_DISABLED', feature:'sync', message:'هذه الميزة غير متوفرة في خطتك' }`.
+4. **Verify the BACKUP gate (tile hidden + backend 403):** create/assign a plan with
+   **backup off** → confirm the **backup tile is hidden** in Settings, and a direct
+   call to a `/api/backup/*` endpoint returns **`403 FEATURE_DISABLED`**
+   (`feature:'backup'`). (Local export/import still works.)
+5. **Verify the OWNER-PANEL gate (panel "not in your plan"):** create/assign a plan
+   with **owner-panel off** → log into `/admin` as that owner → confirm the panel
+   shows **"هذه الميزة غير متوفرة في خطتك" / "not in your plan"** instead of the
+   dashboard, and `GET /api/account/data` / `GET /api/account/stats` return
+   **`403 FEATURE_DISABLED`** (`feature:'ownerPanel'`).
+6. **Defaults / no active plan:** confirm an account on an **all-flags-on** plan
+   (or with **no active plan**) keeps **all three** capabilities — sync UI present
+   and working, backup tile present, owner panel opens — i.e. nothing regressed for
+   existing plans.

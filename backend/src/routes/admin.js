@@ -65,6 +65,9 @@ router.put(
     body('maxDevices').optional().isInt({ min: 1 }),
     body('price').optional().isNumeric(),
     body('active').optional().isBoolean(),
+    body('syncEnabled').optional().isBoolean(),
+    body('backupEnabled').optional().isBoolean(),
+    body('ownerPanelEnabled').optional().isBoolean(),
   ],
   validate,
   ctrl.upsertPlan

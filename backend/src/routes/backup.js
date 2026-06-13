@@ -6,11 +6,14 @@ const express = require('express');
 const multer = require('multer');
 const env = require('../config/env');
 const { requireAuth } = require('../middleware/auth');
+const { requireFeature } = require('../middleware/requireFeature');
 const { upload, list, download, remove } = require('../controllers/backupController');
 
 const router = express.Router();
 
 router.use(requireAuth);
+// Cloud backup is a per-plan capability; reject every backup endpoint when off.
+router.use(requireFeature('backup'));
 
 // Disk storage: BACKUP_DIR/<userId>/<timestamp>-moldati.db
 const storage = multer.diskStorage({

@@ -965,6 +965,26 @@ function planChip(code){
   if(!code) return el("span",{class:"muted",text:"—"});
   return el("span",{class:"badge blue",text:code});
 }
+/* Small at-a-glance capability icons for a plan row. Each flag defaults ON when
+   absent (legacy plans). Disabled flags render dimmed. */
+function planFeatureChips(p){
+  p=p||{};
+  var feats=[
+    {on:p.syncEnabled!==false,icon:"sync",label:"مزامنة البيانات"},
+    {on:p.backupEnabled!==false,icon:"backup",label:"النسخ الاحتياطي"},
+    {on:p.ownerPanelEnabled!==false,icon:"dashboard",label:"لوحة المالك"}
+  ];
+  var wrap=el("div",{style:"display:inline-flex;align-items:center;gap:8px"});
+  feats.forEach(function(f){
+    wrap.appendChild(el("span",{
+      class:"msi",
+      title:f.label+(f.on?"":" (غير مفعّلة)"),
+      style:"font-size:20px;color:"+(f.on?"var(--primary)":"#c3c9d4")+(f.on?"":";opacity:.6"),
+      text:f.icon
+    }));
+  });
+  return wrap;
+}
 function th(t){ return el("th",{text:t}); }
 
 /* ============================================================
@@ -1853,6 +1873,24 @@ function statementTable(records,detailHrefFor){
    no admin features. Reuses the admin renderers (tables, statement,
    receipt details) in owner scope.
    ============================================================ */
+/* True when the backend rejected an owner-panel request because the account's
+   plan does not include the owner panel (requireFeature → 403 FEATURE_DISABLED). */
+function isFeatureDisabled(err){
+  return !!err && (err.code==="FEATURE_DISABLED" || err.status===403);
+}
+/* Centered friendly card shown when the owner panel is not in the plan, with a
+   logout button instead of a raw error block. */
+function ownerFeatureBlock(){
+  return el("div",{class:"card app-card",style:"max-width:480px;margin:48px auto"},[
+    el("div",{class:"card-b",style:"text-align:center;padding:36px 24px"},[
+      el("div",{class:"app-chip orange",style:"margin:0 auto 14px;width:52px;height:52px;font-size:30px"},[mi("workspace_premium")]),
+      el("div",{style:"font-weight:800;font-size:18px;margin-bottom:8px",text:"لوحة المالك غير متوفرة في خطتك الحالية"}),
+      el("div",{class:"muted",style:"margin-bottom:20px",text:"يرجى التواصل مع الإدارة لترقية خطتك لتفعيل هذه الميزة."}),
+      el("button",{class:"btn",onclick:function(){ doLogout(); }},["تسجيل الخروج"])
+    ])
+  ]);
+}
+
 function viewMyDashboard(){
   shell("#/my",loadingBlock("جارٍ تحميل لوحتك…"));
   API.myStats().then(function(res){
@@ -1905,6 +1943,7 @@ function viewMyDashboard(){
     shell("#/my",content);
   }).catch(function(err){
     if(err.status===401) return;
+    if(isFeatureDisabled(err)){ shell("#/my",ownerFeatureBlock()); return; }
     shell("#/my",errorBlock(err,viewMyDashboard));
   });
 }
@@ -2031,6 +2070,7 @@ function viewMyReports(){
     }).catch(function(err){
       if(err.status===401) return;
       if(reqMonth!==month) return;
+      if(isFeatureDisabled(err)){ shell("#/my/reports",ownerFeatureBlock()); return; }
       paint(errorBlock(err,load));
     });
   }
@@ -2185,6 +2225,7 @@ function viewMyEntity(entity,relField,relValue){
       tableWrap.appendChild(renderSyncTable(entity,records,null,drill,maps));
     }).catch(function(err){
       if(err.status===401) return;
+      if(isFeatureDisabled(err)){ shell("#/my/data/"+entity,ownerFeatureBlock()); return; }
       clear(tableWrap); tableWrap.appendChild(errorBlock(err,load));
     });
   }
@@ -2286,6 +2327,7 @@ function viewMyStatement(subId){
       tableWrap.appendChild(statementTable(records,function(lid){ return "#/my/data/receipts/detail/"+encodeURIComponent(lid); }));
     }).catch(function(err){
       if(err.status===401) return;
+      if(isFeatureDisabled(err)){ shell("#/my/data/subscribers",ownerFeatureBlock()); return; }
       clear(tableWrap); tableWrap.appendChild(errorBlock(err,loadReceipts));
     });
   }
@@ -2308,6 +2350,7 @@ function viewMyStatement(subId){
     loadReceipts();
   }).catch(function(err){
     if(err.status===401) return;
+    if(isFeatureDisabled(err)){ shell("#/my/data/subscribers",ownerFeatureBlock()); return; }
     clear(tableWrap); tableWrap.appendChild(errorBlock(err,function(){ viewMyStatement(subId); }));
   });
 }
@@ -2339,6 +2382,7 @@ function viewMyReceiptDetail(localId){
     }).catch(function(){ renderMyReceiptDetail(rec,d,null); });
   }).catch(function(err){
     if(err.status===401) return;
+    if(isFeatureDisabled(err)){ shell("#/my/data/receipts",ownerFeatureBlock()); return; }
     shell("#/my/data/receipts",errorBlock(err,function(){ viewMyReceiptDetail(localId); }));
   });
 }
@@ -2471,7 +2515,7 @@ function viewPlans(){
     } else {
       var tw=el("div",{class:"tbl-wrap"});
       var tbl=el("table");
-      tbl.appendChild(el("thead",[el("tr",[th("الرمز"),th("الاسم"),th("المدة"),th("أقصى عدد أجهزة"),th("السعر"),th("نشطة"),th("")])]));
+      tbl.appendChild(el("thead",[el("tr",[th("الرمز"),th("الاسم"),th("المدة"),th("أقصى عدد أجهزة"),th("السعر"),th("الميزات"),th("نشطة"),th("")])]));
       var tb=el("tbody");
       plans.forEach(function(p){
         tb.appendChild(el("tr",[
@@ -2480,6 +2524,7 @@ function viewPlans(){
           el("td",{class:"muted",text:(p.durationDays!=null?p.durationDays+" يوم":"—")}),
           el("td",{class:"muted",text:(p.maxDevices!=null?String(p.maxDevices):"—")}),
           el("td",{class:"muted nowrap",text:fmtPrice(p.price)}),
+          el("td",[planFeatureChips(p)]),
           el("td",[p.active!==false?el("span",{class:"badge green",text:"نشطة"}):el("span",{class:"badge gray",text:"غير نشطة"})]),
           el("td",{class:"right"},[el("div",{class:"acts",style:"justify-content:flex-end"},[
             el("button",{class:"btn sm ghost",onclick:function(){ openPlanModal(p,viewPlans); }},["تعديل"]),
@@ -2516,6 +2561,13 @@ function openPlanModal(existing,onDone){
   desc.value=p.description||"";
   var activeChk=el("input",{type:"checkbox"});
   activeChk.checked=p.active!==false;
+  // Per-plan capability flags (default ON for new/legacy plans where absent → treat undefined as true).
+  var syncChk=el("input",{type:"checkbox"});
+  syncChk.checked=p.syncEnabled!==false;
+  var backupChk=el("input",{type:"checkbox"});
+  backupChk.checked=p.backupEnabled!==false;
+  var ownerPanelChk=el("input",{type:"checkbox"});
+  ownerPanelChk.checked=p.ownerPanelEnabled!==false;
   var errBox=el("div");
 
   var saveBtn=el("button",{class:"btn",text:isEdit?"حفظ التغييرات":"إنشاء خطة",onclick:function(){
@@ -2527,7 +2579,10 @@ function openPlanModal(existing,onDone){
       maxDevices:maxDev.value!==""?Number(maxDev.value):1,
       price:price.value!==""?Number(price.value):0,
       description:(desc.value||"").trim(),
-      active:activeChk.checked
+      active:activeChk.checked,
+      syncEnabled:syncChk.checked,
+      backupEnabled:backupChk.checked,
+      ownerPanelEnabled:ownerPanelChk.checked
     };
     if(!body.code){ errBox.appendChild(el("div",{class:"alert err",text:"الرمز مطلوب."})); return; }
     if(!body.name){ errBox.appendChild(el("div",{class:"alert err",text:"الاسم مطلوب."})); return; }
@@ -2554,7 +2609,13 @@ function openPlanModal(existing,onDone){
         el("div",{class:"field"},[el("label",{text:"السعر (د.ع)"}),price])
       ]),
       el("div",{class:"field"},[el("label",{text:"الوصف"}),desc]),
-      el("div",{class:"field"},[el("label",{class:"check"},[activeChk,el("span",{text:"نشطة (مرئية للمستخدمين)"})])])
+      el("div",{class:"field"},[el("label",{class:"check"},[activeChk,el("span",{text:"نشطة (مرئية للمستخدمين)"})])]),
+      el("div",{class:"field"},[
+        el("label",{text:"الميزات المتاحة في الخطة"}),
+        el("label",{class:"check"},[syncChk,el("span",{text:"مزامنة البيانات"})]),
+        el("label",{class:"check",style:"margin-top:8px"},[backupChk,el("span",{text:"النسخ الاحتياطي"})]),
+        el("label",{class:"check",style:"margin-top:8px"},[ownerPanelChk,el("span",{text:"لوحة المالك"})])
+      ])
     ]),
     footer:[el("button",{class:"btn neutral",text:"إلغاء",onclick:closeModal}),saveBtn]
   });

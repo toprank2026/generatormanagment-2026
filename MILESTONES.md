@@ -16,6 +16,7 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Upgrade plan flow** — request a different plan from the plan screen / subscription screen (linked to backend + API).
 - ✅ **Plans UI = horizontal cards** (pro-app style carousel).
 - ✅ **Plan-approval auto-refresh** — the plan-selection screen polls the subscription status (~12s, online-gated), so an admin approval is detected automatically and the app enters without a manual refresh.
+- ✅ **Per-plan capability flags (sync / backup / owner-panel)** — when an admin creates/edits a plan they toggle whether that plan includes each capability (`syncEnabled`, `backupEnabled`, `ownerPanelEnabled`, all default **true** so existing plans keep everything). The account's **active** plan resolves the flags **live** (no User-schema change / no snapshot) and enables/disables each everywhere: the account JSON carries `subscription.features = {sync, backup, ownerPanel}` (attached by the auth controller via `featuresForUser` on login/register/me); the backend gates `/api/sync`, `/api/account`, `/api/backup` with `requireFeature(name)` (→ `403 FEATURE_DISABLED`); the app reads `canSync` / `canBackup` and switches to **offline-only** (hides the sync UI) / **hides the backup tile**; the owner panel shows **"not in your plan"** when its capability is off. Sync/backup/reports **DATA is unchanged** — only **gated**. Admin plan editor gains the three toggles + plan-list capability chips.
 
 ## Auth & accounts
 - ✅ **Sign-up = name + phone + password only** (phone is the login identifier; login is by phone).

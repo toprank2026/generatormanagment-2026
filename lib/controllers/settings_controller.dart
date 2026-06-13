@@ -302,6 +302,9 @@ class SettingsController extends GetxController {
   // --------------------------------------------------------------------------
 
   Future<void> refreshCloudBackups() async {
+    // Backup is a per-plan capability — never hit the (gated) backup API when
+    // the active plan disables it (the backend would 403 FEATURE_DISABLED).
+    if (!auth.canBackup) return;
     // Silent no-op when offline (this runs on screen open; the UI shows an
     // 'online_only' hint instead of nagging with a snackbar each time).
     if (!await ConnectivityService().isOnline()) return;

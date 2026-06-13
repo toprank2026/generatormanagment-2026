@@ -68,6 +68,13 @@ class AuthController extends GetxController {
 
   Subscription? get subscription => account.value?.subscription;
   bool get hasActiveSubscription => account.value?.subscription.isActive ?? false;
+
+  /// Per-plan capability flags resolved live from the active plan (defaults to
+  /// TRUE when absent, preserving capabilities for plans predating the flags).
+  /// Reactive: they read the Rxn account, so callers inside Obx stay reactive.
+  bool get canSync => account.value?.subscription.syncEnabled ?? true;
+  bool get canBackup => account.value?.subscription.backupEnabled ?? true;
+  bool get canOwnerPanel => account.value?.subscription.ownerPanelEnabled ?? true;
   /// In-app management rights (create/edit/delete boards, circuits, subscribers,
   /// staff). The account holder is either the business `owner` or an `admin`;
   /// both manage their own data. (Local 'accountant' staff are restricted.)

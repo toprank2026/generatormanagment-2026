@@ -35,6 +35,13 @@ class SyncController extends GetxController {
       Get.isRegistered<AuthController>() &&
       Get.find<AuthController>().isLoggedIn.value;
 
+  /// True unless the active plan disables sync. When false the app stays in
+  /// "offline-only" mode: local SQLite + outbox keep working, but we never hit
+  /// the network (push/pull). Defaults to allowed when AuthController is absent.
+  bool get _canSync =>
+      !Get.isRegistered<AuthController>() ||
+      Get.find<AuthController>().canSync;
+
   @override
   void onReady() {
     super.onReady();
@@ -60,6 +67,8 @@ class SyncController extends GetxController {
 
   /// Decides whether to sync silently, ask first, or skip.
   Future<void> maybeAutoSync() async {
+    // Offline-only mode: the active plan disables sync — never auto-push.
+    if (!_canSync) return;
     if (isSyncing.value || _askOpen) return;
     await refreshPending();
     if (!_loggedIn || pendingCount.value == 0) return;
@@ -94,6 +103,8 @@ class SyncController extends GetxController {
 
   /// Pushes pending changes now (used by auto-sync and the manual button).
   Future<void> syncNow() async {
+    // Offline-only mode: sync is disabled by the active plan — do nothing.
+    if (!_canSync) return;
     if (isSyncing.value) return;
     if (!await _net.isOnline()) {
       Get.snackbar('sync'.tr, 'online_only'.tr);
@@ -117,6 +128,8 @@ class SyncController extends GetxController {
   /// copy is applied (server wins). Used by the dashboard "update" button and
   /// after clearing local data / signing in on a new device.
   Future<void> pull({bool silent = false}) async {
+    // Offline-only mode: pull is disabled by the active plan — do nothing.
+    if (!_canSync) return;
     if (isPulling.value || isSyncing.value) return;
     if (!await _net.isOnline()) {
       if (!silent) Get.snackbar('sync'.tr, 'online_only'.tr);
