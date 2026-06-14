@@ -323,6 +323,8 @@ class Messages extends Translations {
       'no_permission': 'You do not have permission for this action',
       'no_accountants': 'No accountants yet',
       'leave_blank_keep_password': 'Leave blank to keep current password',
+      'save': 'Save',
+      'active': 'Active',
     },
     'ar_AR': {
       'app_name': 'فلاش',
@@ -644,6 +646,8 @@ class Messages extends Translations {
       'no_permission': 'لا تملك صلاحية لهذا الإجراء',
       'no_accountants': 'لا يوجد محاسبون بعد',
       'leave_blank_keep_password': 'اتركه فارغاً للإبقاء على كلمة المرور الحالية',
+      'save': 'حفظ',
+      'active': 'مفعّل',
     },
   };
 }

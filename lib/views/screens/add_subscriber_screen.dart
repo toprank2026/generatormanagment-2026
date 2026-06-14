@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:uuid/uuid.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
+import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/data/models/accountant_model.dart';
+import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 
 class AddSubscriberScreen extends StatefulWidget {
   final Subscriber? subscriber;
@@ -14,6 +17,7 @@ class AddSubscriberScreen extends StatefulWidget {
 
 class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
   final CoreController controller = Get.find();
+  final AuthController auth = Get.find<AuthController>();
   final _formKey = GlobalKey<FormState>();
 
   final _nameCtrl = TextEditingController();
@@ -22,6 +26,10 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
 
   Board? selectedBoard;
   Circuit? selectedCircuit;
+
+  // Owner-only assign-accountant dropdown state.
+  List<Accountant> _accountants = [];
+  String? _selectedAccountantId;
 
   bool get isEdit => widget.subscriber != null;
 
@@ -32,6 +40,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
       _nameCtrl.text = widget.subscriber!.name;
       _phoneCtrl.text = widget.subscriber!.phone ?? "";
       _ampsCtrl.text = widget.subscriber!.amps.toString();
+      _selectedAccountantId = widget.subscriber!.accountantId;
     }
     // Ensure boards are loaded
     _initData();
@@ -39,6 +48,14 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
 
   Future<void> _initData() async {
     await controller.loadBoards();
+    if (auth.isAdmin) {
+      try {
+        _accountants = await AccountantRepository().getAll();
+      } catch (_) {
+        _accountants = [];
+      }
+      if (mounted) setState(() {});
+    }
     if (isEdit) {
       // Find and select the board
       selectedBoard = controller.boards.firstWhereOrNull(
@@ -50,7 +67,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
           (c) => c.id == widget.subscriber!.circuitId,
         );
       }
-      setState(() {});
+      if (mounted) setState(() {});
     }
   }
 
@@ -193,6 +210,35 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
                       ),
                     ),
 
+                    // Owner-only: assign this subscriber to an accountant.
+                    if (auth.isAdmin) ...[
+                      const SizedBox(height: 20),
+                      DropdownButtonFormField<String?>(
+                        decoration: _inputDecoration(
+                          "assign_accountant".tr,
+                          Icons.badge,
+                        ),
+                        value: _selectedAccountantId,
+                        items: [
+                          DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text("unassigned_owner".tr),
+                          ),
+                          ..._accountants.map(
+                            (a) => DropdownMenuItem<String?>(
+                              value: a.id,
+                              child: Text(a.displayName),
+                            ),
+                          ),
+                        ],
+                        onChanged: (val) {
+                          setState(() {
+                            _selectedAccountantId = val;
+                          });
+                        },
+                      ),
+                    ],
+
                     const SizedBox(height: 32),
 
                     SizedBox(
@@ -273,6 +319,11 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
         );
         return;
       }
+      // Owner picks the assigned accountant; accountants keep the existing
+      // assignment (the dropdown is hidden for them).
+      final accountantId = auth.isAdmin
+          ? _selectedAccountantId
+          : (isEdit ? widget.subscriber!.accountantId : null);
       final sub = Subscriber(
         id: isEdit ? widget.subscriber!.id : const Uuid().v4(),
         name: _nameCtrl.text,
@@ -280,6 +331,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
         amps: amps,
         boardId: selectedBoard!.id,
         circuitId: selectedCircuit!.id,
+        accountantId: accountantId,
         // Preserve original status/createdAt when editing.
         status: isEdit ? widget.subscriber!.status : 'active',
         createdAt: isEdit ? widget.subscriber!.createdAt : null,

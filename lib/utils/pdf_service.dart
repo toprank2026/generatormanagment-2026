@@ -11,7 +11,8 @@ import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/utils/printer_prefs.dart';
 
 class PdfService {
-  Future<Uint8List> generateReceipt(Receipt receipt, Subscriber sub) async {
+  Future<Uint8List> generateReceipt(Receipt receipt, Subscriber sub,
+      {String accountantName = ''}) async {
     final pdf = pw.Document();
 
     // Load bundled Cairo so Arabic renders correctly in the PDF.
@@ -32,6 +33,8 @@ class PdfService {
       ['سعر الأمبير', '${receipt.priceSnapshot}'],
       ['المدفوع', '${receipt.paidAmount} د.ع'],
       ['المتبقي', '${receipt.remainingAfter} د.ع'],
+      // The accountant this invoice belongs to (omitted for owner-owned).
+      if (accountantName.trim().isNotEmpty) ['المحاسب', accountantName.trim()],
     ];
 
     pw.Widget cell(String t, {bool bold = false}) => pw.Padding(
@@ -109,8 +112,10 @@ class PdfService {
     return pdf.save();
   }
 
-  Future<void> printReceipt(Receipt receipt, Subscriber sub) async {
-    final pdfBytes = await generateReceipt(receipt, sub);
+  Future<void> printReceipt(Receipt receipt, Subscriber sub,
+      {String accountantName = ''}) async {
+    final pdfBytes =
+        await generateReceipt(receipt, sub, accountantName: accountantName);
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => pdfBytes,
       name: 'Receipt_${receipt.receiptNo}',

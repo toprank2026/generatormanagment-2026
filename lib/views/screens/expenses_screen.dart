@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/expense_controller.dart';
+import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/data/models/expense_model.dart';
 
 class ExpensesScreen extends StatefulWidget {
@@ -13,6 +14,7 @@ class ExpensesScreen extends StatefulWidget {
 
 class _ExpensesScreenState extends State<ExpensesScreen> {
   final ExpenseController controller = Get.find<ExpenseController>();
+  final AuthController auth = Get.find<AuthController>();
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -116,69 +118,76 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             ),
           ),
 
-          const SizedBox(height: 20),
-
-          // Quick Add Buttons Grid
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'quick_add'.tr,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blueGrey,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _QuickAddButton(
-                      label: 'expense_cat_fuel'.tr,
-                      icon: Icons.local_gas_station,
-                      color: Colors.orange,
-                      onTap: () => _showAddExpenseDialog(
-                        context,
-                        controller,
-                        category: "Fuel",
+          // Quick Add Buttons Grid (owner-only)
+          Obx(
+            () => auth.isAdmin
+                ? Column(
+                    children: [
+                      const SizedBox(height: 20),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'quick_add'.tr,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blueGrey,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              children: [
+                                _QuickAddButton(
+                                  label: 'expense_cat_fuel'.tr,
+                                  icon: Icons.local_gas_station,
+                                  color: Colors.orange,
+                                  onTap: () => _showAddExpenseDialog(
+                                    context,
+                                    controller,
+                                    category: "Fuel",
+                                  ),
+                                ),
+                                _QuickAddButton(
+                                  label: 'expense_cat_oil'.tr,
+                                  icon: Icons.water_drop,
+                                  color: Colors.black87,
+                                  onTap: () => _showAddExpenseDialog(
+                                    context,
+                                    controller,
+                                    category: "Oil",
+                                  ),
+                                ),
+                                _QuickAddButton(
+                                  label: 'expense_cat_maint_short'.tr,
+                                  icon: Icons.build,
+                                  color: Colors.blue,
+                                  onTap: () => _showAddExpenseDialog(
+                                    context,
+                                    controller,
+                                    category: "Maintenance",
+                                  ),
+                                ),
+                                _QuickAddButton(
+                                  label: 'expense_cat_other'.tr,
+                                  icon: Icons.more_horiz,
+                                  color: Colors.purple,
+                                  onTap: () => _showAddExpenseDialog(
+                                    context,
+                                    controller,
+                                    category: "Other",
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    _QuickAddButton(
-                      label: 'expense_cat_oil'.tr,
-                      icon: Icons.water_drop,
-                      color: Colors.black87,
-                      onTap: () => _showAddExpenseDialog(
-                        context,
-                        controller,
-                        category: "Oil",
-                      ),
-                    ),
-                    _QuickAddButton(
-                      label: 'expense_cat_maint_short'.tr,
-                      icon: Icons.build,
-                      color: Colors.blue,
-                      onTap: () => _showAddExpenseDialog(
-                        context,
-                        controller,
-                        category: "Maintenance",
-                      ),
-                    ),
-                    _QuickAddButton(
-                      label: 'expense_cat_other'.tr,
-                      icon: Icons.more_horiz,
-                      color: Colors.purple,
-                      onTap: () => _showAddExpenseDialog(
-                        context,
-                        controller,
-                        category: "Other",
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                    ],
+                  )
+                : const SizedBox.shrink(),
           ),
 
           const SizedBox(height: 20),
@@ -275,15 +284,26 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                                       color: Colors.redAccent,
                                     ),
                                   ),
-                                  const SizedBox(width: 4),
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.delete_outline,
-                                      size: 20,
-                                      color: Colors.grey,
-                                    ),
-                                    onPressed: () =>
-                                        _confirmDelete(controller, ex.id),
+                                  Obx(
+                                    () => auth.isAdmin
+                                        ? Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const SizedBox(width: 4),
+                                              IconButton(
+                                                icon: const Icon(
+                                                  Icons.delete_outline,
+                                                  size: 20,
+                                                  color: Colors.grey,
+                                                ),
+                                                onPressed: () => _confirmDelete(
+                                                  controller,
+                                                  ex.id,
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                        : const SizedBox.shrink(),
                                   ),
                                 ],
                               ),
@@ -299,10 +319,14 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFF1565C0),
-        child: const Icon(Icons.add, color: Colors.white),
-        onPressed: () => _showAddExpenseDialog(context, controller),
+      floatingActionButton: Obx(
+        () => auth.isAdmin
+            ? FloatingActionButton(
+                backgroundColor: const Color(0xFF1565C0),
+                child: const Icon(Icons.add, color: Colors.white),
+                onPressed: () => _showAddExpenseDialog(context, controller),
+              )
+            : const SizedBox.shrink(),
       ),
     );
   }

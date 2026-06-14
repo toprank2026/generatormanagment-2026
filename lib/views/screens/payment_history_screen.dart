@@ -4,8 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
-import 'package:generatormanagment/data/repositories/user_repository.dart';
-import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
 import 'package:generatormanagment/utils/pdf_service.dart';
@@ -195,17 +194,13 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   /// detail screen (Bluetooth thermal printer when configured, else PDF).
   void _handlePrint(Receipt receipt) async {
     final settings = Get.find<SettingsController>();
-    final auth = Get.find<AuthController>();
 
-    // Fetch accountant name
+    // The accountant this invoice belongs to (owning accountant), resolved from
+    // the synced identity. Empty for owner-owned receipts.
     String accountantName = "";
-    if (receipt.performedByUserId == auth.currentUser.value?.id) {
-      accountantName = auth.currentUser.value?.username ?? "";
-    } else if (receipt.performedByUserId != null) {
-      final user = await UserRepository().getUserById(
-        receipt.performedByUserId!,
-      );
-      accountantName = user?.username ?? "";
+    if (receipt.accountantId != null && receipt.accountantId!.isNotEmpty) {
+      final a = await AccountantRepository().getById(receipt.accountantId!);
+      accountantName = a?.displayName ?? "";
     }
 
     if (settings.printerAddress.value.isNotEmpty) {
@@ -224,7 +219,8 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
       );
     } else {
       // Fallback to standard PDF printing
-      await PdfService().printReceipt(receipt, widget.subscriber);
+      await PdfService()
+          .printReceipt(receipt, widget.subscriber, accountantName: accountantName);
     }
   }
 

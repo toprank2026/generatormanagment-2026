@@ -9,6 +9,7 @@ import 'package:generatormanagment/views/screens/backup_screen.dart';
 import 'package:generatormanagment/views/screens/sync_screen.dart';
 import 'package:generatormanagment/views/screens/user_switch_screen.dart';
 import 'package:generatormanagment/data/models/account.dart';
+import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/repositories/device_repository.dart';
 import 'package:generatormanagment/utils/bluetooth_print_service.dart';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
@@ -44,15 +45,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
-      controller.loadMoreUsers();
-    }
+    // Accountants are a small owner-managed set (no pagination); nothing to do.
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isAdmin = auth.currentUser.value?.role == 'admin';
+    final bool isAdmin = auth.isAdmin;
 
     return Scaffold(
       backgroundColor: const Color(0xFFE3F2FD),
@@ -153,122 +151,150 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 24),
 
-            // Subscription Section
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 8, bottom: 8),
-                child: Text(
-                  'subscription'.tr,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blueGrey,
-                  ),
-                ),
-              ),
-            ),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: ListTile(
-                leading: const Icon(
-                  Icons.workspace_premium,
-                  color: Color(0xFF1565C0),
-                ),
-                title: Text('manage_subscription'.tr),
-                subtitle: Obx(
-                  () => Text(
-                    auth.subscription?.planCode ?? 'no_active_plan'.tr,
-                  ),
-                ),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                onTap: () => Get.to(() => const SubscriptionScreen()),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // User Management Section (Admin Only)
-            if (isAdmin) ...[
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: EdgeInsets.only(left: 8, bottom: 8),
-                  child: Text(
-                    'user_management'.tr,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blueGrey,
+            // Subscription Section (owner-only). Obx so it reacts to a
+            // user switch (an accountant acting on this device must not see it).
+            Obx(() {
+              if (!auth.isAdmin) return const SizedBox.shrink();
+              return Column(
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8, bottom: 8),
+                      child: Text(
+                        'subscription'.tr,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blueGrey,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Column(
-                  children: [
-                    ListTile(
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: ListTile(
                       leading: const Icon(
-                        Icons.person_add,
+                        Icons.workspace_premium,
                         color: Color(0xFF1565C0),
                       ),
-                      title: Text('create_new_user'.tr),
+                      title: Text('manage_subscription'.tr),
+                      subtitle: Text(
+                        auth.subscription?.planCode ?? 'no_active_plan'.tr,
+                      ),
                       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: () => _showAddUserDialog(controller),
+                      onTap: () => Get.to(() => const SubscriptionScreen()),
                     ),
-                    const Divider(height: 1),
-                    Obx(() {
-                      if (controller.isLoading.value) return const SizedBox();
-                      return ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount:
-                            controller.users.length +
-                            (controller.isUsersMoreLoading.value ? 1 : 0),
-                        separatorBuilder: (c, i) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          if (index == controller.users.length) {
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              );
+            }),
+
+            // Accountants Management Section (owner-only). Lists each
+            // accountant (display name + active state); the owner can add,
+            // edit (name / active / reset password) and delete them. Obx so it
+            // reacts to a user switch (hidden while an accountant is acting).
+            Obx(() {
+              if (!auth.isAdmin) return const SizedBox.shrink();
+              return Column(
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8, bottom: 8),
+                      child: Text(
+                        'accountants'.tr,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blueGrey,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: const Icon(
+                            Icons.person_add,
+                            color: Color(0xFF1565C0),
+                          ),
+                          title: Text('add_accountant'.tr),
+                          trailing:
+                              const Icon(Icons.arrow_forward_ios, size: 16),
+                          onTap: () => _showAddAccountantDialog(controller),
+                        ),
+                        const Divider(height: 1),
+                        Obx(() {
+                          if (controller.isLoading.value) {
                             return const Padding(
                               padding: EdgeInsets.all(12.0),
                               child: Center(child: CircularProgressIndicator()),
                             );
                           }
-                          final user = controller.users[index];
-                          final isMe = user.id == auth.currentUser.value?.id;
-                          return ListTile(
-                            leading: Icon(
-                              user.role == 'admin'
-                                  ? Icons.admin_panel_settings
-                                  : Icons.person,
-                              color: user.role == 'admin'
-                                  ? Colors.orange
-                                  : Colors.grey,
-                            ),
-                            title: Text(user.username),
-                            subtitle: Text(user.role),
-                            trailing: isMe
-                                ? const SizedBox()
-                                : IconButton(
-                                    icon: const Icon(
-                                      Icons.delete,
-                                      color: Colors.redAccent,
+                          if (controller.accountants.isEmpty) {
+                            return Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Text('no_accountants'.tr),
+                            );
+                          }
+                          return ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: controller.accountants.length,
+                            separatorBuilder: (c, i) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final a = controller.accountants[index];
+                              return ListTile(
+                                leading: Icon(
+                                  Icons.person,
+                                  color:
+                                      a.active ? Colors.green : Colors.grey,
+                                ),
+                                title: Text(a.displayName),
+                                subtitle: Text(a.username),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.edit,
+                                        color: Color(0xFF1565C0),
+                                      ),
+                                      onPressed: () =>
+                                          _showEditAccountantDialog(
+                                              controller, a),
                                     ),
-                                    onPressed: () =>
-                                        _confirmDelete(controller, user.id),
-                                  ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete,
+                                        color: Colors.redAccent,
+                                      ),
+                                      onPressed: () =>
+                                          _confirmDeleteAccountant(
+                                              controller, a.id),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                           );
-                        },
-                      );
-                    }),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
+                        }),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              );
+            }),
 
             // Language Selection
             Container(
@@ -376,9 +402,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
 
-            // Backup section: only shown when the active plan enables cloud
-            // backup (Obx so it reacts if the plan changes).
+            // Backup section: owner-only, and only shown when the active plan
+            // enables cloud backup (Obx so it reacts if the plan changes).
             Obx(() {
+              if (!auth.isAdmin) return const SizedBox.shrink();
               if (!auth.canBackup) return const SizedBox.shrink();
               return Column(
                 children: [
@@ -415,10 +442,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             // Sync + Manage Devices (online account features)
             if (auth.isLoggedIn.value) ...[
-              // Sync tile: only shown when the active plan enables sync.
-              // Hidden in "offline-only" mode (Obx so it reacts to plan
-              // changes). Manage Devices / delete-local stay regardless.
+              // Sync tile: owner-only, and only shown when the active plan
+              // enables sync. Hidden in "offline-only" mode (Obx so it reacts
+              // to plan changes). Manage Devices / delete-local stay regardless.
               Obx(() {
+                if (!auth.isAdmin) return const SizedBox.shrink();
                 if (!auth.canSync) return const SizedBox.shrink();
                 return Column(
                   children: [
@@ -669,15 +697,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showAddUserDialog(SettingsController controller) {
+  void _showAddAccountantDialog(SettingsController controller) {
+    final nameCtrl = TextEditingController();
     final userCtrl = TextEditingController();
     final passCtrl = TextEditingController();
-    String role = 'accountant';
 
     Get.defaultDialog(
-      title: 'add_user'.tr,
+      title: 'add_accountant'.tr,
       content: Column(
         children: [
+          TextField(
+            controller: nameCtrl,
+            decoration: InputDecoration(
+              labelText: 'full_name'.tr,
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
           TextField(
             controller: userCtrl,
             decoration: InputDecoration(
@@ -694,28 +730,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             obscureText: true,
           ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            value: role,
-            items: [
-              DropdownMenuItem(
-                value: 'accountant',
-                child: Text('role_accountant'.tr),
-              ),
-              DropdownMenuItem(value: 'admin', child: Text('role_admin'.tr)),
-            ],
-            onChanged: (v) => role = v!,
-            decoration: InputDecoration(
-              labelText: 'role'.tr,
-              border: const OutlineInputBorder(),
-            ),
-          ),
         ],
       ),
-      textConfirm: 'create'.tr,
+      textConfirm: 'add'.tr,
       textCancel: 'cancel'.tr,
       onConfirm: () {
-        if (userCtrl.text.trim().isEmpty || passCtrl.text.trim().isEmpty) {
+        if (nameCtrl.text.trim().isEmpty ||
+            userCtrl.text.trim().isEmpty ||
+            passCtrl.text.trim().isEmpty) {
           Get.snackbar(
             'error'.tr,
             'fill_all_fields'.tr,
@@ -724,22 +746,82 @@ class _SettingsScreenState extends State<SettingsScreen> {
           );
           return;
         }
-        controller.addUser(userCtrl.text.trim(), passCtrl.text, role);
-        Get.back(); // manually close dialog if successful
+        Get.back(); // close dialog
+        controller.createAccountant(
+          nameCtrl.text.trim(),
+          userCtrl.text.trim(),
+          passCtrl.text,
+        );
       },
     );
   }
 
-  void _confirmDelete(SettingsController controller, String userId) {
+  void _showEditAccountantDialog(
+      SettingsController controller, Accountant accountant) {
+    final nameCtrl = TextEditingController(text: accountant.name ?? '');
+    final passCtrl = TextEditingController();
+    final RxBool active = accountant.active.obs;
+
     Get.defaultDialog(
-      title: 'delete_title'.tr,
+      title: 'edit_accountant'.tr,
+      content: Column(
+        children: [
+          TextField(
+            controller: nameCtrl,
+            decoration: InputDecoration(
+              labelText: 'full_name'.tr,
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: passCtrl,
+            decoration: InputDecoration(
+              labelText: 'password'.tr,
+              hintText: 'leave_blank_keep_password'.tr,
+              border: const OutlineInputBorder(),
+            ),
+            obscureText: true,
+          ),
+          const SizedBox(height: 12),
+          Obx(
+            () => SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              // No 'active' key in the allowed translation set — short
+              // locale-aware fallback (reported in missingTranslationKeys).
+              title: Text(
+                Get.locale?.languageCode == 'ar' ? 'مفعّل' : 'Active',
+              ),
+              value: active.value,
+              onChanged: (v) => active.value = v,
+            ),
+          ),
+        ],
+      ),
+      textConfirm: 'save'.tr,
+      textCancel: 'cancel'.tr,
+      onConfirm: () {
+        Get.back(); // close dialog
+        controller.updateAccountant(
+          accountant.id,
+          name: nameCtrl.text.trim(),
+          active: active.value,
+          newPassword: passCtrl.text.trim().isEmpty ? null : passCtrl.text,
+        );
+      },
+    );
+  }
+
+  void _confirmDeleteAccountant(SettingsController controller, String id) {
+    Get.defaultDialog(
+      title: 'delete'.tr,
       middleText: 'delete_confirm'.tr,
       textConfirm: 'delete'.tr,
       textCancel: 'cancel'.tr,
       confirmTextColor: Colors.white,
       buttonColor: Colors.red,
       onConfirm: () {
-        controller.deleteUser(userId);
+        controller.deleteAccountant(id);
         Get.back();
       },
     );

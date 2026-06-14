@@ -3,6 +3,8 @@ import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/data/models/accountant_model.dart';
+import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/views/screens/subscribers_screen.dart';
 import 'package:generatormanagment/views/screens/circuits_screen.dart';
 
@@ -222,6 +224,8 @@ class _BoardsScreenState extends State<BoardsScreen> {
     final nameCtrl = TextEditingController(text: board?.name);
     final codeCtrl = TextEditingController(text: board?.code);
     final isEdit = board != null;
+    // Owner-only: assigned accountant (null = owner-owned). Preselect on edit.
+    String? selectedAccountantId = board?.accountantId;
 
     Get.defaultDialog(
       title: isEdit ? "edit_board".tr : "add_board".tr,
@@ -244,6 +248,45 @@ class _BoardsScreenState extends State<BoardsScreen> {
                 hintText: "board_code_hint".tr,
               ),
             ),
+            if (auth.isAdmin)
+              Padding(
+                padding: const EdgeInsets.only(top: 12.0),
+                child: FutureBuilder<List<Accountant>>(
+                  future: AccountantRepository().getAll(),
+                  builder: (context, snapshot) {
+                    final accountants = snapshot.data ?? const <Accountant>[];
+                    return StatefulBuilder(
+                      builder: (context, setLocalState) {
+                        return DropdownButtonFormField<String?>(
+                          value: selectedAccountantId,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: 'assign_accountant'.tr,
+                          ),
+                          items: [
+                            DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('unassigned_owner'.tr),
+                            ),
+                            ...accountants.map(
+                              (a) => DropdownMenuItem<String?>(
+                                value: a.id,
+                                child: Text(
+                                  a.displayName,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ],
+                          onChanged: (val) {
+                            setLocalState(() => selectedAccountantId = val);
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
           ],
         ),
       ),
@@ -259,11 +302,16 @@ class _BoardsScreenState extends State<BoardsScreen> {
                 id: board.id,
                 name: nameCtrl.text,
                 code: codeCtrl.text,
+                accountantId: selectedAccountantId,
                 createdAt: board.createdAt,
               ),
             );
           } else {
-            controller.addBoard(nameCtrl.text, codeCtrl.text);
+            controller.addBoard(
+              nameCtrl.text,
+              codeCtrl.text,
+              accountantId: selectedAccountantId,
+            );
           }
           Get.back();
           Get.snackbar(

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart' hide TextDirection;
+import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/reports_controller.dart';
+import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
+import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/views/widgets/report_charts.dart';
 
 /// Monthly reports & statistics: pick a month and see gauges/charts plus
@@ -41,6 +44,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   @override
   Widget build(BuildContext context) {
     final ReportsController controller = Get.find<ReportsController>();
+    final AuthController auth = Get.find<AuthController>();
 
     return Scaffold(
       backgroundColor: const Color(0xFFE3F2FD),
@@ -60,6 +64,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
       body: Column(
         children: [
           _buildMonthPicker(controller),
+          // Owner-only: filter every figure on this screen by accountant, and a
+          // quick count of accountants. An accountant only ever sees their own
+          // numbers, so neither control is shown to them.
+          Obx(
+            () => auth.isAdmin
+                ? _buildAccountantControls(controller)
+                : const SizedBox.shrink(),
+          ),
           Expanded(
             child: RefreshIndicator(
               onRefresh: controller.loadReport,
@@ -308,6 +320,119 @@ class _ReportsScreenState extends State<ReportsScreen> {
               size: 30,
             ),
             onPressed: controller.nextMonth,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Owner-only row: an accountant filter dropdown (null = all accountants)
+  /// plus a small card showing how many accountants exist. Both fetch from
+  /// [AccountantRepository] once via FutureBuilders.
+  Widget _buildAccountantControls(ReportsController controller) {
+    final AccountantRepository repo = AccountantRepository();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Row(
+        children: [
+          // Accountant filter dropdown.
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.blue.withOpacity(0.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: FutureBuilder<List<Accountant>>(
+                future: repo.getAll(),
+                builder: (context, snapshot) {
+                  final List<Accountant> accountants = snapshot.data ?? [];
+                  return Obx(
+                    () => DropdownButtonHideUnderline(
+                      child: DropdownButton<String?>(
+                        isExpanded: true,
+                        value: controller.accountantFilter.value,
+                        hint: Text('all_accountants'.tr),
+                        icon: const Icon(Icons.person_search,
+                            color: Color(0xFF1565C0)),
+                        items: [
+                          DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('all_accountants'.tr),
+                          ),
+                          ...accountants.map(
+                            (a) => DropdownMenuItem<String?>(
+                              value: a.id,
+                              child: Text(
+                                a.displayName,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ],
+                        onChanged: controller.setAccountantFilter,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Accountants count card.
+          FutureBuilder<int>(
+            future: repo.count(),
+            builder: (context, snapshot) {
+              final int n = snapshot.data ?? 0;
+              return Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.blue.withOpacity(0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.people_alt, color: Color(0xFF1565C0)),
+                    const SizedBox(width: 8),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '$n',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1565C0),
+                          ),
+                        ),
+                        Text(
+                          'accountants'.tr,
+                          style:
+                              const TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ],
       ),

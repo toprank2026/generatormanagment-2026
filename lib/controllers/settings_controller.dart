@@ -9,30 +9,23 @@ import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/core/session_cache.dart';
 import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/account.dart';
-import 'package:generatormanagment/data/models/user_model.dart';
+import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/repositories/backup_repository.dart';
-import 'package:generatormanagment/data/repositories/user_repository.dart';
+import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/utils/printer_prefs.dart';
-import 'package:crypto/crypto.dart';
-import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 
 class SettingsController extends GetxController {
-  final UserRepository _userRepo = UserRepository();
+  final AccountantRepository _accountantRepo = AccountantRepository();
   final DbHelper _dbHelper = DbHelper();
   final BackupRepository _backupRepo = BackupRepository();
   final AuthController auth = Get.find();
 
-  var users = <User>[].obs;
+  /// Owner-managed accountant sub-users (synced identity rows).
+  var accountants = <Accountant>[].obs;
   var isLoading = false.obs;
-
-  // --- Users pagination ---
-  static const int usersPerPage = 10;
-  var usersPage = 1.obs;
-  var usersHasNext = false.obs;
-  var isUsersMoreLoading = false.obs;
 
   // --- Cloud backup ---
   var cloudBackups = <BackupEntry>[].obs;
@@ -78,8 +71,8 @@ class SettingsController extends GetxController {
     super.onReady();
     loadPrinterSettings();
     _loadLastBackupAt();
-    if (auth.currentUser.value?.role == 'admin') {
-      loadUsers();
+    if (auth.isAdmin) {
+      loadAccountants();
     }
   }
 
@@ -112,74 +105,77 @@ class SettingsController extends GetxController {
     update();
   }
 
-  Future<void> loadUsers({int page = 1}) async {
-    if (page == 1) {
-      isLoading.value = true;
-      users.clear();
-    } else {
-      isUsersMoreLoading.value = true;
-    }
+  // --------------------------------------------------------------------------
+  // ACCOUNTANTS (owner-managed sub-users). Creating an accountant writes BOTH
+  // the local credential row (for offline login) and the synced identity row
+  // (visible to the admin panel) via AccountantRepository.
+  // --------------------------------------------------------------------------
 
-    usersPage.value = page;
-
+  /// Load the full accountant list (small, owner-managed set — no pagination).
+  Future<void> loadAccountants() async {
+    isLoading.value = true;
     try {
-      // Fetch one extra row to detect whether a next page exists.
-      final result = await _userRepo.getAllUsers(
-        limit: usersPerPage + 1,
-        offset: (page - 1) * usersPerPage,
-      );
-
-      List<User> newItems;
-      if (result.length > usersPerPage) {
-        usersHasNext.value = true;
-        newItems = result.sublist(0, usersPerPage);
-      } else {
-        usersHasNext.value = false;
-        newItems = result;
-      }
-
-      if (page == 1) {
-        users.assignAll(newItems);
-      } else {
-        users.addAll(newItems);
-      }
+      accountants.assignAll(await _accountantRepo.getAll());
+    } catch (e) {
+      Get.snackbar('error'.tr, "${'accountants'.tr}: $e");
     } finally {
       isLoading.value = false;
-      isUsersMoreLoading.value = false;
     }
     update();
   }
 
-  void loadMoreUsers() {
-    if (usersHasNext.value &&
-        !isUsersMoreLoading.value &&
-        !isLoading.value) {
-      loadUsers(page: usersPage.value + 1);
+  /// Create a new accountant (credential + synced identity rows).
+  Future<void> createAccountant(
+      String name, String username, String password) async {
+    try {
+      await _accountantRepo.create(
+        id: const Uuid().v4(),
+        username: username,
+        name: name,
+        password: password,
+      );
+      await loadAccountants();
+      Get.snackbar('success'.tr, 'add_accountant'.tr);
+    } catch (e) {
+      Get.snackbar('error'.tr, "${'add_accountant'.tr}: $e");
     }
-  }
-
-  Future<void> addUser(String username, String password, String role) async {
-    String hash = sha256.convert(utf8.encode(password)).toString();
-    User u = User(
-      id: const Uuid().v4(),
-      username: username,
-      passwordHash: hash,
-      role: role,
-    );
-    await _userRepo.insertUser(u);
-    loadUsers();
-    Get.back();
-    Get.snackbar('success'.tr, 'user_added'.tr);
     update();
   }
 
-  Future<void> deleteUser(String id) async {
+  /// Update an accountant's name / active state and optionally reset password.
+  Future<void> updateAccountant(
+    String id, {
+    String? name,
+    bool? active,
+    String? newPassword,
+  }) async {
+    try {
+      await _accountantRepo.update(
+        id: id,
+        name: name,
+        active: active,
+        newPassword: newPassword,
+      );
+      await loadAccountants();
+      Get.snackbar('success'.tr, 'edit_accountant'.tr);
+    } catch (e) {
+      Get.snackbar('error'.tr, "${'edit_accountant'.tr}: $e");
+    }
+    update();
+  }
+
+  /// Delete an accountant (both rows).
+  Future<void> deleteAccountant(String id) async {
     if (id == auth.currentUser.value?.id) {
       Get.snackbar('error'.tr, 'cannot_delete_self'.tr);
       return;
     }
-    await _userRepo.deleteUser(id);
-    loadUsers();
+    try {
+      await _accountantRepo.delete(id);
+      accountants.removeWhere((a) => a.id == id);
+    } catch (e) {
+      Get.snackbar('error'.tr, "${'delete'.tr}: $e");
+    }
     update();
   }
 

@@ -3,6 +3,8 @@ import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/data/models/accountant_model.dart';
+import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 
 class CircuitsScreen extends StatefulWidget {
   final Board board;
@@ -98,26 +100,70 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
   void _showAddCircuitDialog(BuildContext context) {
     final nameCtrl = TextEditingController();
     final phaseCtrl = TextEditingController();
+    // New circuits default to the parent board's accountant (owner-only field).
+    String? selectedAccountantId = widget.board.accountantId;
 
     Get.defaultDialog(
       title: "add_circuit".tr,
-      content: Column(
-        children: [
-          TextField(
-            controller: nameCtrl,
-            decoration: InputDecoration(labelText: "circuit_name".tr),
-          ),
-          TextField(
-            controller: phaseCtrl,
-            decoration: InputDecoration(labelText: "phase_optional".tr),
-          ),
-        ],
+      content: StatefulBuilder(
+        builder: (context, setLocalState) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: InputDecoration(labelText: "circuit_name".tr),
+              ),
+              TextField(
+                controller: phaseCtrl,
+                decoration: InputDecoration(labelText: "phase_optional".tr),
+              ),
+              if (auth.isAdmin) ...[
+                const SizedBox(height: 12),
+                FutureBuilder<List<Accountant>>(
+                  future: AccountantRepository().getAll(),
+                  builder: (context, snapshot) {
+                    final accountants = snapshot.data ?? const <Accountant>[];
+                    return DropdownButtonFormField<String?>(
+                      initialValue: selectedAccountantId,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: "assign_accountant".tr,
+                      ),
+                      items: [
+                        DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text("unassigned_owner".tr),
+                        ),
+                        ...accountants.map(
+                          (a) => DropdownMenuItem<String?>(
+                            value: a.id,
+                            child: Text(a.displayName),
+                          ),
+                        ),
+                      ],
+                      onChanged: (val) =>
+                          setLocalState(() => selectedAccountantId = val),
+                    );
+                  },
+                ),
+              ],
+            ],
+          );
+        },
       ),
       textConfirm: "add".tr,
       textCancel: "cancel".tr,
       onConfirm: () {
         if (nameCtrl.text.isNotEmpty) {
-          controller.addCircuit(widget.board.id, nameCtrl.text, phaseCtrl.text);
+          controller.addCircuit(
+            widget.board.id,
+            nameCtrl.text,
+            phaseCtrl.text,
+            accountantId: auth.isAdmin
+                ? selectedAccountantId
+                : widget.board.accountantId,
+          );
           Get.back();
           Get.snackbar(
             "success".tr,

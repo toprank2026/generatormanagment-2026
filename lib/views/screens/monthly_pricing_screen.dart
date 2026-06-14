@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
+import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:intl/intl.dart';
 
 class MonthlyPricingScreen extends StatelessWidget {
@@ -9,6 +10,7 @@ class MonthlyPricingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final BillingController controller = Get.find<BillingController>();
+    final AuthController auth = Get.find<AuthController>();
     final priceCtrl = TextEditingController();
 
     return Scaffold(
@@ -174,8 +176,8 @@ class MonthlyPricingScreen extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
-                  // Set New Price Input
-                  if (price?.locked != 1) ...[
+                  // Set New Price Input (owner-only)
+                  if (price?.locked != 1 && auth.isAdmin) ...[
                     Container(
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
@@ -263,7 +265,7 @@ class MonthlyPricingScreen extends StatelessWidget {
                         ],
                       ),
                     ),
-                  ] else
+                  ] else if (price?.locked == 1)
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
