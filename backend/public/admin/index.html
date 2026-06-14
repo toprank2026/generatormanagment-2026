@@ -1249,7 +1249,8 @@ var SYNC_ENTITIES=[
   {value:"circuits",label:"الجوزات"},
   {value:"receipts",label:"الوصولات"},
   {value:"expenses",label:"المصاريف"},
-  {value:"monthly_prices",label:"الأسعار الشهرية"}
+  {value:"monthly_prices",label:"الأسعار الشهرية"},
+  {value:"accountants",label:"المحاسبون"}
 ];
 function entityLabel(value){
   for(var i=0;i<SYNC_ENTITIES.length;i++){ if(SYNC_ENTITIES[i].value===value) return SYNC_ENTITIES[i].label; }
@@ -1262,7 +1263,8 @@ var OWNER_ENTITIES=[
   {value:"circuits",label:"الجوزات",icon:"electrical_services"},
   {value:"receipts",label:"الوصولات",icon:"receipt_long"},
   {value:"expenses",label:"المصروفات",icon:"payments"},
-  {value:"monthly_prices",label:"أسعار الأشهر",icon:"calendar_month"}
+  {value:"monthly_prices",label:"أسعار الأشهر",icon:"calendar_month"},
+  {value:"accountants",label:"المحاسبون",icon:"badge"}
 ];
 function ownerEntityLabel(value){
   for(var i=0;i<OWNER_ENTITIES.length;i++){ if(OWNER_ENTITIES[i].value===value) return OWNER_ENTITIES[i].label; }
@@ -1365,6 +1367,11 @@ var SYNC_COLUMNS={
   monthly_prices:[
     {label:"الشهر",get:function(d){ return syncText(d.month); }},
     {label:"سعر الأمبير",get:function(d){ return (d.price_per_amp!=null?fmtPrice(d.price_per_amp):(d.price!=null?fmtPrice(d.price):"—")); }}
+  ],
+  accountants:[
+    {label:"الاسم",get:function(d){ return syncText(d.name||d.username); }},
+    {label:"اسم المستخدم",get:function(d){ return syncText(d.username); }},
+    {label:"الحالة",get:function(d){ return (d.active===0||d.active===false)?"موقوف":"مفعّل"; }}
   ]
 };
 
