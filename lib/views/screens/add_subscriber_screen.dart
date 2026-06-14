@@ -319,11 +319,14 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
         );
         return;
       }
-      // Owner picks the assigned accountant; accountants keep the existing
-      // assignment (the dropdown is hidden for them).
+      // Owner picks the assigned accountant; an accountant's new record is
+      // auto-assigned to themselves, and on edit keeps its existing assignment
+      // (the dropdown is hidden for them).
       final accountantId = auth.isAdmin
           ? _selectedAccountantId
-          : (isEdit ? widget.subscriber!.accountantId : null);
+          : (isEdit
+                ? widget.subscriber!.accountantId
+                : auth.currentUser.value?.id);
       final sub = Subscriber(
         id: isEdit ? widget.subscriber!.id : const Uuid().v4(),
         name: _nameCtrl.text,

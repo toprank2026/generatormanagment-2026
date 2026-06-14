@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
@@ -50,7 +51,7 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
         elevation: 0,
       ),
       floatingActionButton: Obx(
-        () => auth.isAdmin
+        () => auth.can(Perm.boards)
             ? FloatingActionButton(
                 onPressed: () => _showAddCircuitDialog(context),
                 backgroundColor: const Color(0xFF1565C0),
@@ -84,7 +85,7 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
               title: Text(circuit.name),
               subtitle: Text(circuit.phase ?? "phase_unknown".tr),
               trailing: Obx(
-                () => auth.isAdmin
+                () => auth.can(Perm.boards)
                     ? IconButton(
                         icon: const Icon(Icons.delete, color: Colors.redAccent),
                         onPressed: () => _showDeleteConfirm(circuit),

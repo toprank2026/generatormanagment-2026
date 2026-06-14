@@ -72,6 +72,12 @@ class AuthController extends GetxController {
   /// True when an accountant (not the owner/admin) is currently acting.
   bool get isAccountant => currentUser.value?.role == 'accountant';
 
+  /// Whether the acting user may perform [perm] (see Perm). The owner/admin can
+  /// do everything; an accountant only what was granted to them. (Recording
+  /// payments + printing are always allowed and are not gated by this.)
+  bool can(String perm) =>
+      isAdmin || (currentUser.value?.permissions.contains(perm) ?? false);
+
   /// The acting accountant's id used to scope reads/writes: `null` for the
   /// owner/admin (sees & owns everything), the accountant's id otherwise.
   String? get scopeAccountantId => isAdmin ? null : currentUser.value?.id;
@@ -483,6 +489,7 @@ class AuthController extends GetxController {
           passwordHash: '',
           role: 'accountant',
           name: a.name,
+          permissions: a.permissions,
         );
       }
     } catch (e) {

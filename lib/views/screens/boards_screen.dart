@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
@@ -62,7 +63,7 @@ class _BoardsScreenState extends State<BoardsScreen> {
         centerTitle: true,
       ),
       floatingActionButton: Obx(
-        () => auth.isAdmin
+        () => auth.can(Perm.boards)
             ? FloatingActionButton.extended(
                 onPressed: () => _showBoardForm(context, controller),
                 icon: const Icon(Icons.add, color: Colors.white),
@@ -168,7 +169,7 @@ class _BoardsScreenState extends State<BoardsScreen> {
                         ),
                       ),
                     ),
-                    if (auth.isAdmin)
+                    if (auth.can(Perm.boards))
                       Positioned(
                         top: 4,
                         right: 4,
@@ -303,7 +304,9 @@ class _BoardsScreenState extends State<BoardsScreen> {
                 id: board.id,
                 name: nameCtrl.text,
                 code: codeCtrl.text,
-                accountantId: selectedAccountantId,
+                accountantId: auth.isAdmin
+                    ? selectedAccountantId
+                    : board.accountantId,
                 createdAt: board.createdAt,
               ),
             );
@@ -311,7 +314,9 @@ class _BoardsScreenState extends State<BoardsScreen> {
             controller.addBoard(
               nameCtrl.text,
               codeCtrl.text,
-              accountantId: selectedAccountantId,
+              accountantId: auth.isAdmin
+                  ? selectedAccountantId
+                  : auth.currentUser.value?.id,
             );
           }
           Get.back();

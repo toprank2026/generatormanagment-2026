@@ -9,6 +9,7 @@ import 'package:generatormanagment/views/screens/backup_screen.dart';
 import 'package:generatormanagment/views/screens/sync_screen.dart';
 import 'package:generatormanagment/views/screens/user_switch_screen.dart';
 import 'package:generatormanagment/views/widgets/app_form_field.dart';
+import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/repositories/device_repository.dart';
@@ -733,35 +734,79 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// Owner-granted permission checkboxes (bound to a reactive set). Collecting
+  /// payments + printing are always allowed and are not listed here.
+  Widget _permissionsSection(RxSet<String> selected) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            const Icon(Icons.verified_user_outlined,
+                size: 18, color: kAppBlue),
+            const SizedBox(width: 6),
+            Text('permissions'.tr,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 2, bottom: 2),
+          child: Text('permissions_hint'.tr,
+              style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        ),
+        ...Perm.all.map(
+          (p) => Obx(
+            () => CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              activeColor: kAppBlue,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: Text('perm_$p'.tr, style: const TextStyle(fontSize: 14)),
+              value: selected.contains(p),
+              onChanged: (v) =>
+                  v == true ? selected.add(p) : selected.remove(p),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   void _showAddAccountantDialog(SettingsController controller) {
     final nameCtrl = TextEditingController();
     final userCtrl = TextEditingController();
     final passCtrl = TextEditingController();
+    final RxSet<String> perms = <String>{}.obs;
 
     Get.defaultDialog(
       title: 'add_accountant'.tr,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppTextField(
-            controller: nameCtrl,
-            label: 'full_name'.tr,
-            icon: Icons.badge_outlined,
-          ),
-          const SizedBox(height: 14),
-          AppTextField(
-            controller: userCtrl,
-            label: 'username'.tr,
-            icon: Icons.alternate_email,
-          ),
-          const SizedBox(height: 14),
-          AppTextField(
-            controller: passCtrl,
-            label: 'password'.tr,
-            icon: Icons.lock_outline,
-            obscureText: true,
-          ),
-        ],
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppTextField(
+              controller: nameCtrl,
+              label: 'full_name'.tr,
+              icon: Icons.badge_outlined,
+            ),
+            const SizedBox(height: 14),
+            AppTextField(
+              controller: userCtrl,
+              label: 'username'.tr,
+              icon: Icons.alternate_email,
+            ),
+            const SizedBox(height: 14),
+            AppTextField(
+              controller: passCtrl,
+              label: 'password'.tr,
+              icon: Icons.lock_outline,
+              obscureText: true,
+            ),
+            _permissionsSection(perms),
+          ],
+        ),
       ),
       textConfirm: 'add'.tr,
       textCancel: 'cancel'.tr,
@@ -784,6 +829,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           nameCtrl.text.trim(),
           userCtrl.text.trim(),
           passCtrl.text,
+          permissions: perms.toList(),
         );
       },
     );
@@ -794,35 +840,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final nameCtrl = TextEditingController(text: accountant.name ?? '');
     final passCtrl = TextEditingController();
     final RxBool active = accountant.active.obs;
+    final RxSet<String> perms = accountant.permissions.toSet().obs;
 
     Get.defaultDialog(
       title: 'edit_accountant'.tr,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppTextField(
-            controller: nameCtrl,
-            label: 'full_name'.tr,
-            icon: Icons.badge_outlined,
-          ),
-          const SizedBox(height: 14),
-          AppTextField(
-            controller: passCtrl,
-            label: 'password'.tr,
-            hint: 'leave_blank_keep_password'.tr,
-            icon: Icons.lock_outline,
-            obscureText: true,
-          ),
-          const SizedBox(height: 6),
-          Obx(
-            () => SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('active'.tr),
-              value: active.value,
-              onChanged: (v) => active.value = v,
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppTextField(
+              controller: nameCtrl,
+              label: 'full_name'.tr,
+              icon: Icons.badge_outlined,
             ),
-          ),
-        ],
+            const SizedBox(height: 14),
+            AppTextField(
+              controller: passCtrl,
+              label: 'password'.tr,
+              hint: 'leave_blank_keep_password'.tr,
+              icon: Icons.lock_outline,
+              obscureText: true,
+            ),
+            const SizedBox(height: 6),
+            Obx(
+              () => SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('active'.tr),
+                value: active.value,
+                onChanged: (v) => active.value = v,
+              ),
+            ),
+            _permissionsSection(perms),
+          ],
+        ),
       ),
       textConfirm: 'save'.tr,
       textCancel: 'cancel'.tr,
@@ -835,6 +885,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           name: nameCtrl.text.trim(),
           active: active.value,
           newPassword: passCtrl.text.trim().isEmpty ? null : passCtrl.text,
+          permissions: perms.toList(),
         );
       },
     );

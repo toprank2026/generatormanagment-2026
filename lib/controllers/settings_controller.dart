@@ -140,13 +140,15 @@ class SettingsController extends GetxController {
 
   /// Create a new accountant (credential + synced identity rows).
   Future<void> createAccountant(
-      String name, String username, String password) async {
+      String name, String username, String password,
+      {Iterable<String> permissions = const []}) async {
     try {
       await _accountantRepo.create(
         id: const Uuid().v4(),
         username: username,
         name: name,
         password: password,
+        permissions: permissions,
       );
       await loadAccountants();
       Get.snackbar('success'.tr, 'add_accountant'.tr);
@@ -162,6 +164,7 @@ class SettingsController extends GetxController {
     String? name,
     bool? active,
     String? newPassword,
+    Iterable<String>? permissions,
   }) async {
     try {
       await _accountantRepo.update(
@@ -169,6 +172,7 @@ class SettingsController extends GetxController {
         name: name,
         active: active,
         newPassword: newPassword,
+        permissions: permissions,
       );
       await loadAccountants();
       Get.snackbar('success'.tr, 'edit_accountant'.tr);

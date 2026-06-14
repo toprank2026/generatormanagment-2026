@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/views/screens/add_subscriber_screen.dart';
 import 'package:generatormanagment/views/screens/subscriber_detail_screen.dart';
 
@@ -116,7 +117,7 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
         ),
       ),
       floatingActionButton: Obx(
-        () => auth.isAdmin
+        () => auth.can(Perm.subscribers)
             ? FloatingActionButton.extended(
                 onPressed: () => Get.to(
                   () => const AddSubscriberScreen(),

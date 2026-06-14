@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/core/permissions.dart';
 import 'package:intl/intl.dart';
 
 class MonthlyPricingScreen extends StatelessWidget {
@@ -176,8 +177,8 @@ class MonthlyPricingScreen extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
-                  // Set New Price Input (owner-only)
-                  if (price?.locked != 1 && auth.isAdmin) ...[
+                  // Set New Price Input
+                  if (price?.locked != 1 && auth.can(Perm.prices)) ...[
                     Container(
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(

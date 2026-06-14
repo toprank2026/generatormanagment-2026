@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/expense_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/data/models/expense_model.dart';
 
 class ExpensesScreen extends StatefulWidget {
@@ -118,9 +119,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             ),
           ),
 
-          // Quick Add Buttons Grid (owner-only)
+          // Quick Add Buttons Grid (owner or accountant granted expenses)
           Obx(
-            () => auth.isAdmin
+            () => auth.can(Perm.expenses)
                 ? Column(
                     children: [
                       const SizedBox(height: 20),
@@ -285,7 +286,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                                     ),
                                   ),
                                   Obx(
-                                    () => auth.isAdmin
+                                    () => auth.can(Perm.expenses)
                                         ? Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
@@ -320,7 +321,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         ],
       ),
       floatingActionButton: Obx(
-        () => auth.isAdmin
+        () => auth.can(Perm.expenses)
             ? FloatingActionButton(
                 backgroundColor: const Color(0xFF1565C0),
                 child: const Icon(Icons.add, color: Colors.white),

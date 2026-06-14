@@ -325,6 +325,12 @@ class Messages extends Translations {
       'leave_blank_keep_password': 'Leave blank to keep current password',
       'save': 'Save',
       'active': 'Active',
+      'permissions': 'Permissions',
+      'permissions_hint': 'Recording payments & printing are always allowed',
+      'perm_subscribers': 'Manage subscribers',
+      'perm_boards': 'Manage boards & circuits',
+      'perm_expenses': 'Manage expenses',
+      'perm_prices': 'Manage monthly prices',
     },
     'ar_AR': {
       'app_name': 'فلاش',
@@ -648,6 +654,12 @@ class Messages extends Translations {
       'leave_blank_keep_password': 'اتركه فارغاً للإبقاء على كلمة المرور الحالية',
       'save': 'حفظ',
       'active': 'مفعّل',
+      'permissions': 'الصلاحيات',
+      'permissions_hint': 'تحصيل الدفعات والطباعة متاحة دائماً',
+      'perm_subscribers': 'إدارة المشتركين',
+      'perm_boards': 'إدارة البوردات والجوزات',
+      'perm_expenses': 'إدارة المصروفات',
+      'perm_prices': 'إدارة أسعار الأشهر',
     },
   };
 }

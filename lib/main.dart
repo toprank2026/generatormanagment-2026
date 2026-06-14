@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/core/app_binding.dart';
 import 'package:generatormanagment/core/dev_seed.dart';
+import 'package:generatormanagment/core/test_seeder.dart';
 import 'package:generatormanagment/views/auth/signup_screen.dart';
 import 'package:generatormanagment/views/screens/login_screen.dart';
 import 'package:generatormanagment/views/screens/home_screen.dart';
@@ -24,6 +25,9 @@ Future<void> main() async {
       count: const int.fromEnvironment('DEV_SEED_COUNT', defaultValue: 1000),
     );
   }
+
+  // DEBUG-ONLY accountant test data (off unless --dart-define=SEED_TEST_DATA=true).
+  await TestSeeder.run();
 
   // Load saved language; default to Arabic when the user hasn't chosen one.
   final prefs = await SharedPreferences.getInstance();

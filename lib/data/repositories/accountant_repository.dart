@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/models/user_model.dart';
@@ -27,8 +28,10 @@ class AccountantRepository {
     required String name,
     required String password,
     bool active = true,
+    Iterable<String> permissions = const [],
   }) async {
     final db = await _dbHelper.database;
+    final perms = Perm.encode(permissions);
     await db.transaction((txn) async {
       await txn.insert(
         'users',
@@ -39,6 +42,7 @@ class AccountantRepository {
           'role': 'accountant',
           'name': name,
           'active': active ? 1 : 0,
+          'permissions': perms,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -49,6 +53,7 @@ class AccountantRepository {
           'username': username,
           'name': name,
           'active': active ? 1 : 0,
+          'permissions': perms,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -61,12 +66,14 @@ class AccountantRepository {
     String? name,
     bool? active,
     String? newPassword,
+    Iterable<String>? permissions,
   }) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
       final userValues = <String, dynamic>{};
       if (name != null) userValues['name'] = name;
       if (active != null) userValues['active'] = active ? 1 : 0;
+      if (permissions != null) userValues['permissions'] = Perm.encode(permissions);
       if (newPassword != null && newPassword.isNotEmpty) {
         userValues['password_hash'] = hashPassword(newPassword);
       }
@@ -76,6 +83,7 @@ class AccountantRepository {
       final idValues = <String, dynamic>{};
       if (name != null) idValues['name'] = name;
       if (active != null) idValues['active'] = active ? 1 : 0;
+      if (permissions != null) idValues['permissions'] = Perm.encode(permissions);
       if (idValues.isNotEmpty) {
         await txn
             .update('accountants', idValues, where: 'id = ?', whereArgs: [id]);

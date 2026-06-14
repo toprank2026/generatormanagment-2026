@@ -27,7 +27,7 @@ class DbHelper {
     final String path = testPath ?? await _defaultPath();
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -121,6 +121,12 @@ class DbHelper {
       // Create the accountants sync triggers (others already exist → skipped).
       await _createSyncInfra(db);
     }
+    if (oldVersion < 4) {
+      // Per-accountant permissions (comma-separated keys; empty = collect+print
+      // only). Stored on the local credential row AND the synced identity.
+      await _addColumn(db, 'users', 'permissions', 'TEXT');
+      await _addColumn(db, 'accountants', 'permissions', 'TEXT');
+    }
   }
 
   Future<String> _defaultPath() async {
@@ -147,6 +153,7 @@ class DbHelper {
         role TEXT NOT NULL,
         name TEXT,
         active INTEGER DEFAULT 1,
+        permissions TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     ''');
@@ -158,6 +165,7 @@ class DbHelper {
         username TEXT,
         name TEXT,
         active INTEGER DEFAULT 1,
+        permissions TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     ''');
