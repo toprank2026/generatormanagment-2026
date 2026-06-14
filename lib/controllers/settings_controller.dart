@@ -67,6 +67,20 @@ class SettingsController extends GetxController {
   }
 
   @override
+  void onInit() {
+    super.onInit();
+    // Reload the accountant list whenever the acting user changes, so the
+    // owner always sees the current set (and the count) after a switch.
+    ever(auth.currentUser, (_) {
+      if (auth.isAdmin) {
+        loadAccountants();
+      } else {
+        accountants.clear();
+      }
+    });
+  }
+
+  @override
   void onReady() {
     super.onReady();
     loadPrinterSettings();

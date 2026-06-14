@@ -59,6 +59,16 @@ class ReportsController extends GetxController {
   var isReceiptsLoadingMore = false.obs;
 
   @override
+  void onInit() {
+    super.onInit();
+    // Re-scope the report when the acting user changes (owner <-> accountant).
+    ever(_auth.currentUser, (_) {
+      accountantFilter.value = null; // reset any owner filter on switch
+      loadReport();
+    });
+  }
+
+  @override
   void onReady() {
     super.onReady();
     loadReport();

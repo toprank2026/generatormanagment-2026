@@ -27,6 +27,8 @@ class ExpenseController extends GetxController {
   void onInit() {
     super.onInit();
     selectedMonth.value = DateFormat('yyyy-MM').format(DateTime.now());
+    // Re-scope expenses when the acting user changes.
+    ever(_auth.currentUser, (_) => loadExpenses());
   }
 
   @override

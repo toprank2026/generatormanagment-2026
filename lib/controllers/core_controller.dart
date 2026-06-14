@@ -49,6 +49,11 @@ class CoreController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    // Re-scope lists when the acting user changes (owner <-> accountant).
+    ever(_auth.currentUser, (_) {
+      loadBoards();
+      loadSubscribers();
+    });
   }
 
   @override

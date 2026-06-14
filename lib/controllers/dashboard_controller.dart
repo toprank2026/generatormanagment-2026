@@ -31,6 +31,8 @@ class DashboardController extends GetxController {
   void onInit() {
     super.onInit();
     currentMonth.value = DateFormat('yyyy-MM').format(DateTime.now());
+    // Re-scope the stats whenever the acting user changes (owner <-> accountant).
+    ever(_auth.currentUser, (_) => loadStats());
   }
 
   @override
