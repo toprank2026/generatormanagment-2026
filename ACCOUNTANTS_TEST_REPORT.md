@@ -12,9 +12,10 @@ the owner web panel, and the super-admin panel.
 | **Identity** | Owner = the one cloud account (handles sync/backup). Accountants = local sub-users created by the owner; they **sign in offline** (local password) and become the *acting user*. A synced `accountants` identity table (id/username/name/active/permissions, **no password**) makes them visible to the panels on any device. |
 | **Schema** | DB v2→v4: `accountant_id` on boards/circuits/subscribers/expenses (receipts already had it); `name`/`active`/`permissions` on users; new `accountants` table. Idempotent migrations. |
 | **Permissions** | Per accountant the owner grants any of: manage **subscribers**, **boards & circuits**, **expenses**, **prices**. Default = none. **Recording payments + printing are always allowed.** Owner has everything. `AuthController.can(perm)` drives gating. |
-| **Data isolation** | Every business read/count/sum is scoped: owner sees all, an accountant sees only rows whose `accountant_id` is theirs. Cascade deletes are accountant-aware. An accountant's new record auto-assigns to themselves; the owner assigns via an owner-only dropdown. |
-| **Attribution / printing** | Each receipt belongs to the subscriber's accountant; the printed invoice shows the **المحاسب** (accountant) line, resolved from `receipt.accountant_id` so it prints correctly on any device (Bluetooth + PDF). |
-| **Reports** | Per-accountant figures; the owner has an accountant **filter** + an accountant **count** card (app reports + owner web panel). |
+| **Sharing model (updated)** | **Boards, circuits, subscribers are SHARED** — the owner builds one common customer base visible to ALL accountants (no per-subscriber assignment). **Invoices/payments, expenses, and the reports/history derived from them stay per-accountant.** So: subscriber lists + paid/unpaid + totals are global; collected / expenses / net / payment-history are each accountant's own (owner sees all / can filter). |
+| **Attribution / printing** | Each receipt belongs to the **accountant who collected it**; the printed invoice shows the **المحاسب** (accountant) line, resolved from `receipt.accountant_id` (Bluetooth + PDF). |
+| **Reports** | Subscriber metrics global (shared base); money (collected/expenses/net) + payment history per-accountant; the owner has an accountant **filter** (scopes the money) + an accountant **count** card (app reports + owner web panel). |
+| **Accountant management** | A dedicated **AccountantsScreen** (reached from a Settings tile, owner-only) — create/edit/enable/reset-password/delete with permission checkboxes — moved out of the Settings body. |
 | **Panels** | Owner panel (`#/my`): accountant count card + reports filter. Super-admin: browsable `accountants` data tab + per-accountant attribution on every row. |
 | **Sync & backup** | No new flow needed — sync is whole-row (the new columns + the `accountants` table ride along automatically; backend accepts any entity) and backup is the whole `moldati.db` file. |
 
@@ -25,11 +26,11 @@ the owner web panel, and the super-admin panel.
 
 ## Live verification
 
-### Backend mirror (API) — ✅
-Pushed 2 accountants + per-accountant subscribers/receipts to a real account, then called `/api/account/stats`:
-- No filter → 2 subscribers, collected **15,000**, `counts.accountants = 2`.
-- `?accountantId=A1` → 1 subscriber, collected **10,000**, paid 1.
-- `?accountantId=A2` → 1 subscriber, collected **5,000**, unpaid 1.
+### Backend mirror (API) — ✅ (shared model)
+Pushed 2 accountants + 2 **shared** subscribers + receipts collected by each, then called `/api/account/stats`:
+- No filter → 2 subscribers, collected **15,000**, paid 1, unpaid 1, `counts.accountants = 2`.
+- `?accountantId=A1` → subscribers **2 (shared/global)**, collected **10,000** (A1's), paid/unpaid global.
+- `?accountantId=A2` → subscribers **2 (shared/global)**, collected **5,000** (A2's).
 
 ### Owner web panel (`#/my`) — ✅
 - Dashboard shows the **المحاسبون** (accountants) count card.

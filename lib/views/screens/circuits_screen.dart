@@ -4,8 +4,6 @@ import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
-import 'package:generatormanagment/data/models/accountant_model.dart';
-import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/views/widgets/app_form_field.dart';
 
 class CircuitsScreen extends StatefulWidget {
@@ -102,61 +100,24 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
   void _showAddCircuitDialog(BuildContext context) {
     final nameCtrl = TextEditingController();
     final phaseCtrl = TextEditingController();
-    // New circuits default to the parent board's accountant (owner-only field).
-    String? selectedAccountantId = widget.board.accountantId;
 
     Get.defaultDialog(
       title: "add_circuit".tr,
-      content: StatefulBuilder(
-        builder: (context, setLocalState) {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppTextField(
-                controller: nameCtrl,
-                label: "circuit_name".tr,
-                icon: Icons.electrical_services,
-              ),
-              const SizedBox(height: 14),
-              AppTextField(
-                controller: phaseCtrl,
-                label: "phase_optional".tr,
-                icon: Icons.bolt,
-              ),
-              if (auth.isAdmin) ...[
-                const SizedBox(height: 14),
-                FutureBuilder<List<Accountant>>(
-                  future: AccountantRepository().getAll(),
-                  builder: (context, snapshot) {
-                    final accountants = snapshot.data ?? const <Accountant>[];
-                    return DropdownButtonFormField<String?>(
-                      initialValue: selectedAccountantId,
-                      isExpanded: true,
-                      decoration: appInputDecoration(
-                        label: "assign_accountant".tr,
-                        icon: Icons.person_outline,
-                      ),
-                      items: [
-                        DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text("unassigned_owner".tr),
-                        ),
-                        ...accountants.map(
-                          (a) => DropdownMenuItem<String?>(
-                            value: a.id,
-                            child: Text(a.displayName),
-                          ),
-                        ),
-                      ],
-                      onChanged: (val) =>
-                          setLocalState(() => selectedAccountantId = val),
-                    );
-                  },
-                ),
-              ],
-            ],
-          );
-        },
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppTextField(
+            controller: nameCtrl,
+            label: "circuit_name".tr,
+            icon: Icons.electrical_services,
+          ),
+          const SizedBox(height: 14),
+          AppTextField(
+            controller: phaseCtrl,
+            label: "phase_optional".tr,
+            icon: Icons.bolt,
+          ),
+        ],
       ),
       textConfirm: "add".tr,
       textCancel: "cancel".tr,
@@ -166,9 +127,6 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
             widget.board.id,
             nameCtrl.text,
             phaseCtrl.text,
-            accountantId: auth.isAdmin
-                ? selectedAccountantId
-                : widget.board.accountantId,
           );
           Get.back();
           Get.snackbar(

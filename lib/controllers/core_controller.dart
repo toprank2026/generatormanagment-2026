@@ -15,9 +15,9 @@ class CoreController extends GetxController {
   final MonthlyPriceRepository _priceRepo = MonthlyPriceRepository();
   final AuthController _auth = Get.find();
 
-  /// Per-accountant read scope: null for the owner/admin (sees all), the
-  /// accountant's id otherwise (sees only their own data).
-  String? get _scope => _auth.scopeAccountantId;
+  // Boards, circuits and subscribers are SHARED across all accountants (the
+  // owner's common customer base), so their reads/deletes are never scoped by
+  // accountant — only receipts/expenses are per-accountant (see billing/reports).
 
   var boards = <Board>[].obs;
   var circuits = <Circuit>[].obs; // Currently selected board's circuits
@@ -85,7 +85,7 @@ class CoreController extends GetxController {
       final result = await _boardRepo.getAll(
         limit: boardsPerPage + 1,
         offset: (page - 1) * boardsPerPage,
-        accountantId: _scope,
+        accountantId: null,
       );
 
       List<Board> newItems;
@@ -138,7 +138,7 @@ class CoreController extends GetxController {
   }
 
   Future<void> deleteBoard(String id) async {
-    await _boardRepo.delete(id, accountantId: _scope);
+    await _boardRepo.delete(id, accountantId: null);
     loadBoards();
     _refreshDashboard();
     update();
@@ -162,7 +162,7 @@ class CoreController extends GetxController {
         boardId,
         limit: circuitsPerPage + 1,
         offset: (page - 1) * circuitsPerPage,
-        accountantId: _scope,
+        accountantId: null,
       );
 
       List<Circuit> newItems;
@@ -211,7 +211,7 @@ class CoreController extends GetxController {
   }
 
   Future<void> deleteCircuit(String id, String boardId) async {
-    await _circuitRepo.delete(id, accountantId: _scope);
+    await _circuitRepo.delete(id, accountantId: null);
     loadCircuits(boardId);
     _refreshDashboard();
     update();
@@ -235,7 +235,7 @@ class CoreController extends GetxController {
         query: query,
         limit: itemsPerPage + 1,
         offset: (page - 1) * itemsPerPage,
-        accountantId: _scope,
+        accountantId: null,
       );
 
       List<Subscriber> newItems;
@@ -280,7 +280,7 @@ class CoreController extends GetxController {
   }
 
   Future<void> deleteSubscriber(String id) async {
-    await _subscriberRepo.delete(id, accountantId: _scope);
+    await _subscriberRepo.delete(id, accountantId: null);
     loadSubscribers();
     _refreshDashboard();
     update();
@@ -308,7 +308,7 @@ class CoreController extends GetxController {
         month: month,
         pricePerAmp: price,
         isPaid: filter == 'paid',
-        accountantId: _scope,
+        accountantId: null,
       );
     } catch (e) {
       print("Error loading filtered subscribers: $e");
@@ -322,7 +322,7 @@ class CoreController extends GetxController {
     isLoading.value = true;
     try {
       subscribers.value =
-          await _subscriberRepo.getByBoard(boardId, accountantId: _scope);
+          await _subscriberRepo.getByBoard(boardId, accountantId: null);
     } finally {
       isLoading.value = false;
     }

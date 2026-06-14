@@ -68,10 +68,13 @@ class BillingController extends GetxController {
 
     try {
       // Fetch one extra item to check if there is a next page
+      // Subscribers are shared, but each accountant's history shows only the
+      // receipts THEY collected (owner/admin sees all).
       final result = await _receiptRepo.getBySubscriber(
         subscriberId,
         limit: historyItemsPerPage + 1,
         offset: (page - 1) * historyItemsPerPage,
+        accountantId: Get.find<AuthController>().scopeAccountantId,
       );
 
       List<Receipt> newItems;
@@ -149,13 +152,11 @@ class BillingController extends GetxController {
       priceSnapshot: mp.pricePerAmp,
       paidAmount: amount,
       remainingAfter: due - amount,
-      // Who physically collected (owner or accountant) ...
       performedByUserId: auth.currentUser.value?.id,
-      // ... vs. which accountant the invoice BELONGS to: the subscriber's
-      // owning accountant (NULL = owner-owned). This keeps per-accountant
-      // reports/filtering consistent regardless of who collected, and the
-      // printed invoice shows the right accountant.
-      accountantId: sub.accountantId,
+      // Subscribers are SHARED, so the invoice belongs to the accountant who
+      // COLLECTED it (the acting user) — this drives each accountant's separate
+      // history/reports and prints their name on the receipt.
+      accountantId: auth.currentUser.value?.id,
       issuedAt: DateTime.now().toIso8601String(),
     );
 

@@ -50,8 +50,10 @@ const num = (value) => {
  * @returns {Promise<object>} The `dashboard` payload for GET /api/account/stats.
  */
 async function buildDashboard(userId, counts, month, accountantId = null) {
-  // Optional per-accountant filter, merged into the entity queries.
-  const acc = accountantId ? { 'data.accountant_id': accountantId } : {};
+  // Boards/circuits/subscribers are SHARED across accountants → their counts
+  // and the paid/unpaid status are GLOBAL. Only the MONEY (collected/expenses)
+  // is per-accountant: when accountantId is set we scope those sums in JS to the
+  // receipts/expenses that accountant created. monthly_prices stays global.
   const [priceRow, subscribers, receipts, expenses, lastUpload, boardsCount, circuitsCount] = await Promise.all([
     // monthly_prices' device PK is the month string, so localId === month.
     SyncRecord.findOne(
@@ -59,12 +61,10 @@ async function buildDashboard(userId, counts, month, accountantId = null) {
       { data: 1 }
     ),
     SyncRecord.find(
-      { user: userId, entity: 'subscribers', deleted: false, ...acc },
+      { user: userId, entity: 'subscribers', deleted: false },
       { data: 1, localId: 1 }
     ),
-    // Only non-refunded receipts count toward collected + paid/unpaid, matching
-    // the app (a refunded receipt must not inflate the totals). $ne also keeps
-    // receipts with no explicit status (treated as valid).
+    // ALL non-refunded receipts for the month (global) — drives paid/unpaid.
     SyncRecord.find(
       {
         user: userId,
@@ -72,33 +72,35 @@ async function buildDashboard(userId, counts, month, accountantId = null) {
         deleted: false,
         'data.month': month,
         'data.status': { $ne: 'refunded' },
-        ...acc,
       },
       { data: 1 }
     ),
-    // Expense rows whose data.date starts with the month ('YYYY-MM...').
-    // month is validated digits+dash, so the regex needs no escaping.
+    // All expense rows for the month (global); scoped in JS for the total.
     SyncRecord.find(
-      { user: userId, entity: 'expenses', deleted: false, 'data.date': { $regex: '^' + month }, ...acc },
+      { user: userId, entity: 'expenses', deleted: false, 'data.date': { $regex: '^' + month } },
       { data: 1 }
     ),
     // Most recent sync activity of any kind (incl. deletions) — "last upload".
     SyncRecord.findOne({ user: userId }, { updatedAt: 1 }).sort({ updatedAt: -1 }),
-    // Boards/circuits counts (scoped to the accountant when filtering).
-    SyncRecord.countDocuments({ user: userId, entity: 'boards', deleted: false, ...acc }),
-    SyncRecord.countDocuments({ user: userId, entity: 'circuits', deleted: false, ...acc }),
+    // Boards/circuits counts (shared → global).
+    SyncRecord.countDocuments({ user: userId, entity: 'boards', deleted: false }),
+    SyncRecord.countDocuments({ user: userId, entity: 'circuits', deleted: false }),
   ]);
 
   const priceData = (priceRow && priceRow.data) || {};
   const pricePerAmp = num(priceData.price_per_amp ?? priceData.price ?? 0);
 
-  // Sum paid_amount per subscriber for this month (and the overall total).
+  // True when a row belongs to the selected accountant (or no filter set).
+  const inScope = (data) => !accountantId || (data || {}).accountant_id === accountantId;
+
+  // paidBySubscriber uses ALL receipts (paid/unpaid is global); `collected` is
+  // the selected accountant's own receipts (or all when unfiltered).
   let collected = 0;
   const paidBySubscriber = new Map();
   for (const r of receipts) {
     const data = r.data || {};
     const paid = num(data.paid_amount);
-    collected += paid;
+    if (inScope(data)) collected += paid;
     const sid = data.subscriber_id;
     if (sid != null) paidBySubscriber.set(sid, (paidBySubscriber.get(sid) || 0) + paid);
   }
@@ -113,8 +115,11 @@ async function buildDashboard(userId, counts, month, accountantId = null) {
     if (paid >= amps * pricePerAmp) paidCount += 1;
   }
 
+  // Expenses total scoped to the selected accountant (or all when unfiltered).
   let expensesTotal = 0;
-  for (const e of expenses) expensesTotal += num((e.data || {}).amount);
+  for (const e of expenses) {
+    if (inScope(e.data)) expensesTotal += num((e.data || {}).amount);
+  }
 
   return {
     month,

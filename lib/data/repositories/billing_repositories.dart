@@ -38,16 +38,25 @@ class ReceiptRepository {
     );
   }
 
+  // Receipt history for a subscriber. Subscribers are shared across accountants,
+  // but each accountant's HISTORY shows only the receipts THEY collected, so an
+  // optional [accountantId] scopes the list (null = owner/admin = all).
   Future<List<Receipt>> getBySubscriber(
     String subscriberId, {
     required int limit,
     required int offset,
+    String? accountantId,
   }) async {
     final db = await _dbHelper.database;
+    final where = accountantId == null
+        ? 'subscriber_id = ?'
+        : 'subscriber_id = ? AND accountant_id = ?';
+    final args =
+        accountantId == null ? [subscriberId] : [subscriberId, accountantId];
     final List<Map<String, dynamic>> maps = await db.query(
       'receipts',
-      where: 'subscriber_id = ?',
-      whereArgs: [subscriberId],
+      where: where,
+      whereArgs: args,
       orderBy: 'issued_at DESC',
       limit: limit,
       offset: offset,

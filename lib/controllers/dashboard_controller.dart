@@ -44,9 +44,11 @@ class DashboardController extends GetxController {
   Future<void> loadStats() async {
     isLoading.value = true;
     try {
-      final scope = _scope;
-      // 1. Subscribers & Amps (scoped to the acting accountant, if any)
-      final subs = await _subRepo.getAll(limit: 10000, accountantId: scope);
+      // Subscriber base (subscribers/boards/circuits) is SHARED → global counts
+      // for everyone. Only the money (collected) is per-accountant.
+      final scope = _scope; // accountant id (null = owner/all) — money only
+      // 1. Subscribers & Amps (shared, global)
+      final subs = await _subRepo.getAll(limit: 10000);
       totalSubscribers.value = subs.length;
       totalAmps.value = subs.fold(0.0, (sum, s) => sum + s.amps);
 
@@ -57,36 +59,33 @@ class DashboardController extends GetxController {
 
       double calculatedTotalDue = totalAmps.value * price;
 
-      // 3. Collected
-      // Fetch real collected amount from DB
+      // 3. Collected — this accountant's own receipts (owner = all)
       totalCollected.value =
           await _receiptRepo.getCollectedSum(month, accountantId: scope);
 
       // Remaining = Total Expected - Collected
       totalDue.value = calculatedTotalDue - totalCollected.value;
 
-      // 4. Paid / Unpaid Counts
+      // 4. Paid / Unpaid Counts (shared subscriber base → global)
       paidCount.value = await _subRepo.countByPaymentStatus(
         month: month,
         pricePerAmp: price,
         isPaid: true,
-        accountantId: scope,
       );
       unpaidCount.value = await _subRepo.countByPaymentStatus(
         month: month,
         pricePerAmp: price,
         isPaid: false,
-        accountantId: scope,
       );
 
-      // 5. Boards Count
-      final boardsList = await _boardRepo.getAll(accountantId: scope);
+      // 5. Boards Count (shared, global)
+      final boardsList = await _boardRepo.getAll();
       boardsCount.value = boardsList.length;
 
-      // 6. Circuits Count
+      // 6. Circuits Count (shared, global)
       final List<Circuit> allCircuits = [];
       for (var b in boardsList) {
-        final circs = await _circuitRepo.getByBoardId(b.id, accountantId: scope);
+        final circs = await _circuitRepo.getByBoardId(b.id);
         allCircuits.addAll(circs);
       }
       circuitsCount.value = allCircuits.length;

@@ -78,10 +78,12 @@ class ReportsController extends GetxController {
     isLoading.value = true;
     try {
       final m = month.value;
+      // Money (collected/expenses/payments list) is per-accountant; the shared
+      // subscriber base (total/amps/paid/unpaid/expected) is global.
       final scope = _scope;
 
-      // 1. Subscribers & Amps
-      final subs = await _subRepo.getAll(limit: 10000, accountantId: scope);
+      // 1. Subscribers & Amps (shared, global)
+      final subs = await _subRepo.getAll(limit: 10000);
       totalSubscribers.value = subs.length;
       totalAmps.value = subs.fold(0.0, (sum, s) => sum + s.amps);
 
@@ -89,7 +91,7 @@ class ReportsController extends GetxController {
       final priceObj = await _priceRepo.getByMonth(m);
       pricePerAmp.value = priceObj?.pricePerAmp ?? 0.0;
 
-      // 3. Financials
+      // 3. Financials — collected/expenses scoped to the accountant (owner=all)
       expectedTotal.value = totalAmps.value * pricePerAmp.value;
       collectedTotal.value =
           await _receiptRepo.getCollectedSum(m, accountantId: scope);
@@ -98,18 +100,16 @@ class ReportsController extends GetxController {
           await _expenseRepo.getTotalExpenses(m, accountantId: scope);
       netProfit.value = collectedTotal.value - expensesTotal.value;
 
-      // 4. Paid / Unpaid counts (same formula as the dashboard)
+      // 4. Paid / Unpaid counts (shared subscriber base → global)
       paidCount.value = await _subRepo.countByPaymentStatus(
         month: m,
         pricePerAmp: pricePerAmp.value,
         isPaid: true,
-        accountantId: scope,
       );
       unpaidCount.value = await _subRepo.countByPaymentStatus(
         month: m,
         pricePerAmp: pricePerAmp.value,
         isPaid: false,
-        accountantId: scope,
       );
 
       // 5. The month's payments list (newest first), page 1.

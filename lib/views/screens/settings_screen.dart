@@ -8,10 +8,8 @@ import 'package:generatormanagment/views/screens/subscription_screen.dart';
 import 'package:generatormanagment/views/screens/backup_screen.dart';
 import 'package:generatormanagment/views/screens/sync_screen.dart';
 import 'package:generatormanagment/views/screens/user_switch_screen.dart';
-import 'package:generatormanagment/views/widgets/app_form_field.dart';
-import 'package:generatormanagment/core/permissions.dart';
+import 'package:generatormanagment/views/screens/accountants_screen.dart';
 import 'package:generatormanagment/data/models/account.dart';
-import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/repositories/device_repository.dart';
 import 'package:generatormanagment/utils/bluetooth_print_service.dart';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
@@ -200,123 +198,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             }),
 
-            // Accountants Management Section (owner-only). Lists each
-            // accountant (display name + active state); the owner can add,
-            // edit (name / active / reset password) and delete them. Obx so it
-            // reacts to a user switch (hidden while an accountant is acting).
+            // Accountants (owner-only). Opens the dedicated management screen.
+            // Obx so it reacts to a user switch (hidden while an accountant
+            // is acting on this device).
             Obx(() {
               if (!auth.isAdmin) return const SizedBox.shrink();
               return Column(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
-                    child: Row(
-                      children: [
-                        Text(
-                          'accountants'.tr,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blueGrey,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Live count of accountants (number + manage in one panel).
-                        Obx(
-                          () => Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1565C0),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '${controller.accountants.length}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Column(
-                      children: [
-                        ListTile(
-                          leading: const Icon(
-                            Icons.person_add,
-                            color: Color(0xFF1565C0),
-                          ),
-                          title: Text('add_accountant'.tr),
-                          trailing:
-                              const Icon(Icons.arrow_forward_ios, size: 16),
-                          onTap: () => _showAddAccountantDialog(controller),
-                        ),
-                        const Divider(height: 1),
-                        Obx(() {
-                          if (controller.isLoading.value) {
-                            return const Padding(
-                              padding: EdgeInsets.all(12.0),
-                              child: Center(child: CircularProgressIndicator()),
-                            );
-                          }
-                          if (controller.accountants.isEmpty) {
-                            return Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Text('no_accountants'.tr),
-                            );
-                          }
-                          return ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: controller.accountants.length,
-                            separatorBuilder: (c, i) =>
-                                const Divider(height: 1),
-                            itemBuilder: (context, index) {
-                              final a = controller.accountants[index];
-                              return ListTile(
-                                leading: Icon(
-                                  Icons.person,
-                                  color:
-                                      a.active ? Colors.green : Colors.grey,
-                                ),
-                                title: Text(a.displayName),
-                                subtitle: Text(a.username),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.edit,
-                                        color: Color(0xFF1565C0),
-                                      ),
-                                      onPressed: () =>
-                                          _showEditAccountantDialog(
-                                              controller, a),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.delete,
-                                        color: Colors.redAccent,
-                                      ),
-                                      onPressed: () =>
-                                          _confirmDeleteAccountant(
-                                              controller, a.id),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          );
-                        }),
-                      ],
+                    child: ListTile(
+                      leading:
+                          const Icon(Icons.badge, color: Color(0xFF1565C0)),
+                      title: Text('accountants'.tr),
+                      subtitle: Text('manage_accountants_subtitle'.tr),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Get.to(() => const AccountantsScreen()),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -730,178 +630,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Get.back(); // close dialog
           Get.snackbar('error'.tr, "${'manage_devices'.tr}: $e");
         }
-      },
-    );
-  }
-
-  /// Owner-granted permission checkboxes (bound to a reactive set). Collecting
-  /// payments + printing are always allowed and are not listed here.
-  Widget _permissionsSection(RxSet<String> selected) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            const Icon(Icons.verified_user_outlined,
-                size: 18, color: kAppBlue),
-            const SizedBox(width: 6),
-            Text('permissions'.tr,
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, color: Colors.blueGrey)),
-          ],
-        ),
-        Padding(
-          padding: const EdgeInsets.only(top: 2, bottom: 2),
-          child: Text('permissions_hint'.tr,
-              style: const TextStyle(fontSize: 11, color: Colors.grey)),
-        ),
-        ...Perm.all.map(
-          (p) => Obx(
-            () => CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              activeColor: kAppBlue,
-              controlAffinity: ListTileControlAffinity.leading,
-              title: Text('perm_$p'.tr, style: const TextStyle(fontSize: 14)),
-              value: selected.contains(p),
-              onChanged: (v) =>
-                  v == true ? selected.add(p) : selected.remove(p),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _showAddAccountantDialog(SettingsController controller) {
-    final nameCtrl = TextEditingController();
-    final userCtrl = TextEditingController();
-    final passCtrl = TextEditingController();
-    final RxSet<String> perms = <String>{}.obs;
-
-    Get.defaultDialog(
-      title: 'add_accountant'.tr,
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppTextField(
-              controller: nameCtrl,
-              label: 'full_name'.tr,
-              icon: Icons.badge_outlined,
-            ),
-            const SizedBox(height: 14),
-            AppTextField(
-              controller: userCtrl,
-              label: 'username'.tr,
-              icon: Icons.alternate_email,
-            ),
-            const SizedBox(height: 14),
-            AppTextField(
-              controller: passCtrl,
-              label: 'password'.tr,
-              icon: Icons.lock_outline,
-              obscureText: true,
-            ),
-            _permissionsSection(perms),
-          ],
-        ),
-      ),
-      textConfirm: 'add'.tr,
-      textCancel: 'cancel'.tr,
-      confirmTextColor: Colors.white,
-      buttonColor: kAppBlue,
-      onConfirm: () {
-        if (nameCtrl.text.trim().isEmpty ||
-            userCtrl.text.trim().isEmpty ||
-            passCtrl.text.trim().isEmpty) {
-          Get.snackbar(
-            'error'.tr,
-            'fill_all_fields'.tr,
-            backgroundColor: Colors.redAccent,
-            colorText: Colors.white,
-          );
-          return;
-        }
-        Get.back(); // close dialog
-        controller.createAccountant(
-          nameCtrl.text.trim(),
-          userCtrl.text.trim(),
-          passCtrl.text,
-          permissions: perms.toList(),
-        );
-      },
-    );
-  }
-
-  void _showEditAccountantDialog(
-      SettingsController controller, Accountant accountant) {
-    final nameCtrl = TextEditingController(text: accountant.name ?? '');
-    final passCtrl = TextEditingController();
-    final RxBool active = accountant.active.obs;
-    final RxSet<String> perms = accountant.permissions.toSet().obs;
-
-    Get.defaultDialog(
-      title: 'edit_accountant'.tr,
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppTextField(
-              controller: nameCtrl,
-              label: 'full_name'.tr,
-              icon: Icons.badge_outlined,
-            ),
-            const SizedBox(height: 14),
-            AppTextField(
-              controller: passCtrl,
-              label: 'password'.tr,
-              hint: 'leave_blank_keep_password'.tr,
-              icon: Icons.lock_outline,
-              obscureText: true,
-            ),
-            const SizedBox(height: 6),
-            Obx(
-              () => SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text('active'.tr),
-                value: active.value,
-                onChanged: (v) => active.value = v,
-              ),
-            ),
-            _permissionsSection(perms),
-          ],
-        ),
-      ),
-      textConfirm: 'save'.tr,
-      textCancel: 'cancel'.tr,
-      confirmTextColor: Colors.white,
-      buttonColor: kAppBlue,
-      onConfirm: () {
-        Get.back(); // close dialog
-        controller.updateAccountant(
-          accountant.id,
-          name: nameCtrl.text.trim(),
-          active: active.value,
-          newPassword: passCtrl.text.trim().isEmpty ? null : passCtrl.text,
-          permissions: perms.toList(),
-        );
-      },
-    );
-  }
-
-  void _confirmDeleteAccountant(SettingsController controller, String id) {
-    Get.defaultDialog(
-      title: 'delete'.tr,
-      middleText: 'delete_confirm'.tr,
-      textConfirm: 'delete'.tr,
-      textCancel: 'cancel'.tr,
-      confirmTextColor: Colors.white,
-      buttonColor: Colors.red,
-      onConfirm: () {
-        controller.deleteAccountant(id);
-        Get.back();
       },
     );
   }
