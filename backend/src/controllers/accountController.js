@@ -12,6 +12,7 @@ const STAT_ENTITIES = [
   'receipts',
   'expenses',
   'monthly_prices',
+  'accountants',
 ];
 
 /**
@@ -42,16 +43,25 @@ const num = (value) => {
  * @param {*} userId Mongo id of the caller.
  * @param {object} counts Per-entity counts (reused for boards/circuits).
  * @param {string} month The month to report on, 'YYYY-MM' (already validated).
+ * @param {string|null} accountantId When set, scope every figure to that one
+ *   accountant (subscribers/receipts/expenses with data.accountant_id == it);
+ *   null = the whole owner account (all accountants). monthly_prices stays
+ *   global (one shared price per month).
  * @returns {Promise<object>} The `dashboard` payload for GET /api/account/stats.
  */
-async function buildDashboard(userId, counts, month) {
-  const [priceRow, subscribers, receipts, expenses, lastUpload] = await Promise.all([
+async function buildDashboard(userId, counts, month, accountantId = null) {
+  // Optional per-accountant filter, merged into the entity queries.
+  const acc = accountantId ? { 'data.accountant_id': accountantId } : {};
+  const [priceRow, subscribers, receipts, expenses, lastUpload, boardsCount, circuitsCount] = await Promise.all([
     // monthly_prices' device PK is the month string, so localId === month.
     SyncRecord.findOne(
       { user: userId, entity: 'monthly_prices', deleted: false, localId: month },
       { data: 1 }
     ),
-    SyncRecord.find({ user: userId, entity: 'subscribers', deleted: false }, { data: 1, localId: 1 }),
+    SyncRecord.find(
+      { user: userId, entity: 'subscribers', deleted: false, ...acc },
+      { data: 1, localId: 1 }
+    ),
     // Only non-refunded receipts count toward collected + paid/unpaid, matching
     // the app (a refunded receipt must not inflate the totals). $ne also keeps
     // receipts with no explicit status (treated as valid).
@@ -62,17 +72,21 @@ async function buildDashboard(userId, counts, month) {
         deleted: false,
         'data.month': month,
         'data.status': { $ne: 'refunded' },
+        ...acc,
       },
       { data: 1 }
     ),
     // Expense rows whose data.date starts with the month ('YYYY-MM...').
     // month is validated digits+dash, so the regex needs no escaping.
     SyncRecord.find(
-      { user: userId, entity: 'expenses', deleted: false, 'data.date': { $regex: '^' + month } },
+      { user: userId, entity: 'expenses', deleted: false, 'data.date': { $regex: '^' + month }, ...acc },
       { data: 1 }
     ),
     // Most recent sync activity of any kind (incl. deletions) — "last upload".
     SyncRecord.findOne({ user: userId }, { updatedAt: 1 }).sort({ updatedAt: -1 }),
+    // Boards/circuits counts (scoped to the accountant when filtering).
+    SyncRecord.countDocuments({ user: userId, entity: 'boards', deleted: false, ...acc }),
+    SyncRecord.countDocuments({ user: userId, entity: 'circuits', deleted: false, ...acc }),
   ]);
 
   const priceData = (priceRow && priceRow.data) || {};
@@ -113,8 +127,8 @@ async function buildDashboard(userId, counts, month) {
     collected,
     expensesTotal,
     netProfit: collected - expensesTotal,
-    boards: counts.boards,
-    circuits: counts.circuits,
+    boards: boardsCount,
+    circuits: circuitsCount,
     lastUploadAt: lastUpload ? lastUpload.updatedAt : null,
   };
 }
@@ -143,7 +157,9 @@ const getMyStats = asyncHandler(async (req, res) => {
   for (const entity of STAT_ENTITIES) counts[entity] = 0;
   for (const row of rows) counts[row._id] = row.count;
 
-  const dashboard = await buildDashboard(req.user._id, counts, month);
+  // Optional admin/owner filter: scope the dashboard to one accountant.
+  const accId = String(req.query.accountantId || '').trim() || null;
+  const dashboard = await buildDashboard(req.user._id, counts, month, accId);
 
   res.status(200).json({ counts, dashboard });
 });

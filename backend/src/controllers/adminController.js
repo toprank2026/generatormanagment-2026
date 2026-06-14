@@ -174,6 +174,7 @@ const SEARCH_FIELDS = {
   receipts: ['receipt_no', 'month'],
   expenses: ['category', 'note'],
   monthly_prices: ['month'],
+  accountants: ['name', 'username'],
 };
 
 /** Escape regex metacharacters so q is treated as a literal substring. */
@@ -292,6 +293,7 @@ const labelFor = (entity, data) => {
     case 'receipts': return data.receipt_no != null ? `#${data.receipt_no}` : null;
     case 'expenses': return [data.category, data.amount].filter((v) => v != null).join(' — ') || null;
     case 'monthly_prices': return data.month || null;
+    case 'accountants': return data.name || data.username || null;
     default: return null;
   }
 };

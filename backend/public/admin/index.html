@@ -309,6 +309,7 @@
   .app-chip.indigo{background:#e8eaf6;color:#3949ab}
   .app-chip.teal{background:#e0f2f1;color:#00897b}
   .app-chip.orange{background:#fff3e0;color:#fb8c00}
+  .app-chip.purple{background:#f3e8fd;color:#7b3ff2}
   .app-stat .num{font-size:26px;font-weight:800;line-height:1.2}
   .app-stat .num.sm{font-size:18px}
   .app-stat .lbl{color:var(--muted);font-size:13px;font-weight:600;margin-top:2px}
@@ -322,6 +323,14 @@
   }
   .rep-month .rep-chev:hover{background:var(--primary-light)}
   .rep-month .rep-month-lbl{font-weight:800;font-size:17px}
+  .rep-acc{display:flex;align-items:center;gap:8px;padding:10px 12px;margin-bottom:14px}
+  .rep-acc .rep-acc-ic{color:var(--primary);font-size:20px;display:inline-flex}
+  .rep-acc .rep-acc-lbl{font-weight:800;font-size:14px;white-space:nowrap}
+  .rep-acc .rep-acc-select{
+    flex:1;min-width:0;padding:9px 10px;border:1px solid var(--border);border-radius:10px;
+    background:#fff;color:var(--text);font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;
+  }
+  .rep-acc .rep-acc-select:focus{outline:none;border-color:var(--primary)}
   .rep-center{display:flex;flex-direction:column;align-items:center;gap:8px}
   .rep-chart-lbl{color:var(--muted);font-weight:700;font-size:13px}
   .rep-legend{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;font-size:13px;font-weight:700}
@@ -513,7 +522,12 @@ var API={
   login:function(username,password){ return api("POST","/api/auth/login",{username:username,password:password}); },
   me:function(){ return api("GET","/api/auth/me"); },
   // Owner self-service: the signed-in account's own stats + mirrored data.
-  myStats:function(month){ return api("GET","/api/account/stats"+(month?("?month="+encodeURIComponent(month)):"")); },
+  myStats:function(month,accountantId){
+    var q=[];
+    if(month) q.push("month="+encodeURIComponent(month));
+    if(accountantId) q.push("accountantId="+encodeURIComponent(accountantId));
+    return api("GET","/api/account/stats"+(q.length?("?"+q.join("&")):""));
+  },
   myData:function(entity,opts){ return api("GET","/api/account/data"+syncDataQuery(entity,opts)); },
   myRecent:function(limit,page){ return api("GET","/api/account/recent?limit="+(limit||10)+"&page="+(page||1)); },
   users:function(){ return api("GET","/api/admin/users"); },
@@ -1920,14 +1934,16 @@ function viewMyDashboard(){
         {label:"المشتركين غير المسددين",value:dash.unpaidCount,icon:"error",chip:"red",href:"#/my/data/subscribers"},
         {label:"إجمالي البوردات",value:dash.boards,icon:"grid_view",chip:"indigo",href:"#/my/data/boards"},
         {label:"الجوزات",value:dash.circuits,icon:"electrical_services",chip:"teal",href:"#/my/data/circuits"},
-        {label:"الوصولات",value:counts.receipts,icon:"receipt_long",chip:"orange",href:"#/my/data/receipts"}
+        {label:"الوصولات",value:counts.receipts,icon:"receipt_long",chip:"orange",href:"#/my/data/receipts"},
+        {label:"المحاسبون",value:counts.accountants,icon:"badge",chip:"purple"}
       ];
     } else {
       cards=[
         {label:"إجمالي المشتركين",value:counts.subscribers,icon:"groups",chip:"blue",href:"#/my/data/subscribers"},
         {label:"إجمالي البوردات",value:counts.boards,icon:"grid_view",chip:"indigo",href:"#/my/data/boards"},
         {label:"الجوزات",value:counts.circuits,icon:"electrical_services",chip:"teal",href:"#/my/data/circuits"},
-        {label:"الوصولات",value:counts.receipts,icon:"receipt_long",chip:"orange",href:"#/my/data/receipts"}
+        {label:"الوصولات",value:counts.receipts,icon:"receipt_long",chip:"orange",href:"#/my/data/receipts"},
+        {label:"المحاسبون",value:counts.accountants,icon:"badge",chip:"purple"}
       ];
     }
     var grid=el("div",{class:"app-grid"});
@@ -2047,6 +2063,8 @@ function repChartCard(title,body){
 }
 function viewMyReports(){
   var month=repMonthNow();   // view-local state; chevrons reload the same view
+  var accountantId="";       // "" = all accountants; persists across month prev/next
+  var accountants=null;      // [{id,name}] once loaded; null until first fetch resolves
   function monthPicker(){
     return el("div",{class:"card app-card rep-month"},[
       el("button",{class:"rep-chev",text:"‹",title:"الشهر السابق",onclick:function(){ month=repMonthShift(month,-1); load(); }}),
@@ -2054,22 +2072,48 @@ function viewMyReports(){
       el("button",{class:"rep-chev",text:"›",title:"الشهر التالي",onclick:function(){ month=repMonthShift(month,1); load(); }})
     ]);
   }
+  // Accountant scope filter: "كل المحاسبين" + one option per accountant.
+  function accountantFilter(){
+    var opts=[el("option",{value:"",selected:(accountantId==="")?"":false,text:"كل المحاسبين"})];
+    (accountants||[]).forEach(function(a){
+      opts.push(el("option",{value:a.id,selected:(String(a.id)===String(accountantId))?"":false,text:a.name}));
+    });
+    var sel=el("select",{class:"rep-acc-select",onchange:function(){ accountantId=this.value; load(); }},opts);
+    return el("div",{class:"card app-card rep-acc"},[
+      el("span",{class:"rep-acc-ic"},[mi("badge")]),
+      el("span",{class:"rep-acc-lbl",text:"المحاسب"}),
+      sel
+    ]);
+  }
   function paint(inner){
     var content=el("div");
     content.appendChild(el("div",{class:"app-section-title",text:"التقارير الشهرية"}));
     content.appendChild(monthPicker());
+    content.appendChild(accountantFilter());
     content.appendChild(inner);
     shell("#/my/reports",content);
   }
+  // Fetch the owner's accountants once for the dropdown; failures leave the
+  // filter as "all" only (the report itself still loads).
+  function ensureAccountants(){
+    if(accountants!==null) return Promise.resolve(accountants);
+    return API.myData("accountants",{page:1,limit:200}).then(function(res){
+      accountants=normalizeList(res,"records").map(function(r){
+        var d=(r&&r.data)||{};
+        return {id:d.id,name:(r&&r.label)||d.name||d.username||String(d.id||"")};
+      }).filter(function(a){ return a.id!=null && a.id!==""; });
+      return accountants;
+    }).catch(function(){ accountants=[]; return accountants; });
+  }
   function load(){
-    var reqMonth=month;
+    var reqMonth=month, reqAcc=accountantId;
     paint(loadingBlock("جارٍ تحميل تقرير "+reqMonth+"…"));
-    API.myStats(reqMonth).then(function(res){
-      if(reqMonth!==month) return;          // stale response after another switch
-      paint(reportBody(res));
+    Promise.all([API.myStats(reqMonth,reqAcc),ensureAccountants()]).then(function(both){
+      if(reqMonth!==month||reqAcc!==accountantId) return;   // stale response after another switch
+      paint(reportBody(both[0]));
     }).catch(function(err){
       if(err.status===401) return;
-      if(reqMonth!==month) return;
+      if(reqMonth!==month||reqAcc!==accountantId) return;
       if(isFeatureDisabled(err)){ shell("#/my/reports",ownerFeatureBlock()); return; }
       paint(errorBlock(err,load));
     });
