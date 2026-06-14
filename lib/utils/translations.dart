@@ -4,7 +4,7 @@ class Messages extends Translations {
   @override
   Map<String, Map<String, String>> get keys => {
     'en_US': {
-      'app_name': 'Moldati Owner',
+      'app_name': 'Flash',
       'language': 'Language',
       'settings': 'Settings',
       'logout': 'Log Out',
@@ -178,7 +178,7 @@ class Messages extends Translations {
       'admin_username': 'Admin Username',
       'create_admin_start': 'CREATE ADMIN & START',
       'already_have_account': 'Already have an account? ',
-      'home_welcome': 'Welcome to Moldati Owner App',
+      'home_welcome': 'Welcome to Flash',
       'home_logged_in_as': 'Logged in as:',
       'system_administrator': 'System Administrator',
       'amps_invalid': 'Please enter a valid amps value',
@@ -256,7 +256,7 @@ class Messages extends Translations {
       'logout_restart': 'Logout & Restart',
       'import_execution_failed': 'Import execution failed',
       'offline_load_plans': 'You are offline. Connect to load plans.',
-      'receipt_header': 'MOLDATI GENERATOR',
+      'receipt_header': 'FLASH GENERATOR',
       'receipt_date': 'Date',
       'receipt_customer': 'Customer',
       'receipt_month': 'Month',
@@ -309,7 +309,7 @@ class Messages extends Translations {
       'feature_owner_panel': 'Owner dashboard',
     },
     'ar_AR': {
-      'app_name': 'مالك مولداتي',
+      'app_name': 'فلاش',
       'language': 'اللغة',
       'settings': 'الإعدادات',
       'logout': 'تسجيل الخروج',
@@ -483,7 +483,7 @@ class Messages extends Translations {
       'admin_username': 'اسم المستخدم للمسؤول',
       'create_admin_start': 'إنشاء المسؤول والبدء',
       'already_have_account': 'لديك حساب بالفعل؟ ',
-      'home_welcome': 'مرحباً بك في تطبيق مالك مولداتي',
+      'home_welcome': 'مرحباً بك في تطبيق فلاش',
       'home_logged_in_as': 'مسجّل الدخول باسم:',
       'system_administrator': 'مسؤول النظام',
       'amps_invalid': 'الرجاء إدخال قيمة أمبير صحيحة',
@@ -561,7 +561,7 @@ class Messages extends Translations {
       'logout_restart': 'تسجيل الخروج وإعادة التشغيل',
       'import_execution_failed': 'فشل تنفيذ الاستيراد',
       'offline_load_plans': 'أنت غير متصل بالإنترنت. اتصل لتحميل الخطط.',
-      'receipt_header': 'مولدات مولداتي',
+      'receipt_header': 'مولدات فلاش',
       'receipt_date': 'التاريخ',
       'receipt_customer': 'الزبون',
       'receipt_month': 'الشهر',

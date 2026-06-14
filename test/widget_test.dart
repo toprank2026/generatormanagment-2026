@@ -47,7 +47,7 @@ void main() {
     await tester.pumpWidget(_buildApp(const Locale('en', 'US')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Moldati Owner'), findsOneWidget);
+    expect(find.text('Flash'), findsOneWidget);
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Dashboard'), findsOneWidget);
 
@@ -59,7 +59,7 @@ void main() {
     await tester.pumpWidget(_buildApp(const Locale('ar', 'AR')));
     await tester.pumpAndSettle();
 
-    expect(find.text('مالك مولداتي'), findsOneWidget);
+    expect(find.text('فلاش'), findsOneWidget);
     expect(find.text('الإعدادات'), findsOneWidget);
     expect(find.text('لوحة التحكم'), findsOneWidget);
 

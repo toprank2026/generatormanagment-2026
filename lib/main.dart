@@ -46,7 +46,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return GetMaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Moldati Owner',
+      title: 'Flash',
       translations: Messages(), // your translations class
       locale: initialLocale, // default locale, or use Get.deviceLocale
       fallbackLocale: const Locale('en', 'US'),

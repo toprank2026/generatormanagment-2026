@@ -197,7 +197,7 @@ class SettingsController extends GetxController {
       // Create a temporary file with a timestamped name
       final tempDir = await getTemporaryDirectory();
       String fileName =
-          'moldati_backup_${DateTime.now().year}${DateTime.now().month}${DateTime.now().day}_${DateTime.now().hour}${DateTime.now().minute}.db';
+          'flash_backup_${DateTime.now().year}${DateTime.now().month}${DateTime.now().day}_${DateTime.now().hour}${DateTime.now().minute}.db';
       final tempFile = File(p.join(tempDir.path, fileName));
 
       // Copy db to temp file
@@ -207,7 +207,7 @@ class SettingsController extends GetxController {
       await Share.shareXFiles(
         [XFile(tempFile.path)],
         text:
-            'Moldati Database Backup ${DateTime.now().toString().split('.')[0]}',
+            'Flash Database Backup ${DateTime.now().toString().split('.')[0]}',
       );
     } catch (e) {
       Get.snackbar('error'.tr, "${'export_failed'.tr}: $e");
