@@ -5,6 +5,9 @@ class Expense {
   final String? note;
   final String date;
   final String? createdByUserId;
+  // Owning accountant (NULL = owner-owned). Expenses are owner-only today, but
+  // the column keeps per-accountant report filtering uniform with the rest.
+  final String? accountantId;
   final String? createdAt;
 
   Expense({
@@ -14,6 +17,7 @@ class Expense {
     this.note,
     required this.date,
     this.createdByUserId,
+    this.accountantId,
     this.createdAt,
   });
 
@@ -25,6 +29,7 @@ class Expense {
       'note': note,
       'date': date,
       'created_by_user_id': createdByUserId,
+      'accountant_id': accountantId,
       'created_at': createdAt,
     };
   }
@@ -37,6 +42,7 @@ class Expense {
       note: map['note'],
       date: map['date'],
       createdByUserId: map['created_by_user_id'],
+      accountantId: map['accountant_id'],
       createdAt: map['created_at'],
     );
   }

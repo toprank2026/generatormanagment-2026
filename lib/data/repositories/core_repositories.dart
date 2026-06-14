@@ -2,6 +2,11 @@ import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:sqflite/sqflite.dart';
 
+// Per-accountant scoping convention used across these repositories:
+//   accountantId == null  -> owner/admin view: no filter (sees & owns all).
+//   accountantId != null  -> only rows whose accountant_id matches.
+// The acting layer (AuthController.scopeAccountantId) decides which to pass.
+
 class BoardRepository {
   final DbHelper _dbHelper = DbHelper();
 
@@ -25,25 +30,47 @@ class BoardRepository {
   }
 
   /// Cascades manually (SQLite FK enforcement is off): removes the board's
-  /// circuits, subscribers and their receipts so no orphan rows remain.
-  Future<int> delete(String id) async {
+  /// circuits, subscribers and their receipts so no orphan rows remain. When
+  /// [accountantId] is given (an accountant), only that accountant's own rows
+  /// are touched — never another accountant's data under the same board.
+  Future<int> delete(String id, {String? accountantId}) async {
     final db = await _dbHelper.database;
     return await db.transaction((txn) async {
+      if (accountantId == null) {
+        await txn.delete(
+          'receipts',
+          where:
+              'subscriber_id IN (SELECT id FROM subscribers WHERE board_id = ?)',
+          whereArgs: [id],
+        );
+        await txn.delete('subscribers', where: 'board_id = ?', whereArgs: [id]);
+        await txn.delete('circuits', where: 'board_id = ?', whereArgs: [id]);
+        return await txn.delete('boards', where: 'id = ?', whereArgs: [id]);
+      }
       await txn.delete(
         'receipts',
-        where: 'subscriber_id IN (SELECT id FROM subscribers WHERE board_id = ?)',
-        whereArgs: [id],
+        where:
+            'subscriber_id IN (SELECT id FROM subscribers WHERE board_id = ? AND accountant_id = ?) AND accountant_id = ?',
+        whereArgs: [id, accountantId, accountantId],
       );
-      await txn.delete('subscribers', where: 'board_id = ?', whereArgs: [id]);
-      await txn.delete('circuits', where: 'board_id = ?', whereArgs: [id]);
-      return await txn.delete('boards', where: 'id = ?', whereArgs: [id]);
+      await txn.delete('subscribers',
+          where: 'board_id = ? AND accountant_id = ?',
+          whereArgs: [id, accountantId]);
+      await txn.delete('circuits',
+          where: 'board_id = ? AND accountant_id = ?',
+          whereArgs: [id, accountantId]);
+      return await txn.delete('boards',
+          where: 'id = ? AND accountant_id = ?', whereArgs: [id, accountantId]);
     });
   }
 
-  Future<List<Board>> getAll({int limit = -1, int offset = 0}) async {
+  Future<List<Board>> getAll(
+      {int limit = -1, int offset = 0, String? accountantId}) async {
     final db = await _dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'boards',
+      where: accountantId == null ? null : 'accountant_id = ?',
+      whereArgs: accountantId == null ? null : [accountantId],
       orderBy: 'name ASC',
       limit: limit < 0 ? null : limit,
       offset: limit < 0 ? null : offset,
@@ -75,16 +102,31 @@ class CircuitRepository {
   }
 
   /// Cascades manually: removes the circuit's subscribers and their receipts.
-  Future<int> delete(String id) async {
+  Future<int> delete(String id, {String? accountantId}) async {
     final db = await _dbHelper.database;
     return await db.transaction((txn) async {
+      if (accountantId == null) {
+        await txn.delete(
+          'receipts',
+          where:
+              'subscriber_id IN (SELECT id FROM subscribers WHERE circuit_id = ?)',
+          whereArgs: [id],
+        );
+        await txn.delete('subscribers',
+            where: 'circuit_id = ?', whereArgs: [id]);
+        return await txn.delete('circuits', where: 'id = ?', whereArgs: [id]);
+      }
       await txn.delete(
         'receipts',
-        where: 'subscriber_id IN (SELECT id FROM subscribers WHERE circuit_id = ?)',
-        whereArgs: [id],
+        where:
+            'subscriber_id IN (SELECT id FROM subscribers WHERE circuit_id = ? AND accountant_id = ?) AND accountant_id = ?',
+        whereArgs: [id, accountantId, accountantId],
       );
-      await txn.delete('subscribers', where: 'circuit_id = ?', whereArgs: [id]);
-      return await txn.delete('circuits', where: 'id = ?', whereArgs: [id]);
+      await txn.delete('subscribers',
+          where: 'circuit_id = ? AND accountant_id = ?',
+          whereArgs: [id, accountantId]);
+      return await txn.delete('circuits',
+          where: 'id = ? AND accountant_id = ?', whereArgs: [id, accountantId]);
     });
   }
 
@@ -92,12 +134,17 @@ class CircuitRepository {
     String boardId, {
     int limit = -1,
     int offset = 0,
+    String? accountantId,
   }) async {
     final db = await _dbHelper.database;
+    final where = accountantId == null
+        ? 'board_id = ?'
+        : 'board_id = ? AND accountant_id = ?';
+    final args = accountantId == null ? [boardId] : [boardId, accountantId];
     final List<Map<String, dynamic>> maps = await db.query(
       'circuits',
-      where: 'board_id = ?',
-      whereArgs: [boardId],
+      where: where,
+      whereArgs: args,
       orderBy: 'name ASC',
       limit: limit < 0 ? null : limit,
       offset: limit < 0 ? null : offset,
@@ -129,16 +176,21 @@ class SubscriberRepository {
   }
 
   /// Cascades manually: removes the subscriber's receipts (and their refunds).
-  Future<int> delete(String id) async {
+  Future<int> delete(String id, {String? accountantId}) async {
     final db = await _dbHelper.database;
     return await db.transaction((txn) async {
+      // Only delete a subscriber the caller owns (accountant) or any (owner).
+      final guard = accountantId == null ? '' : ' AND accountant_id = ?';
+      final ownArgs = accountantId == null ? [id] : [id, accountantId];
       await txn.delete(
         'refunds',
-        where: 'receipt_uuid IN (SELECT uuid FROM receipts WHERE subscriber_id = ?)',
+        where:
+            'receipt_uuid IN (SELECT uuid FROM receipts WHERE subscriber_id = ?)',
         whereArgs: [id],
       );
       await txn.delete('receipts', where: 'subscriber_id = ?', whereArgs: [id]);
-      return await txn.delete('subscribers', where: 'id = ?', whereArgs: [id]);
+      return await txn
+          .delete('subscribers', where: 'id = ?$guard', whereArgs: ownArgs);
     });
   }
 
@@ -146,21 +198,25 @@ class SubscriberRepository {
     int limit = 20,
     int offset = 0,
     String? query,
+    String? accountantId,
   }) async {
     final db = await _dbHelper.database;
 
-    String? whereClause;
-    List<dynamic>? whereArgs;
-
+    final clauses = <String>[];
+    final args = <dynamic>[];
     if (query != null && query.isNotEmpty) {
-      whereClause = "name LIKE ? OR phone LIKE ?";
-      whereArgs = ['%$query%', '%$query%'];
+      clauses.add('(name LIKE ? OR phone LIKE ?)');
+      args.addAll(['%$query%', '%$query%']);
+    }
+    if (accountantId != null) {
+      clauses.add('accountant_id = ?');
+      args.add(accountantId);
     }
 
     final List<Map<String, dynamic>> maps = await db.query(
       'subscribers',
-      where: whereClause,
-      whereArgs: whereArgs,
+      where: clauses.isEmpty ? null : clauses.join(' AND '),
+      whereArgs: args.isEmpty ? null : args,
       orderBy: 'name ASC',
       limit: limit,
       offset: offset,
@@ -168,23 +224,27 @@ class SubscriberRepository {
     return List.generate(maps.length, (i) => Subscriber.fromMap(maps[i]));
   }
 
-  Future<List<Subscriber>> getByCircuit(String circuitId) async {
+  Future<List<Subscriber>> getByCircuit(String circuitId,
+      {String? accountantId}) async {
     final db = await _dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'subscribers',
-      where: 'circuit_id = ?',
-      whereArgs: [circuitId],
-    );
+    final where = accountantId == null
+        ? 'circuit_id = ?'
+        : 'circuit_id = ? AND accountant_id = ?';
+    final args = accountantId == null ? [circuitId] : [circuitId, accountantId];
+    final List<Map<String, dynamic>> maps =
+        await db.query('subscribers', where: where, whereArgs: args);
     return List.generate(maps.length, (i) => Subscriber.fromMap(maps[i]));
   }
 
-  Future<List<Subscriber>> getByBoard(String boardId) async {
+  Future<List<Subscriber>> getByBoard(String boardId,
+      {String? accountantId}) async {
     final db = await _dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'subscribers',
-      where: 'board_id = ?',
-      whereArgs: [boardId],
-    );
+    final where = accountantId == null
+        ? 'board_id = ?'
+        : 'board_id = ? AND accountant_id = ?';
+    final args = accountantId == null ? [boardId] : [boardId, accountantId];
+    final List<Map<String, dynamic>> maps =
+        await db.query('subscribers', where: where, whereArgs: args);
     return List.generate(maps.length, (i) => Subscriber.fromMap(maps[i]));
   }
 
@@ -192,10 +252,12 @@ class SubscriberRepository {
     required String month,
     required double pricePerAmp,
     required bool isPaid,
+    String? accountantId,
   }) async {
     final db = await _dbHelper.database;
     // We use a raw query to join with aggregated receipts
     final String operator = isPaid ? '>=' : '<';
+    final String scope = accountantId == null ? '' : 'AND s.accountant_id = ?';
 
     final String sql =
         """
@@ -206,13 +268,12 @@ class SubscriberRepository {
         WHERE month = ? AND status = 'valid'
         GROUP BY subscriber_id
       ) r ON s.id = r.subscriber_id
-      WHERE COALESCE(r.total_paid, 0) $operator (s.amps * ?)
+      WHERE COALESCE(r.total_paid, 0) $operator (s.amps * ?) $scope
     """;
 
-    final List<Map<String, dynamic>> maps = await db.rawQuery(sql, [
-      month,
-      pricePerAmp,
-    ]);
+    final args = <dynamic>[month, pricePerAmp];
+    if (accountantId != null) args.add(accountantId);
+    final List<Map<String, dynamic>> maps = await db.rawQuery(sql, args);
     return List.generate(maps.length, (i) => Subscriber.fromMap(maps[i]));
   }
 
@@ -220,32 +281,42 @@ class SubscriberRepository {
     required String month,
     required double pricePerAmp,
     required bool isPaid,
+    String? accountantId,
   }) async {
     final list = await getByPaymentStatus(
       month: month,
       pricePerAmp: pricePerAmp,
       isPaid: isPaid,
+      accountantId: accountantId,
     );
     return list.length;
   }
 
-  Future<int> countByBoard(String boardId) async {
+  Future<int> countByBoard(String boardId, {String? accountantId}) async {
     final db = await _dbHelper.database;
+    final where = accountantId == null
+        ? 'board_id = ?'
+        : 'board_id = ? AND accountant_id = ?';
+    final args = accountantId == null ? [boardId] : [boardId, accountantId];
     return Sqflite.firstIntValue(
           await db.rawQuery(
-            'SELECT COUNT(*) FROM subscribers WHERE board_id = ?',
-            [boardId],
+            'SELECT COUNT(*) FROM subscribers WHERE $where',
+            args,
           ),
         ) ??
         0;
   }
 
-  Future<int> countByCircuit(String circuitId) async {
+  Future<int> countByCircuit(String circuitId, {String? accountantId}) async {
     final db = await _dbHelper.database;
+    final where = accountantId == null
+        ? 'circuit_id = ?'
+        : 'circuit_id = ? AND accountant_id = ?';
+    final args = accountantId == null ? [circuitId] : [circuitId, accountantId];
     return Sqflite.firstIntValue(
           await db.rawQuery(
-            'SELECT COUNT(*) FROM subscribers WHERE circuit_id = ?',
-            [circuitId],
+            'SELECT COUNT(*) FROM subscribers WHERE $where',
+            args,
           ),
         ) ??
         0;

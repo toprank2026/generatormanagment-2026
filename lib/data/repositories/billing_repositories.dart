@@ -79,13 +79,18 @@ class ReceiptRepository {
   }
 
   // Get receipts for a specific month, newest first (for reports), with
-  // optional limit/offset for pagination.
-  Future<List<Receipt>> getByMonth(String month, {int? limit, int? offset}) async {
+  // optional limit/offset for pagination. When [accountantId] is given, only
+  // that accountant's receipts are returned (per-accountant reports).
+  Future<List<Receipt>> getByMonth(String month,
+      {int? limit, int? offset, String? accountantId}) async {
     final db = await _dbHelper.database;
+    final where =
+        accountantId == null ? 'month = ?' : 'month = ? AND accountant_id = ?';
+    final args = accountantId == null ? [month] : [month, accountantId];
     final List<Map<String, dynamic>> maps = await db.query(
       'receipts',
-      where: 'month = ?',
-      whereArgs: [month],
+      where: where,
+      whereArgs: args,
       orderBy: 'issued_at DESC',
       limit: limit,
       offset: offset,
@@ -95,12 +100,14 @@ class ReceiptRepository {
 
   // Get total collected amount for a specific month. Only 'valid' receipts
   // count, matching the paid/unpaid status query — so a refunded receipt never
-  // inflates the collected total.
-  Future<double> getCollectedSum(String month) async {
+  // inflates the collected total. Optionally scoped to one accountant.
+  Future<double> getCollectedSum(String month, {String? accountantId}) async {
     final db = await _dbHelper.database;
+    final scope = accountantId == null ? '' : 'AND accountant_id = ?';
+    final args = accountantId == null ? [month] : [month, accountantId];
     final result = await db.rawQuery(
-      "SELECT SUM(paid_amount) as total FROM receipts WHERE month = ? AND status = 'valid'",
-      [month],
+      "SELECT SUM(paid_amount) as total FROM receipts WHERE month = ? AND status = 'valid' $scope",
+      args,
     );
     if (result.isNotEmpty && result.first['total'] != null) {
       return (result.first['total'] as num).toDouble();

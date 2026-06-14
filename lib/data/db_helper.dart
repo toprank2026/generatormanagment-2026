@@ -27,13 +27,17 @@ class DbHelper {
     final String path = testPath ?? await _defaultPath();
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
   }
 
   // Business tables that are mirrored to the server, with their primary keys.
+  // `accountants` is the server-visible accountant IDENTITY (id/username/name,
+  // never the password) so the admin panel can list/count/filter accountants
+  // and printed invoices resolve the name on any device; credentials stay local
+  // in the (un-synced) `users` table.
   static const Map<String, String> syncedTables = {
     'boards': 'id',
     'circuits': 'id',
@@ -42,6 +46,7 @@ class DbHelper {
     'receipts': 'uuid',
     'refunds': 'uuid',
     'expenses': 'id',
+    'accountants': 'id',
   };
 
   /// Creates the change-capture outbox + AFTER INSERT/UPDATE/DELETE triggers so
@@ -78,8 +83,42 @@ class DbHelper {
     }
   }
 
+  /// Idempotent ALTER ... ADD COLUMN (mixed installs may already have it).
+  Future<void> _addColumn(
+      Database db, String table, String column, String type) async {
+    try {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $type');
+    } catch (_) {
+      // Column already present — safe to ignore.
+    }
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
+      await _createSyncInfra(db);
+    }
+    if (oldVersion < 3) {
+      // Per-accountant attribution: every owned business entity gains an
+      // accountant_id (the assigned/creating accountant; NULL = owner-owned).
+      // receipts.accountant_id already exists; monthly_prices stays owner-global
+      // and refunds has no in-app create path, so both are skipped.
+      for (final t in ['boards', 'circuits', 'subscribers', 'expenses']) {
+        await _addColumn(db, t, 'accountant_id', 'TEXT');
+      }
+      // Local accountant sub-users gain a display name + active flag.
+      await _addColumn(db, 'users', 'name', 'TEXT');
+      await _addColumn(db, 'users', 'active', 'INTEGER DEFAULT 1');
+      // Server-visible accountant identity (synced; no credentials).
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS accountants (
+          id TEXT PRIMARY KEY,
+          username TEXT,
+          name TEXT,
+          active INTEGER DEFAULT 1,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+      ''');
+      // Create the accountants sync triggers (others already exist → skipped).
       await _createSyncInfra(db);
     }
   }
@@ -98,13 +137,27 @@ class DbHelper {
   }
 
   Future _onCreate(Database db, int version) async {
-    // 1. Users
+    // 1. Users (local credentials for the owner-created accountant sub-users;
+    //    NOT synced — `name` is the printed/display name, `active` enables login)
     await db.execute('''
       CREATE TABLE users (
         id TEXT PRIMARY KEY,
         username TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
-        role TEXT NOT NULL, 
+        role TEXT NOT NULL,
+        name TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    ''');
+
+    // 1b. Accountants — server-visible identity (synced; no credentials).
+    await db.execute('''
+      CREATE TABLE accountants (
+        id TEXT PRIMARY KEY,
+        username TEXT,
+        name TEXT,
+        active INTEGER DEFAULT 1,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     ''');
@@ -115,6 +168,7 @@ class DbHelper {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         code TEXT,
+        accountant_id TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     ''');
@@ -126,6 +180,7 @@ class DbHelper {
         board_id TEXT NOT NULL,
         name TEXT NOT NULL,
         phase TEXT,
+        accountant_id TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (board_id) REFERENCES boards (id) ON DELETE CASCADE
       )
@@ -140,7 +195,8 @@ class DbHelper {
         amps REAL NOT NULL,
         board_id TEXT NOT NULL,
         circuit_id TEXT NOT NULL,
-        status TEXT DEFAULT 'active', 
+        status TEXT DEFAULT 'active',
+        accountant_id TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (board_id) REFERENCES boards (id),
         FOREIGN KEY (circuit_id) REFERENCES circuits (id)
@@ -199,6 +255,7 @@ class DbHelper {
         note TEXT,
         date TEXT NOT NULL,
         created_by_user_id TEXT,
+        accountant_id TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     ''');

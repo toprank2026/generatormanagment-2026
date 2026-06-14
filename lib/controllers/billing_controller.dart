@@ -149,11 +149,13 @@ class BillingController extends GetxController {
       priceSnapshot: mp.pricePerAmp,
       paidAmount: amount,
       remainingAfter: due - amount,
+      // Who physically collected (owner or accountant) ...
       performedByUserId: auth.currentUser.value?.id,
-      accountantId: auth
-          .currentUser
-          .value
-          ?.id, // Assume logged user as accountant for now
+      // ... vs. which accountant the invoice BELONGS to: the subscriber's
+      // owning accountant (NULL = owner-owned). This keeps per-accountant
+      // reports/filtering consistent regardless of who collected, and the
+      // printed invoice shows the right accountant.
+      accountantId: sub.accountantId,
       issuedAt: DateTime.now().toIso8601String(),
     );
 

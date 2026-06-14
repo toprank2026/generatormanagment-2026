@@ -6,12 +6,18 @@ import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
+import 'package:generatormanagment/controllers/auth_controller.dart';
 
 class CoreController extends GetxController {
   final BoardRepository _boardRepo = BoardRepository();
   final CircuitRepository _circuitRepo = CircuitRepository();
   final SubscriberRepository _subscriberRepo = SubscriberRepository();
   final MonthlyPriceRepository _priceRepo = MonthlyPriceRepository();
+  final AuthController _auth = Get.find();
+
+  /// Per-accountant read scope: null for the owner/admin (sees all), the
+  /// accountant's id otherwise (sees only their own data).
+  String? get _scope => _auth.scopeAccountantId;
 
   var boards = <Board>[].obs;
   var circuits = <Circuit>[].obs; // Currently selected board's circuits
@@ -74,6 +80,7 @@ class CoreController extends GetxController {
       final result = await _boardRepo.getAll(
         limit: boardsPerPage + 1,
         offset: (page - 1) * boardsPerPage,
+        accountantId: _scope,
       );
 
       List<Board> newItems;
@@ -105,8 +112,13 @@ class CoreController extends GetxController {
     }
   }
 
-  Future<void> addBoard(String name, String? code) async {
-    Board b = Board(id: const Uuid().v4(), name: name, code: code);
+  Future<void> addBoard(String name, String? code, {String? accountantId}) async {
+    Board b = Board(
+      id: const Uuid().v4(),
+      name: name,
+      code: code,
+      accountantId: accountantId,
+    );
     await _boardRepo.insert(b);
     loadBoards();
     _refreshDashboard();
@@ -121,7 +133,7 @@ class CoreController extends GetxController {
   }
 
   Future<void> deleteBoard(String id) async {
-    await _boardRepo.delete(id);
+    await _boardRepo.delete(id, accountantId: _scope);
     loadBoards();
     _refreshDashboard();
     update();
@@ -145,6 +157,7 @@ class CoreController extends GetxController {
         boardId,
         limit: circuitsPerPage + 1,
         offset: (page - 1) * circuitsPerPage,
+        accountantId: _scope,
       );
 
       List<Circuit> newItems;
@@ -177,12 +190,14 @@ class CoreController extends GetxController {
     }
   }
 
-  Future<void> addCircuit(String boardId, String name, String? phase) async {
+  Future<void> addCircuit(String boardId, String name, String? phase,
+      {String? accountantId}) async {
     Circuit c = Circuit(
       id: const Uuid().v4(),
       boardId: boardId,
       name: name,
       phase: phase,
+      accountantId: accountantId,
     );
     await _circuitRepo.insert(c);
     loadCircuits(boardId);
@@ -191,7 +206,7 @@ class CoreController extends GetxController {
   }
 
   Future<void> deleteCircuit(String id, String boardId) async {
-    await _circuitRepo.delete(id);
+    await _circuitRepo.delete(id, accountantId: _scope);
     loadCircuits(boardId);
     _refreshDashboard();
     update();
@@ -215,6 +230,7 @@ class CoreController extends GetxController {
         query: query,
         limit: itemsPerPage + 1,
         offset: (page - 1) * itemsPerPage,
+        accountantId: _scope,
       );
 
       List<Subscriber> newItems;
@@ -259,7 +275,7 @@ class CoreController extends GetxController {
   }
 
   Future<void> deleteSubscriber(String id) async {
-    await _subscriberRepo.delete(id);
+    await _subscriberRepo.delete(id, accountantId: _scope);
     loadSubscribers();
     _refreshDashboard();
     update();
@@ -287,6 +303,7 @@ class CoreController extends GetxController {
         month: month,
         pricePerAmp: price,
         isPaid: filter == 'paid',
+        accountantId: _scope,
       );
     } catch (e) {
       print("Error loading filtered subscribers: $e");
@@ -299,7 +316,8 @@ class CoreController extends GetxController {
   Future<void> loadBoardSubscribers(String boardId) async {
     isLoading.value = true;
     try {
-      subscribers.value = await _subscriberRepo.getByBoard(boardId);
+      subscribers.value =
+          await _subscriberRepo.getByBoard(boardId, accountantId: _scope);
     } finally {
       isLoading.value = false;
     }

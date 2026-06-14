@@ -2,6 +2,7 @@ import 'package:get/get.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:intl/intl.dart';
 
 class DashboardController extends GetxController {
@@ -10,6 +11,10 @@ class DashboardController extends GetxController {
   final MonthlyPriceRepository _priceRepo = MonthlyPriceRepository();
   final BoardRepository _boardRepo = BoardRepository();
   final CircuitRepository _circuitRepo = CircuitRepository();
+  final AuthController _auth = Get.find();
+
+  /// Per-accountant scope: null = owner/admin (all), else the accountant's id.
+  String? get _scope => _auth.scopeAccountantId;
 
   var totalSubscribers = 0.obs;
   var totalAmps = 0.0.obs;
@@ -37,8 +42,9 @@ class DashboardController extends GetxController {
   Future<void> loadStats() async {
     isLoading.value = true;
     try {
-      // 1. Subscribers & Amps
-      final subs = await _subRepo.getAll(limit: 10000); // Get all for stats
+      final scope = _scope;
+      // 1. Subscribers & Amps (scoped to the acting accountant, if any)
+      final subs = await _subRepo.getAll(limit: 10000, accountantId: scope);
       totalSubscribers.value = subs.length;
       totalAmps.value = subs.fold(0.0, (sum, s) => sum + s.amps);
 
@@ -51,7 +57,8 @@ class DashboardController extends GetxController {
 
       // 3. Collected
       // Fetch real collected amount from DB
-      totalCollected.value = await _receiptRepo.getCollectedSum(month);
+      totalCollected.value =
+          await _receiptRepo.getCollectedSum(month, accountantId: scope);
 
       // Remaining = Total Expected - Collected
       totalDue.value = calculatedTotalDue - totalCollected.value;
@@ -61,21 +68,23 @@ class DashboardController extends GetxController {
         month: month,
         pricePerAmp: price,
         isPaid: true,
+        accountantId: scope,
       );
       unpaidCount.value = await _subRepo.countByPaymentStatus(
         month: month,
         pricePerAmp: price,
         isPaid: false,
+        accountantId: scope,
       );
 
       // 5. Boards Count
-      final boardsList = await _boardRepo.getAll();
+      final boardsList = await _boardRepo.getAll(accountantId: scope);
       boardsCount.value = boardsList.length;
 
       // 6. Circuits Count
       final List<Circuit> allCircuits = [];
       for (var b in boardsList) {
-        final circs = await _circuitRepo.getByBoardId(b.id);
+        final circs = await _circuitRepo.getByBoardId(b.id, accountantId: scope);
         allCircuits.addAll(circs);
       }
       circuitsCount.value = allCircuits.length;

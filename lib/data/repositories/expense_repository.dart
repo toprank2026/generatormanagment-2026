@@ -18,13 +18,19 @@ class ExpenseRepository {
     String monthPrefix, {
     required int limit,
     required int offset,
+    String? accountantId,
   }) async {
     // monthPrefix expected as 'YYYY-MM'
     final db = await _dbHelper.database;
+    final where = accountantId == null
+        ? 'date LIKE ?'
+        : 'date LIKE ? AND accountant_id = ?';
+    final args =
+        accountantId == null ? ['$monthPrefix%'] : ['$monthPrefix%', accountantId];
     final res = await db.query(
       'expenses',
-      where: 'date LIKE ?',
-      whereArgs: ['$monthPrefix%'],
+      where: where,
+      whereArgs: args,
       orderBy: 'date DESC',
       limit: limit,
       offset: offset,
@@ -32,11 +38,15 @@ class ExpenseRepository {
     return res.map((e) => Expense.fromMap(e)).toList();
   }
 
-  Future<double> getTotalExpenses(String monthPrefix) async {
+  Future<double> getTotalExpenses(String monthPrefix,
+      {String? accountantId}) async {
     final db = await _dbHelper.database;
+    final scope = accountantId == null ? '' : 'AND accountant_id = ?';
+    final args =
+        accountantId == null ? ['$monthPrefix%'] : ['$monthPrefix%', accountantId];
     final res = await db.rawQuery(
-      'SELECT SUM(amount) as total FROM expenses WHERE date LIKE ?',
-      ['$monthPrefix%'],
+      'SELECT SUM(amount) as total FROM expenses WHERE date LIKE ? $scope',
+      args,
     );
     if (res.isNotEmpty && res.first['total'] != null) {
       return (res.first['total'] as num).toDouble();
@@ -44,8 +54,10 @@ class ExpenseRepository {
     return 0.0;
   }
 
-  Future<void> deleteExpense(String id) async {
+  Future<void> deleteExpense(String id, {String? accountantId}) async {
     final db = await _dbHelper.database;
-    await db.delete('expenses', where: 'id = ?', whereArgs: [id]);
+    final where = accountantId == null ? 'id = ?' : 'id = ? AND accountant_id = ?';
+    final args = accountantId == null ? [id] : [id, accountantId];
+    await db.delete('expenses', where: where, whereArgs: args);
   }
 }

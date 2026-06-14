@@ -6,9 +6,11 @@ import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/core/logger.dart';
 import 'package:generatormanagment/core/secure_store.dart';
 import 'package:generatormanagment/core/session_cache.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/models/user_model.dart';
 import 'package:generatormanagment/data/repositories/auth_repository.dart';
+import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 
 /// Authentication + session state.
 ///
@@ -21,6 +23,11 @@ class AuthController extends GetxController {
   final SessionCache _cache = SessionCache();
   final SecureStore _store = SecureStore();
   final ConnectivityService _net = ConnectivityService();
+  final AccountantRepository _accountants = AccountantRepository();
+
+  /// SharedPreferences keys for the local acting-user layer.
+  static const String _kActingUserId = 'acting_user_id';
+  static const String _kOwnerPwdHash = 'owner_pwd_hash';
 
   final isLoggedIn = false.obs;
   final isLoading = true.obs;
@@ -51,9 +58,26 @@ class AuthController extends GetxController {
   /// Server account (source of truth when online).
   final Rxn<Account> account = Rxn<Account>();
 
-  /// Backward-compatible local "User" view of the account so existing screens
-  /// that read `auth.currentUser.value?.id` / `.role` keep working.
+  /// The ACTING local user — the owner by default, or an accountant sub-user
+  /// after an offline profile-switch. This is the identity that drives
+  /// permission gating, per-accountant data scoping, and record attribution.
+  /// Existing screens that read `auth.currentUser.value?.id` / `.role` keep
+  /// working — they now reflect whoever is acting.
   final Rxn<User> currentUser = Rxn<User>();
+
+  /// The owner identity derived from the cloud account (always the admin),
+  /// kept separate so we can switch back to it without a network call.
+  final Rxn<User> ownerUser = Rxn<User>();
+
+  /// True when an accountant (not the owner/admin) is currently acting.
+  bool get isAccountant => currentUser.value?.role == 'accountant';
+
+  /// The acting accountant's id used to scope reads/writes: `null` for the
+  /// owner/admin (sees & owns everything), the accountant's id otherwise.
+  String? get scopeAccountantId => isAdmin ? null : currentUser.value?.id;
+
+  /// Display name of the acting user (for printed invoices / UI).
+  String get actingUserName => currentUser.value?.displayName ?? '';
 
   /// True only when the server (while online) said the subscription is not
   /// active or the account is blocked. Drives the plan-selection gate. We do
@@ -157,6 +181,7 @@ class AuthController extends GetxController {
       final cached = await _cache.readAccount();
       if (token != null && token.isNotEmpty && cached != null) {
         _setAccount(Account.fromJson(cached), online: false);
+        await _restoreActingUser();
         isLoggedIn.value = true;
         if (await _net.isOnline()) {
           await _refreshFromServer();
@@ -201,12 +226,21 @@ class AuthController extends GetxController {
 
   void _setAccount(Account acc, {required bool online}) {
     account.value = acc;
-    currentUser.value = User(
+    final owner = User(
       id: acc.id,
       username: acc.username,
       passwordHash: '',
       role: acc.role,
+      name: acc.name,
     );
+    ownerUser.value = owner;
+    // Preserve the acting user across background refreshes (an accountant
+    // mid-session must not be silently switched back to the owner). Only set it
+    // when nothing is acting yet, or when the current actor IS the owner.
+    final cur = currentUser.value;
+    if (cur == null || cur.id == acc.id) {
+      currentUser.value = owner;
+    }
     if (acc.blocked) {
       subscriptionBlocked.value = true;
     } else if (online) {
@@ -225,7 +259,11 @@ class AuthController extends GetxController {
       }
       final result = await _auth.login(username: username, password: password);
       await _cache.saveAccount(result.account.toJson());
+      // Fresh owner sign-in always resets the acting user back to the owner.
+      currentUser.value = null;
       _setAccount(result.account, online: true);
+      await _persistOwnerCredential(username, password);
+      await _clearActingUser();
       await _cache.setLastOnlineValidationAt(DateTime.now().toIso8601String());
       isLoggedIn.value = true;
       logoutReason.value = null; // clear any prior "you were signed out" warning
@@ -298,14 +336,10 @@ class AuthController extends GetxController {
       final wasActive = account.value?.subscription.isActive ?? false;
       final acc = await _auth.me();
       await _cache.saveAccount(acc.toJson());
-      // Refresh the in-memory account so the dashboard reflects any change.
-      account.value = acc;
-      currentUser.value = User(
-        id: acc.id,
-        username: acc.username,
-        passwordHash: '',
-        role: acc.role,
-      );
+      // Refresh the in-memory account so the dashboard reflects any change,
+      // preserving the acting user (see _setAccount). The subscription gate is
+      // re-derived just below from _sessionProblemReason.
+      _setAccount(acc, online: true);
       final reason = _sessionProblemReason(acc);
       if (reason != null) {
         final isBlocked = acc.blocked;
@@ -380,11 +414,79 @@ class AuthController extends GetxController {
   Future<void> logout({String? reason}) async {
     await _auth.logout();
     await _cache.clear();
+    await _clearActingUser();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kOwnerPwdHash);
     isLoggedIn.value = false;
     account.value = null;
     currentUser.value = null;
+    ownerUser.value = null;
     subscriptionBlocked.value = false;
     logoutReason.value = reason;
     update();
+  }
+
+  // --- Acting-user (local accountant) layer -------------------------------
+
+  /// Sign in as an accountant sub-user — a purely LOCAL, offline credential
+  /// check (no network). On success the accountant becomes the acting user and
+  /// the selection is persisted across relaunches. Returns false on bad
+  /// credentials or a disabled accountant.
+  Future<bool> loginAsAccountant(String username, String password) async {
+    final user = await _accountants.authenticate(username.trim(), password);
+    if (user == null) return false;
+    currentUser.value = user;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kActingUserId, user.id);
+    update();
+    return true;
+  }
+
+  /// Switch back to the owner/admin. Requires the owner's password, verified
+  /// offline against the hash captured at sign-in. If no hash was captured
+  /// (sessions predating this feature) the switch is allowed.
+  Future<bool> switchToOwner(String password) async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_kOwnerPwdHash);
+    if (stored != null && stored.isNotEmpty) {
+      if (AccountantRepository.hashPassword(password) != stored) return false;
+    }
+    currentUser.value = ownerUser.value;
+    await _clearActingUser();
+    update();
+    return true;
+  }
+
+  Future<void> _persistOwnerCredential(String username, String password) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        _kOwnerPwdHash, AccountantRepository.hashPassword(password));
+  }
+
+  Future<void> _clearActingUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kActingUserId);
+  }
+
+  /// On launch, restore a previously-selected accountant as the acting user
+  /// (offline-safe: the identity comes from the synced `accountants` table).
+  Future<void> _restoreActingUser() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final id = prefs.getString(_kActingUserId);
+      if (id == null || id.isEmpty || id == account.value?.id) return;
+      final a = await _accountants.getById(id);
+      if (a != null && a.active) {
+        currentUser.value = User(
+          id: a.id,
+          username: a.username,
+          passwordHash: '',
+          role: 'accountant',
+          name: a.name,
+        );
+      }
+    } catch (e) {
+      Log.w('restore acting user skipped: $e');
+    }
   }
 }

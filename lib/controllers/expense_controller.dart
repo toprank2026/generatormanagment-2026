@@ -1,11 +1,16 @@
 import 'package:get/get.dart';
 import 'package:generatormanagment/data/models/expense_model.dart';
 import 'package:generatormanagment/data/repositories/expense_repository.dart';
+import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 class ExpenseController extends GetxController {
   final ExpenseRepository _repo = ExpenseRepository();
+  final AuthController _auth = Get.find();
+
+  /// Per-accountant scope: null = owner/admin (all). Expenses are owner-only.
+  String? get _scope => _auth.scopeAccountantId;
 
   var expenses = <Expense>[].obs;
   var totalExpenses = 0.0.obs;
@@ -53,6 +58,7 @@ class ExpenseController extends GetxController {
         month,
         limit: expensesPerPage + 1,
         offset: (page - 1) * expensesPerPage,
+        accountantId: _scope,
       );
 
       List<Expense> newItems;
@@ -67,7 +73,8 @@ class ExpenseController extends GetxController {
       if (page == 1) {
         expenses.assignAll(newItems);
         // Month total must reflect ALL expenses, not just the page
-        totalExpenses.value = await _repo.getTotalExpenses(month);
+        totalExpenses.value =
+            await _repo.getTotalExpenses(month, accountantId: _scope);
       } else {
         expenses.addAll(newItems);
       }
@@ -98,6 +105,8 @@ class ExpenseController extends GetxController {
       amount: amount,
       note: note,
       date: (date ?? DateTime.now()).toIso8601String(),
+      createdByUserId: _auth.currentUser.value?.id,
+      accountantId: _scope,
     );
     await _repo.addExpense(newExpense);
     loadExpenses();
@@ -105,7 +114,7 @@ class ExpenseController extends GetxController {
   }
 
   Future<void> deleteExpense(String id) async {
-    await _repo.deleteExpense(id);
+    await _repo.deleteExpense(id, accountantId: _scope);
     loadExpenses();
     update();
   }

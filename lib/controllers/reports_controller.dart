@@ -3,16 +3,34 @@ import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/repositories/expense_repository.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
+import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:intl/intl.dart';
 
 /// Monthly reports & statistics — all figures derived from the LOCAL SQLite
 /// tables (receipts, expenses, subscribers, monthly_prices) via repositories.
-/// Offline-first: no network involved.
+/// Offline-first: no network involved. Per-accountant: an accountant sees only
+/// their own figures; the owner/admin sees all and may filter by one accountant
+/// via [accountantFilter].
 class ReportsController extends GetxController {
   final SubscriberRepository _subRepo = SubscriberRepository();
   final ReceiptRepository _receiptRepo = ReceiptRepository();
   final MonthlyPriceRepository _priceRepo = MonthlyPriceRepository();
   final ExpenseRepository _expenseRepo = ExpenseRepository();
+  final AuthController _auth = Get.find();
+
+  /// Owner-only accountant filter (null = all accountants). Ignored for an
+  /// accountant, who is always scoped to themselves.
+  final RxnString accountantFilter = RxnString();
+
+  /// Effective scope: an accountant is forced to their own id; the owner uses
+  /// the chosen filter (null = everything).
+  String? get _scope =>
+      _auth.isAdmin ? accountantFilter.value : _auth.currentUser.value?.id;
+
+  void setAccountantFilter(String? accountantId) {
+    accountantFilter.value = accountantId;
+    loadReport();
+  }
 
   /// Selected report month as 'yyyy-MM'.
   var month = DateFormat('yyyy-MM').format(DateTime.now()).obs;
@@ -50,9 +68,10 @@ class ReportsController extends GetxController {
     isLoading.value = true;
     try {
       final m = month.value;
+      final scope = _scope;
 
       // 1. Subscribers & Amps
-      final subs = await _subRepo.getAll(limit: 10000); // All, for stats
+      final subs = await _subRepo.getAll(limit: 10000, accountantId: scope);
       totalSubscribers.value = subs.length;
       totalAmps.value = subs.fold(0.0, (sum, s) => sum + s.amps);
 
@@ -62,9 +81,11 @@ class ReportsController extends GetxController {
 
       // 3. Financials
       expectedTotal.value = totalAmps.value * pricePerAmp.value;
-      collectedTotal.value = await _receiptRepo.getCollectedSum(m);
+      collectedTotal.value =
+          await _receiptRepo.getCollectedSum(m, accountantId: scope);
       remainingTotal.value = expectedTotal.value - collectedTotal.value;
-      expensesTotal.value = await _expenseRepo.getTotalExpenses(m);
+      expensesTotal.value =
+          await _expenseRepo.getTotalExpenses(m, accountantId: scope);
       netProfit.value = collectedTotal.value - expensesTotal.value;
 
       // 4. Paid / Unpaid counts (same formula as the dashboard)
@@ -72,11 +93,13 @@ class ReportsController extends GetxController {
         month: m,
         pricePerAmp: pricePerAmp.value,
         isPaid: true,
+        accountantId: scope,
       );
       unpaidCount.value = await _subRepo.countByPaymentStatus(
         month: m,
         pricePerAmp: pricePerAmp.value,
         isPaid: false,
+        accountantId: scope,
       );
 
       // 5. The month's payments list (newest first), page 1.
@@ -85,6 +108,7 @@ class ReportsController extends GetxController {
         m,
         limit: _receiptsPerPage + 1,
         offset: 0,
+        accountantId: scope,
       );
       hasMoreReceipts.value = page.length > _receiptsPerPage;
       receipts.assignAll(
@@ -108,6 +132,7 @@ class ReportsController extends GetxController {
         month.value,
         limit: _receiptsPerPage + 1,
         offset: _receiptsPage * _receiptsPerPage,
+        accountantId: _scope,
       );
       hasMoreReceipts.value = next.length > _receiptsPerPage;
       receipts.addAll(
