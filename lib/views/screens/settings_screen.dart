@@ -207,17 +207,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (!auth.isAdmin) return const SizedBox.shrink();
               return Column(
                 children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 8, bottom: 8),
-                      child: Text(
-                        'accountants'.tr,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blueGrey,
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
+                    child: Row(
+                      children: [
+                        Text(
+                          'accountants'.tr,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blueGrey,
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        // Live count of accountants (number + manage in one panel).
+                        Obx(
+                          () => Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1565C0),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '${controller.accountants.length}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   Container(
