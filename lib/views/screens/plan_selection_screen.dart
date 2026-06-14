@@ -116,7 +116,7 @@ class _PlanSelectionScreenState extends State<PlanSelectionScreen> {
                 )
               else
                 SizedBox(
-                  height: 330,
+                  height: 450,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(vertical: 4),
@@ -276,6 +276,15 @@ class _PlanCard extends StatelessWidget {
           _feature(Icons.calendar_today, '${plan.durationDays} ${'days'.tr}'),
           const SizedBox(height: 6),
           _feature(Icons.devices, '${plan.maxDevices} ${'devices'.tr}'),
+          const SizedBox(height: 10),
+          // Per-plan capability marks: green check when this plan includes the
+          // feature, dimmed red cross when it doesn't (mirrors the per-plan
+          // flags the backend returns for each plan, not the current account).
+          _capability(Icons.sync, 'feature_sync'.tr, plan.syncEnabled),
+          _capability(Icons.backup, 'feature_backup'.tr, plan.backupEnabled),
+          _capability(Icons.admin_panel_settings, 'feature_owner_panel'.tr,
+              plan.ownerPanelEnabled),
+          const SizedBox(height: 4),
           if (plan.description != null && plan.description!.isNotEmpty) ...[
             const SizedBox(height: 10),
             Expanded(
@@ -312,6 +321,46 @@ class _PlanCard extends StatelessWidget {
         const SizedBox(width: 8),
         Text(text, style: TextStyle(color: Colors.grey[700], fontSize: 13)),
       ],
+    );
+  }
+
+  /// One capability row: a leading feature-type icon + label, with a trailing
+  /// green check (included) or dimmed red cross (excluded). The excluded row is
+  /// faded and struck through so the on/off state reads without relying on
+  /// colour alone. Colours/icons match the app's paid/unpaid convention.
+  Widget _capability(IconData icon, String label, bool included) {
+    const green = Color(0xFF2E7D32);
+    const red = Color(0xFFD32F2F);
+    return Opacity(
+      opacity: included ? 1 : 0.6,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: [
+            Icon(icon,
+                size: 16,
+                color: included ? const Color(0xFF1565C0) : Colors.grey),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: included ? Colors.grey[800] : Colors.grey[600],
+                  decoration:
+                      included ? null : TextDecoration.lineThrough,
+                  decorationColor: red,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(included ? Icons.check_circle : Icons.cancel,
+                size: 18, color: included ? green : red),
+          ],
+        ),
+      ),
     );
   }
 }

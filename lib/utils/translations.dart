@@ -304,6 +304,9 @@ class Messages extends Translations {
       'delete_local_data_confirm':
           'This clears all data on THIS device. The server copy is kept — use Update to restore it. Continue?',
       'local_data_deleted': 'Local data deleted',
+      'feature_sync': 'Online sync',
+      'feature_backup': 'Cloud backup',
+      'feature_owner_panel': 'Owner dashboard',
     },
     'ar_AR': {
       'app_name': 'مالك مولداتي',
@@ -606,6 +609,9 @@ class Messages extends Translations {
       'delete_local_data_confirm':
           'سيؤدي هذا إلى مسح كل البيانات على هذا الجهاز. تبقى نسخة الخادم — استخدم «تحديث» لاستعادتها. هل تريد المتابعة؟',
       'local_data_deleted': 'تم حذف البيانات المحلية',
+      'feature_sync': 'المزامنة عبر الإنترنت',
+      'feature_backup': 'النسخ الاحتياطي السحابي',
+      'feature_owner_panel': 'لوحة المالك',
     },
   };
 }

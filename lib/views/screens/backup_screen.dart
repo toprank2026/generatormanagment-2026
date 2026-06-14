@@ -75,8 +75,11 @@ class _BackupScreenState extends State<BackupScreen> {
               ),
             ),
 
-            // Cloud backup (online account feature)
-            if (auth.isLoggedIn.value) ...[
+            // Cloud backup (online account feature). Hidden when the active
+            // plan has no backup capability — the local export/import above is
+            // device-only and always available. The controller methods are
+            // also canBackup-guarded, so this is the UI half of that gate.
+            if (auth.isLoggedIn.value && auth.canBackup) ...[
               const SizedBox(height: 24),
               _buildCloudBackupSection(),
             ],

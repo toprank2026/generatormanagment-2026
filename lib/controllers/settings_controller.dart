@@ -320,6 +320,12 @@ class SettingsController extends GetxController {
   }
 
   Future<void> uploadCloudBackup({String? note}) async {
+    // Backup is a per-plan capability. The Settings tile reaching this screen is
+    // already hidden when backup is off, but guard here too (defense in depth)
+    // so NO path can fire a backup network call or show a backup toast on a plan
+    // without backup — matching refreshCloudBackups + the sync side. Silent
+    // return: a disabled feature must never notify.
+    if (!auth.canBackup) return;
     final online = await ConnectivityService().isOnline();
     if (!online) {
       Get.snackbar('cloud_backup'.tr, 'online_only'.tr);
@@ -343,6 +349,7 @@ class SettingsController extends GetxController {
   }
 
   Future<void> deleteCloudBackup(String id) async {
+    if (!auth.canBackup) return; // per-plan capability guard (see uploadCloudBackup)
     if (!await ConnectivityService().isOnline()) {
       Get.snackbar('cloud_backup'.tr, 'online_only'.tr);
       return;
@@ -360,6 +367,7 @@ class SettingsController extends GetxController {
   }
 
   void restoreCloudBackup(String id) {
+    if (!auth.canBackup) return; // per-plan capability guard (see uploadCloudBackup)
     Get.defaultDialog(
       title: 'cloud_backup'.tr,
       middleText: 'restore_overwrite_warning'.tr,
@@ -375,6 +383,7 @@ class SettingsController extends GetxController {
   }
 
   Future<void> _performCloudRestore(String id) async {
+    if (!auth.canBackup) return; // per-plan capability guard (see uploadCloudBackup)
     if (!await ConnectivityService().isOnline()) {
       Get.snackbar('cloud_backup'.tr, 'online_only'.tr);
       return;
