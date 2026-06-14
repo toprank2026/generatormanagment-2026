@@ -5,6 +5,7 @@ import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
+import 'package:generatormanagment/views/widgets/app_form_field.dart';
 import 'package:generatormanagment/views/screens/subscribers_screen.dart';
 import 'package:generatormanagment/views/screens/circuits_screen.dart';
 
@@ -232,25 +233,24 @@ class _BoardsScreenState extends State<BoardsScreen> {
       content: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
+            AppTextField(
               controller: nameCtrl,
-              decoration: InputDecoration(
-                labelText: "full_name".tr,
-                hintText: "board_name_hint".tr,
-              ),
+              label: "board_name".tr,
+              hint: "board_name_hint".tr,
+              icon: Icons.dashboard_outlined,
             ),
-            const SizedBox(height: 12),
-            TextField(
+            const SizedBox(height: 14),
+            AppTextField(
               controller: codeCtrl,
-              decoration: InputDecoration(
-                labelText: "code".tr,
-                hintText: "board_code_hint".tr,
-              ),
+              label: "code".tr,
+              hint: "board_code_hint".tr,
+              icon: Icons.tag,
             ),
             if (auth.isAdmin)
               Padding(
-                padding: const EdgeInsets.only(top: 12.0),
+                padding: const EdgeInsets.only(top: 14.0),
                 child: FutureBuilder<List<Accountant>>(
                   future: AccountantRepository().getAll(),
                   builder: (context, snapshot) {
@@ -260,8 +260,9 @@ class _BoardsScreenState extends State<BoardsScreen> {
                         return DropdownButtonFormField<String?>(
                           value: selectedAccountantId,
                           isExpanded: true,
-                          decoration: InputDecoration(
-                            labelText: 'assign_accountant'.tr,
+                          decoration: appInputDecoration(
+                            label: 'assign_accountant'.tr,
+                            icon: Icons.person_outline,
                           ),
                           items: [
                             DropdownMenuItem<String?>(

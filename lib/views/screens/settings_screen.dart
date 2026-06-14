@@ -8,6 +8,7 @@ import 'package:generatormanagment/views/screens/subscription_screen.dart';
 import 'package:generatormanagment/views/screens/backup_screen.dart';
 import 'package:generatormanagment/views/screens/sync_screen.dart';
 import 'package:generatormanagment/views/screens/user_switch_screen.dart';
+import 'package:generatormanagment/views/widgets/app_form_field.dart';
 import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/repositories/device_repository.dart';
@@ -50,8 +51,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isAdmin = auth.isAdmin;
-
     return Scaffold(
       backgroundColor: const Color(0xFFE3F2FD),
       appBar: AppBar(
@@ -97,37 +96,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        auth.currentUser.value?.username ?? 'user_default'.tr,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                      Container(
-                        margin: const EdgeInsets.only(top: 4),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isAdmin ? Colors.purple[50] : Colors.green[50],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          (auth.currentUser.value?.role ?? "").toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 12,
+                  // Reactive so it reflects the ACTING user after a profile
+                  // switch (owner <-> accountant), not the cloud account.
+                  Obx(() {
+                    final bool acting = auth.isAdmin;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          auth.currentUser.value?.displayName ??
+                              'user_default'.tr,
+                          style: const TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: isAdmin ? Colors.purple : Colors.green,
+                            fontSize: 18,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                        Container(
+                          margin: const EdgeInsets.only(top: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color:
+                                acting ? Colors.purple[50] : Colors.green[50],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            (auth.currentUser.value?.role ?? "").toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: acting ? Colors.purple : Colors.green,
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  }),
                 ],
               ),
             ),
@@ -481,39 +487,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 );
               }),
-              const SizedBox(height: 24),
-              _buildManageDevicesSection(),
-              const SizedBox(height: 24),
-
-              // Delete local data
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 8, bottom: 8),
-                  child: Text(
-                    'delete_local_data'.tr,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blueGrey,
+              // Manage devices + delete-local are owner-only (an accountant
+              // must not unbind devices or wipe the shared local data). Obx so
+              // it reacts to a profile switch.
+              Obx(() {
+                if (!auth.isAdmin) return const SizedBox.shrink();
+                return Column(
+                  children: [
+                    const SizedBox(height: 24),
+                    _buildManageDevicesSection(),
+                    const SizedBox(height: 24),
+                    // Delete local data
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8, bottom: 8),
+                        child: Text(
+                          'delete_local_data'.tr,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blueGrey,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: ListTile(
-                  leading: const Icon(
-                    Icons.delete_forever,
-                    color: Colors.redAccent,
-                  ),
-                  title: Text('delete_local_data'.tr),
-                  subtitle: Text('delete_local_data_subtitle'.tr),
-                  onTap: _confirmDeleteLocalData,
-                ),
-              ),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: ListTile(
+                        leading: const Icon(
+                          Icons.delete_forever,
+                          color: Colors.redAccent,
+                        ),
+                        title: Text('delete_local_data'.tr),
+                        subtitle: Text('delete_local_data_subtitle'.tr),
+                        onTap: _confirmDeleteLocalData,
+                      ),
+                    ),
+                  ],
+                );
+              }),
             ],
 
             const SizedBox(height: 32),
@@ -705,35 +720,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Get.defaultDialog(
       title: 'add_accountant'.tr,
       content: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(
+          AppTextField(
             controller: nameCtrl,
-            decoration: InputDecoration(
-              labelText: 'full_name'.tr,
-              border: const OutlineInputBorder(),
-            ),
+            label: 'full_name'.tr,
+            icon: Icons.badge_outlined,
           ),
-          const SizedBox(height: 12),
-          TextField(
+          const SizedBox(height: 14),
+          AppTextField(
             controller: userCtrl,
-            decoration: InputDecoration(
-              labelText: 'username'.tr,
-              border: const OutlineInputBorder(),
-            ),
+            label: 'username'.tr,
+            icon: Icons.alternate_email,
           ),
-          const SizedBox(height: 12),
-          TextField(
+          const SizedBox(height: 14),
+          AppTextField(
             controller: passCtrl,
-            decoration: InputDecoration(
-              labelText: 'password'.tr,
-              border: const OutlineInputBorder(),
-            ),
+            label: 'password'.tr,
+            icon: Icons.lock_outline,
             obscureText: true,
           ),
         ],
       ),
       textConfirm: 'add'.tr,
       textCancel: 'cancel'.tr,
+      confirmTextColor: Colors.white,
+      buttonColor: kAppBlue,
       onConfirm: () {
         if (nameCtrl.text.trim().isEmpty ||
             userCtrl.text.trim().isEmpty ||
@@ -765,33 +777,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Get.defaultDialog(
       title: 'edit_accountant'.tr,
       content: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(
+          AppTextField(
             controller: nameCtrl,
-            decoration: InputDecoration(
-              labelText: 'full_name'.tr,
-              border: const OutlineInputBorder(),
-            ),
+            label: 'full_name'.tr,
+            icon: Icons.badge_outlined,
           ),
-          const SizedBox(height: 12),
-          TextField(
+          const SizedBox(height: 14),
+          AppTextField(
             controller: passCtrl,
-            decoration: InputDecoration(
-              labelText: 'password'.tr,
-              hintText: 'leave_blank_keep_password'.tr,
-              border: const OutlineInputBorder(),
-            ),
+            label: 'password'.tr,
+            hint: 'leave_blank_keep_password'.tr,
+            icon: Icons.lock_outline,
             obscureText: true,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
           Obx(
             () => SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              // No 'active' key in the allowed translation set — short
-              // locale-aware fallback (reported in missingTranslationKeys).
-              title: Text(
-                Get.locale?.languageCode == 'ar' ? 'مفعّل' : 'Active',
-              ),
+              title: Text('active'.tr),
               value: active.value,
               onChanged: (v) => active.value = v,
             ),
@@ -800,6 +805,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       textConfirm: 'save'.tr,
       textCancel: 'cancel'.tr,
+      confirmTextColor: Colors.white,
+      buttonColor: kAppBlue,
       onConfirm: () {
         Get.back(); // close dialog
         controller.updateAccountant(

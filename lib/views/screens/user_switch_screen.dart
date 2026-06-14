@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
+import 'package:generatormanagment/views/widgets/app_form_field.dart';
 
 /// Local profile switch: pick the owner or an accountant sub-user and sign in
 /// (offline, password-checked). The owner runs the cloud session; accountants
@@ -66,20 +67,27 @@ class _UserSwitchScreenState extends State<UserSwitchScreen> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('$who — ${'password'.tr}'),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(who, style: const TextStyle(fontWeight: FontWeight.bold)),
         content: TextField(
           controller: ctrl,
           obscureText: true,
           autofocus: true,
-          decoration: InputDecoration(labelText: 'password'.tr),
+          decoration: appInputDecoration(
+            label: 'password'.tr,
+            icon: Icons.lock_outline,
+          ),
           onSubmitted: (v) => Navigator.pop(ctx, v),
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: Text('cancel'.tr)),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text),
-              child: Text('confirm'.tr)),
+            style: FilledButton.styleFrom(backgroundColor: kAppBlue),
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: Text('confirm'.tr),
+          ),
         ],
       ),
     );

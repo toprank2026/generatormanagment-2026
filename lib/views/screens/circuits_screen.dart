@@ -5,6 +5,7 @@ import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
+import 'package:generatormanagment/views/widgets/app_form_field.dart';
 
 class CircuitsScreen extends StatefulWidget {
   final Board board;
@@ -110,16 +111,19 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
+              AppTextField(
                 controller: nameCtrl,
-                decoration: InputDecoration(labelText: "circuit_name".tr),
+                label: "circuit_name".tr,
+                icon: Icons.electrical_services,
               ),
-              TextField(
+              const SizedBox(height: 14),
+              AppTextField(
                 controller: phaseCtrl,
-                decoration: InputDecoration(labelText: "phase_optional".tr),
+                label: "phase_optional".tr,
+                icon: Icons.bolt,
               ),
               if (auth.isAdmin) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 FutureBuilder<List<Accountant>>(
                   future: AccountantRepository().getAll(),
                   builder: (context, snapshot) {
@@ -127,8 +131,9 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
                     return DropdownButtonFormField<String?>(
                       initialValue: selectedAccountantId,
                       isExpanded: true,
-                      decoration: InputDecoration(
-                        labelText: "assign_accountant".tr,
+                      decoration: appInputDecoration(
+                        label: "assign_accountant".tr,
+                        icon: Icons.person_outline,
                       ),
                       items: [
                         DropdownMenuItem<String?>(
