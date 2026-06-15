@@ -69,6 +69,22 @@ All additive and optional (omitting the param = today's behavior = consolidated)
 - **Backup: NONE.** Cloud backup uploads/restores the **entire `moldati.db`** file; the `branches` table and all `branch_id` values are included automatically. Restore-then-relogin already rebuilds state.
 - **One consideration:** the v4→v5 backfill (if chosen over the NULL-means-Main fallback) generates outbox rows → a larger first push after upgrade. Mitigate with the transaction+purge pattern or prefer the fallback.
 
+## 5a. Plan gating — Multi-Branch is a per-plan upgrade
+
+Multi-Branch is sold as a **subscription-plan capability**, exactly like the
+existing `sync` / `backup` / `ownerPanel` flags, but **opt-in (default OFF)**:
+- Backend `Plan.multiBranchEnabled` (default `false`); `planFeatures.featuresForUser`
+  returns `multiBranch: plan.multiBranchEnabled === true`; `serializePlan` exposes it;
+  the admin `PUT /api/admin/plans` validates + persists it.
+- The admin plan editor (SPA) has a **"تعدّد الفروع (Multi-Branch)"** checkbox when
+  creating/editing a plan, and a plan-list capability chip; the Flutter plan card
+  shows a check/cross row for it.
+- The app reads `auth.canMultiBranch` (`account.subscription.features.multiBranch`,
+  default false). When **off**, the org has only the Main Branch (today's behavior);
+  branch creation/switching UI is hidden — this doubles as the kill-switch. When
+  **on**, the owner can create/switch branches.
+- Backward compatible: existing plans (no flag) ⇒ `false` ⇒ single-branch, unchanged.
+
 ## 6. Permission model *(Deliverable 7)*
 
 Reuses `AuthController` (cloud role owner|admin) + the acting-user `can(perm)` layer.

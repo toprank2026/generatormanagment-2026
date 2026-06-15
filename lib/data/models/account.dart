@@ -31,6 +31,9 @@ class Subscription {
   bool get syncEnabled => _feat('sync');
   bool get backupEnabled => _feat('backup');
   bool get ownerPanelEnabled => _feat('ownerPanel');
+  // Multi-Branch is an opt-in upgrade → enabled ONLY when explicitly true
+  // (absent/unknown => false), unlike the default-on capabilities above.
+  bool get multiBranchEnabled => features['multiBranch'] == true;
 
   factory Subscription.fromJson(Map<String, dynamic>? j) {
     if (j == null) return Subscription();

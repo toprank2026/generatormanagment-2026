@@ -13,12 +13,14 @@ const Plan = require('../models/Plan');
 async function planFeaturesByCode(code) {
   const plan = code ? await Plan.findOne({ code }) : null;
   if (!plan) {
-    return { sync: true, backup: true, ownerPanel: true };
+    return { sync: true, backup: true, ownerPanel: true, multiBranch: false };
   }
   return {
     sync: plan.syncEnabled !== false,
     backup: plan.backupEnabled !== false,
     ownerPanel: plan.ownerPanelEnabled !== false,
+    // Opt-in upgrade: granted only when the plan explicitly enables it.
+    multiBranch: plan.multiBranchEnabled === true,
   };
 }
 
@@ -35,7 +37,7 @@ async function featuresForUser(user) {
   if (sub && sub.status === 'active' && sub.planCode) {
     return planFeaturesByCode(sub.planCode);
   }
-  return { sync: true, backup: true, ownerPanel: true };
+  return { sync: true, backup: true, ownerPanel: true, multiBranch: false };
 }
 
 module.exports = { planFeaturesByCode, featuresForUser };

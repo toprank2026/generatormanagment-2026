@@ -986,7 +986,8 @@ function planFeatureChips(p){
   var feats=[
     {on:p.syncEnabled!==false,icon:"sync",label:"مزامنة البيانات"},
     {on:p.backupEnabled!==false,icon:"backup",label:"النسخ الاحتياطي"},
-    {on:p.ownerPanelEnabled!==false,icon:"dashboard",label:"لوحة المالك"}
+    {on:p.ownerPanelEnabled!==false,icon:"dashboard",label:"لوحة المالك"},
+    {on:p.multiBranchEnabled===true,icon:"account_tree",label:"تعدّد الفروع"}
   ];
   var wrap=el("div",{style:"display:inline-flex;align-items:center;gap:8px"});
   feats.forEach(function(f){
@@ -2619,6 +2620,9 @@ function openPlanModal(existing,onDone){
   backupChk.checked=p.backupEnabled!==false;
   var ownerPanelChk=el("input",{type:"checkbox"});
   ownerPanelChk.checked=p.ownerPanelEnabled!==false;
+  // Multi-Branch is an opt-in upgrade → default OFF (=== true), unlike the above.
+  var multiBranchChk=el("input",{type:"checkbox"});
+  multiBranchChk.checked=p.multiBranchEnabled===true;
   var errBox=el("div");
 
   var saveBtn=el("button",{class:"btn",text:isEdit?"حفظ التغييرات":"إنشاء خطة",onclick:function(){
@@ -2633,7 +2637,8 @@ function openPlanModal(existing,onDone){
       active:activeChk.checked,
       syncEnabled:syncChk.checked,
       backupEnabled:backupChk.checked,
-      ownerPanelEnabled:ownerPanelChk.checked
+      ownerPanelEnabled:ownerPanelChk.checked,
+      multiBranchEnabled:multiBranchChk.checked
     };
     if(!body.code){ errBox.appendChild(el("div",{class:"alert err",text:"الرمز مطلوب."})); return; }
     if(!body.name){ errBox.appendChild(el("div",{class:"alert err",text:"الاسم مطلوب."})); return; }
@@ -2665,7 +2670,8 @@ function openPlanModal(existing,onDone){
         el("label",{text:"الميزات المتاحة في الخطة"}),
         el("label",{class:"check"},[syncChk,el("span",{text:"مزامنة البيانات"})]),
         el("label",{class:"check",style:"margin-top:8px"},[backupChk,el("span",{text:"النسخ الاحتياطي"})]),
-        el("label",{class:"check",style:"margin-top:8px"},[ownerPanelChk,el("span",{text:"لوحة المالك"})])
+        el("label",{class:"check",style:"margin-top:8px"},[ownerPanelChk,el("span",{text:"لوحة المالك"})]),
+        el("label",{class:"check",style:"margin-top:8px"},[multiBranchChk,el("span",{text:"تعدّد الفروع (Multi-Branch)"})])
       ])
     ]),
     footer:[el("button",{class:"btn neutral",text:"إلغاء",onclick:closeModal}),saveBtn]

@@ -18,6 +18,9 @@ const PlanSchema = new Schema(
     syncEnabled: { type: Boolean, default: true },
     backupEnabled: { type: Boolean, default: true },
     ownerPanelEnabled: { type: Boolean, default: true },
+    // Multi-Branch is an opt-in upgrade → default FALSE (existing plans stay
+    // single-branch / Main only until a plan explicitly enables it).
+    multiBranchEnabled: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

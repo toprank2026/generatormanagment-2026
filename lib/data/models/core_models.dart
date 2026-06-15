@@ -5,6 +5,8 @@ class Board {
   // Assigned accountant (NULL = owner-owned). Set by the owner; drives
   // per-accountant visibility.
   String? accountantId;
+  // Owning branch (full-isolation partition). NULL = Main Branch (legacy).
+  String? branchId;
   String? createdAt;
 
   Board({
@@ -12,6 +14,7 @@ class Board {
     required this.name,
     this.code,
     this.accountantId,
+    this.branchId,
     this.createdAt,
   });
 
@@ -21,6 +24,7 @@ class Board {
       'name': name,
       'code': code,
       'accountant_id': accountantId,
+      'branch_id': branchId,
       'created_at': createdAt,
     };
   }
@@ -31,6 +35,7 @@ class Board {
       name: map['name'],
       code: map['code'],
       accountantId: map['accountant_id'],
+      branchId: map['branch_id'],
       createdAt: map['created_at'],
     );
   }
@@ -44,6 +49,7 @@ class Circuit {
   String? createdAt;
 
   String? accountantId;
+  String? branchId;
 
   Circuit({
     required this.id,
@@ -51,6 +57,7 @@ class Circuit {
     required this.name,
     this.phase,
     this.accountantId,
+    this.branchId,
     this.createdAt,
   });
 
@@ -61,6 +68,7 @@ class Circuit {
       'name': name,
       'phase': phase,
       'accountant_id': accountantId,
+      'branch_id': branchId,
       'created_at': createdAt,
     };
   }
@@ -72,6 +80,7 @@ class Circuit {
       name: map['name'],
       phase: map['phase'],
       accountantId: map['accountant_id'],
+      branchId: map['branch_id'],
       createdAt: map['created_at'],
     );
   }
@@ -86,6 +95,7 @@ class Subscriber {
   String circuitId;
   String status;
   String? accountantId;
+  String? branchId;
   String? createdAt;
 
   Subscriber({
@@ -97,6 +107,7 @@ class Subscriber {
     required this.circuitId,
     this.status = 'active',
     this.accountantId,
+    this.branchId,
     this.createdAt,
   });
 
@@ -110,6 +121,7 @@ class Subscriber {
       'circuit_id': circuitId,
       'status': status,
       'accountant_id': accountantId,
+      'branch_id': branchId,
       'created_at': createdAt,
     };
   }
@@ -124,6 +136,7 @@ class Subscriber {
       circuitId: map['circuit_id'],
       status: map['status'] ?? 'active',
       accountantId: map['accountant_id'],
+      branchId: map['branch_id'],
       createdAt: map['created_at'],
     );
   }

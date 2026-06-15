@@ -174,7 +174,7 @@ test('register -> 201 { token, account } with bound device', async () => {
     status: 'none',
     startedAt: null,
     expiresAt: null,
-    features: { sync: true, backup: true, ownerPanel: true },
+    features: { sync: true, backup: true, ownerPanel: true, multiBranch: false },
   });
   // calling device is bound + marked current.
   assert.equal(acc.devices.length, 1);

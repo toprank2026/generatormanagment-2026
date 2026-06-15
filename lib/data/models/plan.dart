@@ -17,6 +17,9 @@ class Plan {
   final bool syncEnabled;
   final bool backupEnabled;
   final bool ownerPanelEnabled;
+  // Multi-Branch is an opt-in upgrade → defaults FALSE when absent (unlike the
+  // default-true flags above).
+  final bool multiBranchEnabled;
 
   Plan({
     required this.code,
@@ -29,6 +32,7 @@ class Plan {
     this.syncEnabled = true,
     this.backupEnabled = true,
     this.ownerPanelEnabled = true,
+    this.multiBranchEnabled = false,
   });
 
   factory Plan.fromJson(Map<String, dynamic> j) => Plan(
@@ -42,5 +46,6 @@ class Plan {
         syncEnabled: (j['syncEnabled'] ?? true) as bool,
         backupEnabled: (j['backupEnabled'] ?? true) as bool,
         ownerPanelEnabled: (j['ownerPanelEnabled'] ?? true) as bool,
+        multiBranchEnabled: (j['multiBranchEnabled'] ?? false) as bool,
       );
 }

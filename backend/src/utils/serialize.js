@@ -78,6 +78,7 @@ function serializePlan(plan) {
     syncEnabled: p.syncEnabled !== false,
     backupEnabled: p.backupEnabled !== false,
     ownerPanelEnabled: p.ownerPanelEnabled !== false,
+    multiBranchEnabled: p.multiBranchEnabled === true,
   };
 }
 

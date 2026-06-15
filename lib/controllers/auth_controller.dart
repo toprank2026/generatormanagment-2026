@@ -105,6 +105,10 @@ class AuthController extends GetxController {
   bool get canSync => account.value?.subscription.syncEnabled ?? true;
   bool get canBackup => account.value?.subscription.backupEnabled ?? true;
   bool get canOwnerPanel => account.value?.subscription.ownerPanelEnabled ?? true;
+  /// Multi-Branch is an opt-in upgrade → defaults FALSE when there is no plan.
+  /// Gates creating/switching branches beyond the Main Branch.
+  bool get canMultiBranch =>
+      account.value?.subscription.multiBranchEnabled ?? false;
   /// In-app management rights (create/edit/delete boards, circuits, subscribers,
   /// staff). The account holder is either the business `owner` or an `admin`;
   /// both manage their own data. (Local 'accountant' staff are restricted.)

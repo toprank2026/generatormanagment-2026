@@ -8,6 +8,8 @@ class Expense {
   // Owning accountant (NULL = owner-owned). Expenses are owner-only today, but
   // the column keeps per-accountant report filtering uniform with the rest.
   final String? accountantId;
+  // Owning branch (full-isolation partition). NULL = Main Branch (legacy).
+  final String? branchId;
   final String? createdAt;
 
   Expense({
@@ -18,6 +20,7 @@ class Expense {
     required this.date,
     this.createdByUserId,
     this.accountantId,
+    this.branchId,
     this.createdAt,
   });
 
@@ -30,6 +33,7 @@ class Expense {
       'date': date,
       'created_by_user_id': createdByUserId,
       'accountant_id': accountantId,
+      'branch_id': branchId,
       'created_at': createdAt,
     };
   }
@@ -43,6 +47,7 @@ class Expense {
       date: map['date'],
       createdByUserId: map['created_by_user_id'],
       accountantId: map['accountant_id'],
+      branchId: map['branch_id'],
       createdAt: map['created_at'],
     );
   }

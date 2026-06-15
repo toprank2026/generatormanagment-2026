@@ -1,0 +1,81 @@
+import 'package:get/get.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:generatormanagment/data/db_helper.dart';
+import 'package:generatormanagment/data/models/branch_model.dart';
+import 'package:generatormanagment/data/repositories/branch_repository.dart';
+
+/// Branch context layer (full isolation): the device has ONE active branch at a
+/// time; every business read scopes to it and every create stamps it. Switching
+/// a branch switches the whole system context (it is NOT a filter over shared
+/// data). The owner may also pick "All branches" (consolidated) for reporting
+/// only — represented by [currentBranch] == null.
+///
+/// Mirrors the existing acting-user layer in AuthController (persisted +
+/// restored on launch); controllers `ever(currentBranch)`-reload on a switch.
+class BranchController extends GetxController {
+  final BranchRepository _repo = BranchRepository();
+
+  /// The active branch. A concrete branch in normal operation (defaults to the
+  /// Main Branch). `null` = consolidated / All branches (owner reporting only).
+  final Rxn<Branch> currentBranch = Rxn<Branch>();
+  final RxList<Branch> branches = <Branch>[].obs;
+
+  static const String _kActiveBranchId = 'active_branch_id';
+  static const String _kAll = '__ALL__';
+
+  /// Branch id to scope reads/writes by. `null` = consolidated (no filter).
+  String? get scopeBranchId => currentBranch.value?.id;
+
+  /// The active branch id used to STAMP new rows (never consolidated — a new row
+  /// always belongs to a concrete branch; falls back to Main).
+  String get writeBranchId =>
+      currentBranch.value?.id ?? DbHelper.kMainBranchId;
+
+  bool get isConsolidated => currentBranch.value == null;
+
+  @override
+  void onInit() {
+    super.onInit();
+    // Default to a Main Branch context immediately so the very first reads are
+    // already branch-scoped (never an un-scoped flash), then refine from the DB.
+    currentBranch.value = Branch(
+      id: DbHelper.kMainBranchId,
+      name: 'الفرع الرئيسي',
+      isMain: true,
+    );
+    init();
+  }
+
+  Future<void> init() async {
+    await _repo.ensureMain();
+    await loadBranches();
+    await _restoreActive();
+  }
+
+  Future<void> loadBranches() async {
+    branches.assignAll(await _repo.getAll());
+    update();
+  }
+
+  Future<void> _restoreActive() async {
+    final prefs = await SharedPreferences.getInstance();
+    final id = prefs.getString(_kActiveBranchId);
+    if (id == _kAll) {
+      currentBranch.value = null; // consolidated (owner)
+    } else {
+      final wanted = id ?? DbHelper.kMainBranchId;
+      currentBranch.value = branches.firstWhereOrNull((b) => b.id == wanted) ??
+          branches.firstWhereOrNull((b) => b.id == DbHelper.kMainBranchId) ??
+          (branches.isNotEmpty ? branches.first : currentBranch.value);
+    }
+    update();
+  }
+
+  /// Switch the active branch. Pass `null` for the consolidated (All) view.
+  Future<void> setBranch(Branch? branch) async {
+    currentBranch.value = branch;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kActiveBranchId, branch?.id ?? _kAll);
+    update();
+  }
+}

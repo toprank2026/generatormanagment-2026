@@ -360,6 +360,7 @@ const upsertPlan = asyncHandler(async (req, res) => {
     syncEnabled,
     backupEnabled,
     ownerPanelEnabled,
+    multiBranchEnabled,
   } = req.body;
 
   const update = {
@@ -372,6 +373,7 @@ const upsertPlan = asyncHandler(async (req, res) => {
     syncEnabled,
     backupEnabled,
     ownerPanelEnabled,
+    multiBranchEnabled,
   };
   // Drop undefined so a partial PUT only changes provided fields on update.
   Object.keys(update).forEach((k) => update[k] === undefined && delete update[k]);

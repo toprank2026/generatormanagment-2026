@@ -68,6 +68,7 @@ router.put(
     body('syncEnabled').optional().isBoolean(),
     body('backupEnabled').optional().isBoolean(),
     body('ownerPanelEnabled').optional().isBoolean(),
+    body('multiBranchEnabled').optional().isBoolean(),
   ],
   validate,
   ctrl.upsertPlan

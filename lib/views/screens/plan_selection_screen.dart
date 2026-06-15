@@ -284,6 +284,8 @@ class _PlanCard extends StatelessWidget {
           _capability(Icons.backup, 'feature_backup'.tr, plan.backupEnabled),
           _capability(Icons.admin_panel_settings, 'feature_owner_panel'.tr,
               plan.ownerPanelEnabled),
+          _capability(Icons.account_tree, 'feature_multi_branch'.tr,
+              plan.multiBranchEnabled),
           const SizedBox(height: 4),
           if (plan.description != null && plan.description!.isNotEmpty) ...[
             const SizedBox(height: 10),
