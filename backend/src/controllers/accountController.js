@@ -13,6 +13,7 @@ const STAT_ENTITIES = [
   'expenses',
   'monthly_prices',
   'accountants',
+  'branches',
 ];
 
 /**
@@ -43,28 +44,32 @@ const num = (value) => {
  * @param {*} userId Mongo id of the caller.
  * @param {object} counts Per-entity counts (reused for boards/circuits).
  * @param {string} month The month to report on, 'YYYY-MM' (already validated).
- * @param {string|null} accountantId When set, scope every figure to that one
- *   accountant (subscribers/receipts/expenses with data.accountant_id == it);
- *   null = the whole owner account (all accountants). monthly_prices stays
- *   global (one shared price per month).
+ * @param {string|null} accountantId When set, scope the MONEY figures to that
+ *   one accountant (receipts/expenses with data.accountant_id == it);
+ *   null = the whole owner account (all accountants).
+ * @param {string|null} branchId When set, scope EVERY figure to that one branch
+ *   (full isolation — subscribers/boards/circuits/receipts/expenses/price with
+ *   data.branch_id == it); null = consolidated / all branches.
  * @returns {Promise<object>} The `dashboard` payload for GET /api/account/stats.
  */
-async function buildDashboard(userId, counts, month, accountantId = null) {
-  // Boards/circuits/subscribers are SHARED across accountants → their counts
-  // and the paid/unpaid status are GLOBAL. Only the MONEY (collected/expenses)
-  // is per-accountant: when accountantId is set we scope those sums in JS to the
-  // receipts/expenses that accountant created. monthly_prices stays global.
+async function buildDashboard(userId, counts, month, accountantId = null, branchId = null) {
+  // Branch is the outer partition (full isolation): when branchId is set, every
+  // query is scoped to that branch. Accountant is the inner MONEY scope
+  // (collected/expenses), applied in JS. monthly_prices is per-branch (its PK
+  // is "<month>|<branchId>") so we match it by data.month + branch.
+  const branchMatch = branchId ? { 'data.branch_id': branchId } : {};
   const [priceRow, subscribers, receipts, expenses, lastUpload, boardsCount, circuitsCount] = await Promise.all([
-    // monthly_prices' device PK is the month string, so localId === month.
+    // Per-branch monthly price (matched by data.month + branch; legacy rows that
+    // predate per-branch pricing carry no branch_id and only match consolidated).
     SyncRecord.findOne(
-      { user: userId, entity: 'monthly_prices', deleted: false, localId: month },
+      { user: userId, entity: 'monthly_prices', deleted: false, 'data.month': month, ...branchMatch },
       { data: 1 }
     ),
     SyncRecord.find(
-      { user: userId, entity: 'subscribers', deleted: false },
+      { user: userId, entity: 'subscribers', deleted: false, ...branchMatch },
       { data: 1, localId: 1 }
     ),
-    // ALL non-refunded receipts for the month (global) — drives paid/unpaid.
+    // Non-refunded receipts for the month in this branch — drives paid/unpaid.
     SyncRecord.find(
       {
         user: userId,
@@ -72,19 +77,20 @@ async function buildDashboard(userId, counts, month, accountantId = null) {
         deleted: false,
         'data.month': month,
         'data.status': { $ne: 'refunded' },
+        ...branchMatch,
       },
       { data: 1 }
     ),
-    // All expense rows for the month (global); scoped in JS for the total.
+    // Expense rows for the month in this branch; scoped in JS for the total.
     SyncRecord.find(
-      { user: userId, entity: 'expenses', deleted: false, 'data.date': { $regex: '^' + month } },
+      { user: userId, entity: 'expenses', deleted: false, 'data.date': { $regex: '^' + month }, ...branchMatch },
       { data: 1 }
     ),
     // Most recent sync activity of any kind (incl. deletions) — "last upload".
     SyncRecord.findOne({ user: userId }, { updatedAt: 1 }).sort({ updatedAt: -1 }),
-    // Boards/circuits counts (shared → global).
-    SyncRecord.countDocuments({ user: userId, entity: 'boards', deleted: false }),
-    SyncRecord.countDocuments({ user: userId, entity: 'circuits', deleted: false }),
+    // Boards/circuits counts (branch-scoped).
+    SyncRecord.countDocuments({ user: userId, entity: 'boards', deleted: false, ...branchMatch }),
+    SyncRecord.countDocuments({ user: userId, entity: 'circuits', deleted: false, ...branchMatch }),
   ]);
 
   const priceData = (priceRow && priceRow.data) || {};
@@ -162,9 +168,11 @@ const getMyStats = asyncHandler(async (req, res) => {
   for (const entity of STAT_ENTITIES) counts[entity] = 0;
   for (const row of rows) counts[row._id] = row.count;
 
-  // Optional admin/owner filter: scope the dashboard to one accountant.
+  // Optional owner filters: scope the dashboard to one accountant and/or one
+  // branch (full isolation). Both default to null = whole account / all branches.
   const accId = String(req.query.accountantId || '').trim() || null;
-  const dashboard = await buildDashboard(req.user._id, counts, month, accId);
+  const branchId = String(req.query.branchId || '').trim() || null;
+  const dashboard = await buildDashboard(req.user._id, counts, month, accId, branchId);
 
   res.status(200).json({ counts, dashboard });
 });

@@ -6,6 +6,14 @@ import 'package:sqflite/sqflite.dart';
 //   accountantId == null  -> owner/admin view: no filter (sees & owns all).
 //   accountantId != null  -> only rows whose accountant_id matches.
 // The acting layer (AuthController.scopeAccountantId) decides which to pass.
+//
+// Per-branch scoping (full-isolation, additive) composes with the above:
+//   branchId == null  -> consolidated / All branches (no branch filter).
+//   branchId != null  -> only rows whose branch_id matches the active branch.
+// The branch layer (BranchController.scopeBranchId) decides which to pass.
+// Boards/circuits/subscribers are SHARED across accountants WITHIN a branch, so
+// in practice they are scoped by branch only (accountantId stays null); receipts
+// and expenses are scoped by BOTH branch and accountant.
 
 class BoardRepository {
   final DbHelper _dbHelper = DbHelper();
@@ -33,6 +41,8 @@ class BoardRepository {
   /// circuits, subscribers and their receipts so no orphan rows remain. When
   /// [accountantId] is given (an accountant), only that accountant's own rows
   /// are touched — never another accountant's data under the same board.
+  /// Branch scoping isn't needed here: ids are globally-unique UUIDs, so a
+  /// board (and its children) already belong to exactly one branch.
   Future<int> delete(String id, {String? accountantId}) async {
     final db = await _dbHelper.database;
     return await db.transaction((txn) async {
@@ -65,12 +75,25 @@ class BoardRepository {
   }
 
   Future<List<Board>> getAll(
-      {int limit = -1, int offset = 0, String? accountantId}) async {
+      {int limit = -1,
+      int offset = 0,
+      String? accountantId,
+      String? branchId}) async {
     final db = await _dbHelper.database;
+    final clauses = <String>[];
+    final args = <dynamic>[];
+    if (accountantId != null) {
+      clauses.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
     final List<Map<String, dynamic>> maps = await db.query(
       'boards',
-      where: accountantId == null ? null : 'accountant_id = ?',
-      whereArgs: accountantId == null ? null : [accountantId],
+      where: clauses.isEmpty ? null : clauses.join(' AND '),
+      whereArgs: args.isEmpty ? null : args,
       orderBy: 'name ASC',
       limit: limit < 0 ? null : limit,
       offset: limit < 0 ? null : offset,
@@ -135,15 +158,22 @@ class CircuitRepository {
     int limit = -1,
     int offset = 0,
     String? accountantId,
+    String? branchId,
   }) async {
     final db = await _dbHelper.database;
-    final where = accountantId == null
-        ? 'board_id = ?'
-        : 'board_id = ? AND accountant_id = ?';
-    final args = accountantId == null ? [boardId] : [boardId, accountantId];
+    final clauses = <String>['board_id = ?'];
+    final args = <dynamic>[boardId];
+    if (accountantId != null) {
+      clauses.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
     final List<Map<String, dynamic>> maps = await db.query(
       'circuits',
-      where: where,
+      where: clauses.join(' AND '),
       whereArgs: args,
       orderBy: 'name ASC',
       limit: limit < 0 ? null : limit,
@@ -199,6 +229,7 @@ class SubscriberRepository {
     int offset = 0,
     String? query,
     String? accountantId,
+    String? branchId,
   }) async {
     final db = await _dbHelper.database;
 
@@ -211,6 +242,10 @@ class SubscriberRepository {
     if (accountantId != null) {
       clauses.add('accountant_id = ?');
       args.add(accountantId);
+    }
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
     }
 
     final List<Map<String, dynamic>> maps = await db.query(
@@ -225,26 +260,38 @@ class SubscriberRepository {
   }
 
   Future<List<Subscriber>> getByCircuit(String circuitId,
-      {String? accountantId}) async {
+      {String? accountantId, String? branchId}) async {
     final db = await _dbHelper.database;
-    final where = accountantId == null
-        ? 'circuit_id = ?'
-        : 'circuit_id = ? AND accountant_id = ?';
-    final args = accountantId == null ? [circuitId] : [circuitId, accountantId];
+    final clauses = <String>['circuit_id = ?'];
+    final args = <dynamic>[circuitId];
+    if (accountantId != null) {
+      clauses.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
     final List<Map<String, dynamic>> maps =
-        await db.query('subscribers', where: where, whereArgs: args);
+        await db.query('subscribers', where: clauses.join(' AND '), whereArgs: args);
     return List.generate(maps.length, (i) => Subscriber.fromMap(maps[i]));
   }
 
   Future<List<Subscriber>> getByBoard(String boardId,
-      {String? accountantId}) async {
+      {String? accountantId, String? branchId}) async {
     final db = await _dbHelper.database;
-    final where = accountantId == null
-        ? 'board_id = ?'
-        : 'board_id = ? AND accountant_id = ?';
-    final args = accountantId == null ? [boardId] : [boardId, accountantId];
+    final clauses = <String>['board_id = ?'];
+    final args = <dynamic>[boardId];
+    if (accountantId != null) {
+      clauses.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
     final List<Map<String, dynamic>> maps =
-        await db.query('subscribers', where: where, whereArgs: args);
+        await db.query('subscribers', where: clauses.join(' AND '), whereArgs: args);
     return List.generate(maps.length, (i) => Subscriber.fromMap(maps[i]));
   }
 
@@ -253,11 +300,29 @@ class SubscriberRepository {
     required double pricePerAmp,
     required bool isPaid,
     String? accountantId,
+    String? branchId,
   }) async {
     final db = await _dbHelper.database;
-    // We use a raw query to join with aggregated receipts
+    // We use a raw query to join with aggregated receipts. Args are assembled in
+    // the exact textual order of the `?` placeholders below:
+    //   inner: month [, branch_id]   then   outer: pricePerAmp [, s.accountant_id] [, s.branch_id]
     final String operator = isPaid ? '>=' : '<';
-    final String scope = accountantId == null ? '' : 'AND s.accountant_id = ?';
+    final args = <dynamic>[month];
+    // The receipts sub-query is branch-scoped too: a shared subscriber id can
+    // carry receipts in more than one branch, so the paid total must count only
+    // the active branch's receipts (full isolation). null = all branches.
+    final String innerScope = branchId == null ? '' : 'AND branch_id = ?';
+    if (branchId != null) args.add(branchId);
+    args.add(pricePerAmp);
+    final outerScopes = <String>[];
+    if (accountantId != null) {
+      outerScopes.add('AND s.accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      outerScopes.add('AND s.branch_id = ?');
+      args.add(branchId);
+    }
 
     final String sql =
         """
@@ -265,14 +330,12 @@ class SubscriberRepository {
       LEFT JOIN (
         SELECT subscriber_id, SUM(paid_amount) as total_paid
         FROM receipts
-        WHERE month = ? AND status = 'valid'
+        WHERE month = ? AND status = 'valid' $innerScope
         GROUP BY subscriber_id
       ) r ON s.id = r.subscriber_id
-      WHERE COALESCE(r.total_paid, 0) $operator (s.amps * ?) $scope
+      WHERE COALESCE(r.total_paid, 0) $operator (s.amps * ?) ${outerScopes.join(' ')}
     """;
 
-    final args = <dynamic>[month, pricePerAmp];
-    if (accountantId != null) args.add(accountantId);
     final List<Map<String, dynamic>> maps = await db.rawQuery(sql, args);
     return List.generate(maps.length, (i) => Subscriber.fromMap(maps[i]));
   }
@@ -282,40 +345,56 @@ class SubscriberRepository {
     required double pricePerAmp,
     required bool isPaid,
     String? accountantId,
+    String? branchId,
   }) async {
     final list = await getByPaymentStatus(
       month: month,
       pricePerAmp: pricePerAmp,
       isPaid: isPaid,
       accountantId: accountantId,
+      branchId: branchId,
     );
     return list.length;
   }
 
-  Future<int> countByBoard(String boardId, {String? accountantId}) async {
+  Future<int> countByBoard(String boardId,
+      {String? accountantId, String? branchId}) async {
     final db = await _dbHelper.database;
-    final where = accountantId == null
-        ? 'board_id = ?'
-        : 'board_id = ? AND accountant_id = ?';
-    final args = accountantId == null ? [boardId] : [boardId, accountantId];
+    final clauses = <String>['board_id = ?'];
+    final args = <dynamic>[boardId];
+    if (accountantId != null) {
+      clauses.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
     return Sqflite.firstIntValue(
           await db.rawQuery(
-            'SELECT COUNT(*) FROM subscribers WHERE $where',
+            'SELECT COUNT(*) FROM subscribers WHERE ${clauses.join(' AND ')}',
             args,
           ),
         ) ??
         0;
   }
 
-  Future<int> countByCircuit(String circuitId, {String? accountantId}) async {
+  Future<int> countByCircuit(String circuitId,
+      {String? accountantId, String? branchId}) async {
     final db = await _dbHelper.database;
-    final where = accountantId == null
-        ? 'circuit_id = ?'
-        : 'circuit_id = ? AND accountant_id = ?';
-    final args = accountantId == null ? [circuitId] : [circuitId, accountantId];
+    final clauses = <String>['circuit_id = ?'];
+    final args = <dynamic>[circuitId];
+    if (accountantId != null) {
+      clauses.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
     return Sqflite.firstIntValue(
           await db.rawQuery(
-            'SELECT COUNT(*) FROM subscribers WHERE $where',
+            'SELECT COUNT(*) FROM subscribers WHERE ${clauses.join(' AND ')}',
             args,
           ),
         ) ??

@@ -1,0 +1,153 @@
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/controllers/branch_controller.dart';
+import 'package:generatormanagment/data/models/branch_model.dart';
+import 'package:generatormanagment/views/screens/branches_screen.dart';
+import 'package:generatormanagment/views/widgets/app_form_field.dart';
+
+/// Active-branch selector card (dashboard). Switching the active branch swaps
+/// the WHOLE app data context (full isolation) — controllers listen on
+/// [BranchController.currentBranch] and reload. Renders only when the plan
+/// includes Multi-Branch (`auth.canMultiBranch`); otherwise the app silently
+/// stays on the single Main Branch and nothing is shown.
+class BranchSelector extends StatelessWidget {
+  const BranchSelector({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final BranchController branch = Get.find<BranchController>();
+    final AuthController auth = Get.find<AuthController>();
+
+    return Obx(() {
+      if (!auth.canMultiBranch) return const SizedBox.shrink();
+      final current = branch.currentBranch.value;
+      final label = current?.name ?? 'all_branches_consolidated'.tr;
+      final consolidated = current == null;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _openSheet(context, branch, auth),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: kAppBlue.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(consolidated ? Icons.dashboard : Icons.account_tree,
+                    color: kAppBlue),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'active_branch'.tr,
+                        style: const TextStyle(
+                            fontSize: 11, color: Colors.blueGrey),
+                      ),
+                      Text(
+                        label,
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.bold),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.unfold_more, color: kAppBlue),
+              ],
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  void _openSheet(
+      BuildContext context, BranchController branch, AuthController auth) {
+    Get.bottomSheet(
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Obx(() {
+          final currentId = branch.currentBranch.value?.id;
+          final consolidated = branch.currentBranch.value == null;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 8, bottom: 8),
+                child: Text('switch_branch'.tr,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final Branch b in branch.branches)
+                      ListTile(
+                        leading: Icon(
+                          b.isMainBranch ? Icons.home_work : Icons.account_tree,
+                          color: b.id == currentId ? kAppBlue : Colors.grey,
+                        ),
+                        title: Text(b.name),
+                        trailing: b.id == currentId
+                            ? const Icon(Icons.check_circle, color: kAppBlue)
+                            : null,
+                        onTap: () {
+                          branch.setBranch(b);
+                          Get.back();
+                        },
+                      ),
+                    // Consolidated (All branches) — owner reporting only.
+                    if (auth.isAdmin) ...[
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: Icon(Icons.dashboard,
+                            color: consolidated ? kAppBlue : Colors.grey),
+                        title: Text('all_branches_consolidated'.tr),
+                        subtitle: Text('consolidated_hint'.tr,
+                            style: const TextStyle(fontSize: 11)),
+                        trailing: consolidated
+                            ? const Icon(Icons.check_circle, color: kAppBlue)
+                            : null,
+                        onTap: () {
+                          branch.setConsolidated();
+                          Get.back();
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (auth.isAdmin)
+                Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.settings, color: kAppBlue),
+                    label: Text('branches'.tr,
+                        style: const TextStyle(color: kAppBlue)),
+                    onPressed: () {
+                      Get.back();
+                      Get.to(() => const BranchesScreen());
+                    },
+                  ),
+                ),
+            ],
+          );
+        }),
+      ),
+      isScrollControlled: true,
+    );
+  }
+}

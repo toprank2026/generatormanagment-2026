@@ -7,6 +7,7 @@ import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/controllers/branch_controller.dart';
 
 class CoreController extends GetxController {
   final BoardRepository _boardRepo = BoardRepository();
@@ -14,10 +15,16 @@ class CoreController extends GetxController {
   final SubscriberRepository _subscriberRepo = SubscriberRepository();
   final MonthlyPriceRepository _priceRepo = MonthlyPriceRepository();
   final AuthController _auth = Get.find();
+  final BranchController _branch = Get.find();
 
   // Boards, circuits and subscribers are SHARED across all accountants (the
   // owner's common customer base), so their reads/deletes are never scoped by
   // accountant — only receipts/expenses are per-accountant (see billing/reports).
+  // They ARE, however, scoped by the active BRANCH (full isolation): reads pass
+  // the active branch id and creates stamp it.
+
+  /// Active-branch read scope (null = consolidated / All branches).
+  String? get _branchScope => _branch.scopeBranchId;
 
   var boards = <Board>[].obs;
   var circuits = <Circuit>[].obs; // Currently selected board's circuits
@@ -54,6 +61,11 @@ class CoreController extends GetxController {
       loadBoards();
       loadSubscribers();
     });
+    // Re-scope lists when the active branch switches (full system-context swap).
+    ever(_branch.currentBranch, (_) {
+      loadBoards();
+      loadSubscribers();
+    });
   }
 
   @override
@@ -86,6 +98,7 @@ class CoreController extends GetxController {
         limit: boardsPerPage + 1,
         offset: (page - 1) * boardsPerPage,
         accountantId: null,
+        branchId: _branchScope,
       );
 
       List<Board> newItems;
@@ -123,6 +136,7 @@ class CoreController extends GetxController {
       name: name,
       code: code,
       accountantId: accountantId,
+      branchId: _branch.writeBranchId,
     );
     await _boardRepo.insert(b);
     loadBoards();
@@ -163,6 +177,7 @@ class CoreController extends GetxController {
         limit: circuitsPerPage + 1,
         offset: (page - 1) * circuitsPerPage,
         accountantId: null,
+        branchId: _branchScope,
       );
 
       List<Circuit> newItems;
@@ -203,6 +218,7 @@ class CoreController extends GetxController {
       name: name,
       phase: phase,
       accountantId: accountantId,
+      branchId: _branch.writeBranchId,
     );
     await _circuitRepo.insert(c);
     loadCircuits(boardId);
@@ -236,6 +252,7 @@ class CoreController extends GetxController {
         limit: itemsPerPage + 1,
         offset: (page - 1) * itemsPerPage,
         accountantId: null,
+        branchId: _branchScope,
       );
 
       List<Subscriber> newItems;
@@ -266,6 +283,9 @@ class CoreController extends GetxController {
   }
 
   Future<void> addSubscriber(Subscriber sub) async {
+    // Stamp the active branch (full isolation): the view doesn't know about
+    // branches, so the controller assigns the new subscriber to the current one.
+    sub.branchId ??= _branch.writeBranchId;
     await _subscriberRepo.insert(sub);
     loadSubscribers(); // Refresh list if showing all
     _refreshDashboard();
@@ -300,7 +320,7 @@ class CoreController extends GetxController {
       } else {
         // Fallback to current month and DB price
         month = DateFormat('yyyy-MM').format(DateTime.now());
-        final priceObj = await _priceRepo.getByMonth(month);
+        final priceObj = await _priceRepo.getByMonth(month, branchId: _branchScope);
         price = priceObj?.pricePerAmp ?? 0.0;
       }
 
@@ -309,6 +329,7 @@ class CoreController extends GetxController {
         pricePerAmp: price,
         isPaid: filter == 'paid',
         accountantId: null,
+        branchId: _branchScope,
       );
     } catch (e) {
       print("Error loading filtered subscribers: $e");
@@ -321,8 +342,8 @@ class CoreController extends GetxController {
   Future<void> loadBoardSubscribers(String boardId) async {
     isLoading.value = true;
     try {
-      subscribers.value =
-          await _subscriberRepo.getByBoard(boardId, accountantId: null);
+      subscribers.value = await _subscriberRepo.getByBoard(boardId,
+          accountantId: null, branchId: _branchScope);
     } finally {
       isLoading.value = false;
     }

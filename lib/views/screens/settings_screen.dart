@@ -9,6 +9,7 @@ import 'package:generatormanagment/views/screens/backup_screen.dart';
 import 'package:generatormanagment/views/screens/sync_screen.dart';
 import 'package:generatormanagment/views/screens/user_switch_screen.dart';
 import 'package:generatormanagment/views/screens/accountants_screen.dart';
+import 'package:generatormanagment/views/screens/branches_screen.dart';
 import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/repositories/device_repository.dart';
 import 'package:generatormanagment/utils/bluetooth_print_service.dart';
@@ -217,6 +218,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: Text('manage_accountants_subtitle'.tr),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => Get.to(() => const AccountantsScreen()),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              );
+            }),
+
+            // Branches (owner-only + plan-gated on Multi-Branch). Opens the
+            // dedicated management screen. Obx so it reacts to a user switch
+            // or a plan change.
+            Obx(() {
+              if (!auth.isAdmin || !auth.canMultiBranch) {
+                return const SizedBox.shrink();
+              }
+              return Column(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: ListTile(
+                      leading: const Icon(Icons.account_tree,
+                          color: Color(0xFF1565C0)),
+                      title: Text('branches'.tr),
+                      subtitle: Text('manage_branches_subtitle'.tr),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Get.to(() => const BranchesScreen()),
                     ),
                   ),
                   const SizedBox(height: 24),

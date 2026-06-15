@@ -4,6 +4,7 @@ import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/views/widgets/shimmer_loading.dart';
+import 'package:generatormanagment/views/widgets/branch_selector.dart';
 import 'package:generatormanagment/views/screens/subscribers_screen.dart';
 import 'package:generatormanagment/views/screens/boards_screen.dart';
 
@@ -282,6 +283,9 @@ class DashboardScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
+
+              // Active-branch selector (only when the plan includes Multi-Branch).
+              const BranchSelector(),
 
               // Stats Grid
               Text(

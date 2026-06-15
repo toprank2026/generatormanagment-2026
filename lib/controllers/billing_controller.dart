@@ -4,13 +4,14 @@ import 'package:intl/intl.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
-import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
 
 class BillingController extends GetxController {
   final MonthlyPriceRepository _priceRepo = MonthlyPriceRepository();
   final ReceiptRepository _receiptRepo = ReceiptRepository();
+  final BranchController _branch = Get.find();
 
   var currentPrice = Rxn<MonthlyPrice>();
   var isLoading = false.obs;
@@ -27,6 +28,8 @@ class BillingController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    // The selected month's price is per-branch (D-4): reload it on a switch.
+    ever(_branch.currentBranch, (_) => loadMonthPrice(selectedMonth.value));
   }
 
   @override
@@ -43,13 +46,20 @@ class BillingController extends GetxController {
 
   Future<void> loadMonthPrice(String month) async {
     isLoading.value = true;
-    currentPrice.value = await _priceRepo.getByMonth(month);
+    currentPrice.value =
+        await _priceRepo.getByMonth(month, branchId: _branch.scopeBranchId);
     isLoading.value = false;
     update();
   }
 
   Future<void> setPrice(double price) async {
-    final mp = MonthlyPrice(month: selectedMonth.value, pricePerAmp: price);
+    // Pricing is per-branch (D-4): stamp the active branch so each branch keeps
+    // its own monthly price (synthetic PK "<month>|<branchId>").
+    final mp = MonthlyPrice(
+      month: selectedMonth.value,
+      pricePerAmp: price,
+      branchId: _branch.writeBranchId,
+    );
     await _priceRepo.insert(mp); // Insert or replace
     loadMonthPrice(selectedMonth.value);
     update();
@@ -75,6 +85,7 @@ class BillingController extends GetxController {
         limit: historyItemsPerPage + 1,
         offset: (page - 1) * historyItemsPerPage,
         accountantId: Get.find<AuthController>().scopeAccountantId,
+        branchId: _branch.scopeBranchId,
       );
 
       List<Receipt> newItems;
@@ -107,16 +118,22 @@ class BillingController extends GetxController {
   }
 
   Future<double> getDueAmount(Subscriber sub, String month) async {
-    // 1. Get price for the month
-    MonthlyPrice? mp = await _priceRepo.getByMonth(month);
+    // A receipt belongs to the SUBSCRIBER's branch. Keying the price + paid sum
+    // to sub.branchId keeps the due correct even from the consolidated view
+    // (active branch null), and never counts another branch's payments.
+    final String? branchId = sub.branchId ?? _branch.scopeBranchId;
+
+    // 1. Get price for the month (per-branch pricing)
+    MonthlyPrice? mp = await _priceRepo.getByMonth(month, branchId: branchId);
     if (mp == null) return 0.0; // No price set
 
     double totalDue = sub.amps * mp.pricePerAmp;
 
-    // 2. Subtract paid amount
+    // 2. Subtract paid amount (this branch's receipts only)
     List<Receipt> receipts = await _receiptRepo.getBySubscriberAndMonth(
       sub.id,
       month,
+      branchId: branchId,
     );
     double paid = receipts.fold(0.0, (sum, r) => sum + r.paidAmount);
 
@@ -129,7 +146,12 @@ class BillingController extends GetxController {
       return null;
     }
 
-    MonthlyPrice? mp = await _priceRepo.getByMonth(selectedMonth.value);
+    // The receipt belongs to the SUBSCRIBER's branch (correct even when
+    // collecting from the consolidated view, where the active branch is null).
+    final String branchId = sub.branchId ?? _branch.writeBranchId;
+
+    MonthlyPrice? mp =
+        await _priceRepo.getByMonth(selectedMonth.value, branchId: branchId);
     if (mp == null) return null;
 
     double due = await getDueAmount(sub, selectedMonth.value);
@@ -141,7 +163,9 @@ class BillingController extends GetxController {
     }
 
     final AuthController auth = Get.find();
-    int receiptNo = await _receiptRepo.getNextReceiptNumber();
+    // Receipt numbering is independent per branch (D-3): MAX+1 within the
+    // subscriber's branch, so each branch keeps its own 1..N sequence.
+    int receiptNo = await _receiptRepo.getNextReceiptNumber(branchId: branchId);
 
     final r = Receipt(
       uuid: const Uuid().v4(),
@@ -157,6 +181,8 @@ class BillingController extends GetxController {
       // COLLECTED it (the acting user) — this drives each accountant's separate
       // history/reports and prints their name on the receipt.
       accountantId: auth.currentUser.value?.id,
+      // Full isolation: the receipt belongs to the subscriber's branch.
+      branchId: branchId,
       issuedAt: DateTime.now().toIso8601String(),
     );
 

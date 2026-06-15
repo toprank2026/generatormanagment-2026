@@ -4,6 +4,7 @@ import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/repositories/expense_repository.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:intl/intl.dart';
 
 /// Monthly reports & statistics — all figures derived from the LOCAL SQLite
@@ -17,6 +18,7 @@ class ReportsController extends GetxController {
   final MonthlyPriceRepository _priceRepo = MonthlyPriceRepository();
   final ExpenseRepository _expenseRepo = ExpenseRepository();
   final AuthController _auth = Get.find();
+  final BranchController _branch = Get.find();
 
   /// Owner-only accountant filter (null = all accountants). Ignored for an
   /// accountant, who is always scoped to themselves.
@@ -26,6 +28,9 @@ class ReportsController extends GetxController {
   /// the chosen filter (null = everything).
   String? get _scope =>
       _auth.isAdmin ? accountantFilter.value : _auth.currentUser.value?.id;
+
+  /// Active-branch read scope (null = consolidated / All branches).
+  String? get _branchScope => _branch.scopeBranchId;
 
   void setAccountantFilter(String? accountantId) {
     accountantFilter.value = accountantId;
@@ -66,6 +71,8 @@ class ReportsController extends GetxController {
       accountantFilter.value = null; // reset any owner filter on switch
       loadReport();
     });
+    // Re-scope when the active branch switches (full system-context swap).
+    ever(_branch.currentBranch, (_) => loadReport());
   }
 
   @override
@@ -79,37 +86,41 @@ class ReportsController extends GetxController {
     try {
       final m = month.value;
       // Money (collected/expenses/payments list) is per-accountant; the shared
-      // subscriber base (total/amps/paid/unpaid/expected) is global.
+      // subscriber base (total/amps/paid/unpaid/expected) is partitioned by
+      // the active branch (full isolation).
       final scope = _scope;
+      final branch = _branchScope;
 
-      // 1. Subscribers & Amps (shared, global)
-      final subs = await _subRepo.getAll(limit: 10000);
+      // 1. Subscribers & Amps (branch-scoped)
+      final subs = await _subRepo.getAll(limit: 10000, branchId: branch);
       totalSubscribers.value = subs.length;
       totalAmps.value = subs.fold(0.0, (sum, s) => sum + s.amps);
 
-      // 2. Price for the selected month
-      final priceObj = await _priceRepo.getByMonth(m);
+      // 2. Price for the selected month (per-branch)
+      final priceObj = await _priceRepo.getByMonth(m, branchId: branch);
       pricePerAmp.value = priceObj?.pricePerAmp ?? 0.0;
 
-      // 3. Financials — collected/expenses scoped to the accountant (owner=all)
+      // 3. Financials — collected/expenses scoped to branch + accountant
       expectedTotal.value = totalAmps.value * pricePerAmp.value;
-      collectedTotal.value =
-          await _receiptRepo.getCollectedSum(m, accountantId: scope);
+      collectedTotal.value = await _receiptRepo.getCollectedSum(m,
+          accountantId: scope, branchId: branch);
       remainingTotal.value = expectedTotal.value - collectedTotal.value;
-      expensesTotal.value =
-          await _expenseRepo.getTotalExpenses(m, accountantId: scope);
+      expensesTotal.value = await _expenseRepo.getTotalExpenses(m,
+          accountantId: scope, branchId: branch);
       netProfit.value = collectedTotal.value - expensesTotal.value;
 
-      // 4. Paid / Unpaid counts (shared subscriber base → global)
+      // 4. Paid / Unpaid counts (branch-scoped subscriber base)
       paidCount.value = await _subRepo.countByPaymentStatus(
         month: m,
         pricePerAmp: pricePerAmp.value,
         isPaid: true,
+        branchId: branch,
       );
       unpaidCount.value = await _subRepo.countByPaymentStatus(
         month: m,
         pricePerAmp: pricePerAmp.value,
         isPaid: false,
+        branchId: branch,
       );
 
       // 5. The month's payments list (newest first), page 1.
@@ -119,6 +130,7 @@ class ReportsController extends GetxController {
         limit: _receiptsPerPage + 1,
         offset: 0,
         accountantId: scope,
+        branchId: branch,
       );
       hasMoreReceipts.value = page.length > _receiptsPerPage;
       receipts.assignAll(
@@ -143,6 +155,7 @@ class ReportsController extends GetxController {
         limit: _receiptsPerPage + 1,
         offset: _receiptsPage * _receiptsPerPage,
         accountantId: _scope,
+        branchId: _branchScope,
       );
       hasMoreReceipts.value = next.length > _receiptsPerPage;
       receipts.addAll(

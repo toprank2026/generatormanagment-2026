@@ -65,11 +65,30 @@ class BranchRepository {
     await db.update('branches', values, where: 'id = ?', whereArgs: [id]);
   }
 
-  /// The Main Branch can never be deleted (it owns all legacy data).
+  /// The Main Branch can never be deleted (it owns all legacy data). Deleting a
+  /// branch removes its ENTIRE isolated ERP instance (full isolation): the
+  /// branch's boards, circuits, subscribers, receipts (+ their refunds),
+  /// expenses and monthly prices are cascaded in a single transaction. Each row
+  /// delete is captured by the sync triggers, so the server mirror follows.
   Future<void> delete(String id) async {
     if (id == DbHelper.kMainBranchId) return;
     final db = await _dbHelper.database;
-    await db.delete('branches', where: 'id = ?', whereArgs: [id]);
+    await db.transaction((txn) async {
+      await txn.delete(
+        'refunds',
+        where:
+            'receipt_uuid IN (SELECT uuid FROM receipts WHERE branch_id = ?)',
+        whereArgs: [id],
+      );
+      await txn.delete('receipts', where: 'branch_id = ?', whereArgs: [id]);
+      await txn.delete('expenses', where: 'branch_id = ?', whereArgs: [id]);
+      await txn.delete('subscribers', where: 'branch_id = ?', whereArgs: [id]);
+      await txn.delete('circuits', where: 'branch_id = ?', whereArgs: [id]);
+      await txn.delete('boards', where: 'branch_id = ?', whereArgs: [id]);
+      await txn
+          .delete('monthly_prices', where: 'branch_id = ?', whereArgs: [id]);
+      await txn.delete('branches', where: 'id = ?', whereArgs: [id]);
+    });
   }
 
   Future<List<Branch>> getAll({bool activeOnly = false}) async {

@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import 'package:uuid/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/branch_model.dart';
@@ -77,5 +78,45 @@ class BranchController extends GetxController {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kActiveBranchId, branch?.id ?? _kAll);
     update();
+  }
+
+  /// Switch to the consolidated / All-branches view (owner reporting only).
+  Future<void> setConsolidated() => setBranch(null);
+
+  // --- Owner CRUD (gated by AuthController.canMultiBranch at the UI layer) ---
+
+  /// Create a new branch and refresh the list. Returns the created branch.
+  Future<Branch> addBranch(String name, {String? code, bool active = true}) async {
+    final id = const Uuid().v4();
+    await _repo.create(id: id, name: name, code: code, active: active);
+    await loadBranches();
+    return branches.firstWhereOrNull((b) => b.id == id) ??
+        Branch(id: id, name: name, code: code, active: active);
+  }
+
+  /// Edit a branch; keeps [currentBranch] in sync if the active one changed.
+  Future<void> editBranch(String id,
+      {String? name, String? code, bool? active}) async {
+    await _repo.update(id: id, name: name, code: code, active: active);
+    await loadBranches();
+    if (currentBranch.value?.id == id) {
+      currentBranch.value =
+          branches.firstWhereOrNull((b) => b.id == id) ?? currentBranch.value;
+    }
+  }
+
+  /// Delete a branch (and its isolated data). The Main Branch is protected. If
+  /// the deleted branch was active, fall back to the Main Branch.
+  Future<void> removeBranch(String id) async {
+    if (id == DbHelper.kMainBranchId) return;
+    final wasActive = currentBranch.value?.id == id;
+    await _repo.delete(id);
+    await loadBranches();
+    if (wasActive) {
+      await setBranch(
+        branches.firstWhereOrNull((b) => b.id == DbHelper.kMainBranchId) ??
+            (branches.isNotEmpty ? branches.first : null),
+      );
+    }
   }
 }

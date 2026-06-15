@@ -261,6 +261,20 @@
   }
   .app-topbar .logout:hover{background:rgba(255,255,255,.28)}
   .app-wrap{max-width:600px;margin:0 auto;padding:64px 14px 96px}
+  /* Persistent active-branch switcher (mirrors the app's dashboard selector). */
+  .app-branchbar{
+    display:flex;align-items:center;gap:9px;background:#fff;border:1px solid var(--border);
+    border-radius:14px;padding:10px 14px;margin-bottom:14px;box-shadow:0 1px 6px rgba(16,24,40,.05);
+  }
+  .app-branchbar .bb-ic{display:inline-flex;color:var(--primary)}
+  .app-branchbar .bb-ic .material-icons-round{font-size:22px}
+  .app-branchbar .bb-lbl{font-size:12.5px;color:var(--muted);font-weight:700}
+  .app-branchbar .app-branch-select{
+    flex:1;min-width:0;margin-inline-start:auto;border:1px solid var(--border);border-radius:10px;
+    padding:8px 10px;font-size:14px;font-weight:700;color:var(--text);background:#f8fafc;
+    font-family:inherit;text-align:right;cursor:pointer;
+  }
+  .app-branchbar .app-branch-select:focus{outline:none;border-color:var(--primary)}
   .app-bottomnav{
     position:fixed;bottom:0;left:0;right:0;z-index:60;background:#fff;border-top:1px solid var(--border);
     display:flex;justify-content:space-around;padding:6px 4px calc(6px + env(safe-area-inset-bottom));
@@ -516,16 +530,18 @@ function syncDataQuery(entity,opts){
   if(opts.localId) q+="&localId="+encodeURIComponent(opts.localId);
   if(opts.includeDeleted) q+="&includeDeleted=true";
   if(opts.relField&&opts.relValue){ q+="&relField="+encodeURIComponent(opts.relField)+"&relValue="+encodeURIComponent(opts.relValue); }
+  if(opts.branchId) q+="&branchId="+encodeURIComponent(opts.branchId);
   return q;
 }
 var API={
   login:function(username,password){ return api("POST","/api/auth/login",{username:username,password:password}); },
   me:function(){ return api("GET","/api/auth/me"); },
   // Owner self-service: the signed-in account's own stats + mirrored data.
-  myStats:function(month,accountantId){
+  myStats:function(month,accountantId,branchId){
     var q=[];
     if(month) q.push("month="+encodeURIComponent(month));
     if(accountantId) q.push("accountantId="+encodeURIComponent(accountantId));
+    if(branchId) q.push("branchId="+encodeURIComponent(branchId));
     return api("GET","/api/account/stats"+(q.length?("?"+q.join("&")):""));
   },
   myData:function(entity,opts){ return api("GET","/api/account/data"+syncDataQuery(entity,opts)); },
@@ -554,6 +570,58 @@ var API={
 };
 
 /* ============================================================
+   Owner active-branch context (mirrors the Flutter app's branch switch)
+   ------------------------------------------------------------
+   A single panel-wide "active branch". `id===""` means All branches
+   (consolidated). Switching re-renders the current owner view scoped to that
+   branch (home stats, every entity list, reports) — not just one page.
+   ============================================================ */
+var ownerBranch = {
+  id: (function(){ try { return localStorage.getItem("ownerBranchId")||""; } catch(e){ return ""; } })(),
+  list: null,      // null = not loaded yet; [] = loaded/none; [{id,name}] otherwise
+  loading: false
+};
+// branchId to pass to scoped endpoints ("" -> undefined so the param is omitted).
+function ownerBranchParam(){ return ownerBranch.id || undefined; }
+// Entities that carry data.branch_id (everything except the identity tables).
+function isBranchScopedEntity(entity){ return entity!=="branches" && entity!=="accountants"; }
+// Load the owner's branches once; on first load (if >1) re-render so the
+// switcher appears. Cached — subsequent calls are no-ops.
+function ensureOwnerBranches(){
+  if(ownerBranch.list!==null || ownerBranch.loading) return;
+  ownerBranch.loading=true;
+  API.myData("branches",{page:1,limit:200}).then(function(res){
+    ownerBranch.list=normalizeList(res,"records").map(function(r){
+      var d=(r&&r.data)||{};
+      return {id:d.id,name:(r&&r.label)||d.name||String(d.id||"")};
+    }).filter(function(b){ return b.id!=null && b.id!==""; });
+    ownerBranch.loading=false;
+    // Stored branch removed on another device -> fall back to All.
+    if(ownerBranch.id && !ownerBranch.list.some(function(b){ return String(b.id)===String(ownerBranch.id); })) ownerBranch.id="";
+    if(ownerBranch.list.length>=2) render();   // reveal the switcher
+  }).catch(function(){ ownerBranch.list=[]; ownerBranch.loading=false; });
+}
+function setOwnerBranch(id){
+  ownerBranch.id=id||"";
+  try { localStorage.setItem("ownerBranchId",ownerBranch.id); } catch(e){}
+  render();   // re-route current hash -> active view re-fetches, branch-scoped
+}
+// The switcher bar shown in the owner shell. Hidden for single-branch owners.
+function ownerBranchBar(){
+  if(!ownerBranch.list || ownerBranch.list.length<2) return null;
+  var opts=[el("option",{value:"",selected:(ownerBranch.id==="")?"":false,text:"كل الفروع"})];
+  ownerBranch.list.forEach(function(b){
+    opts.push(el("option",{value:b.id,selected:(String(b.id)===String(ownerBranch.id))?"":false,text:b.name}));
+  });
+  var sel=el("select",{class:"app-branch-select",onchange:function(){ setOwnerBranch(this.value); }},opts);
+  return el("div",{class:"app-branchbar"},[
+    el("span",{class:"bb-ic"},[mi("account_tree")]),
+    el("span",{class:"bb-lbl",text:"الفرع الحالي"}),
+    sel
+  ]);
+}
+
+/* ============================================================
    Auth helpers
    ============================================================ */
 function isAdmin(){ return !!(state.me&&state.me.role==="admin"); }
@@ -570,6 +638,8 @@ function doLogout(silent){
   state.token=null; state.me=null;
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(ME_KEY);
+  // Reset the owner branch cache so the next account reloads its own branches.
+  ownerBranch.list=null; ownerBranch.loading=false;
   disconnectEvents();
   if(!silent) toast("تم تسجيل الخروج","ok");
   if(location.hash!=="#/login") location.hash="#/login";
@@ -726,6 +796,7 @@ var OWNER_MORE=[
 function ownerShell(activeRoute,content){
   setOwnerMode(true);
   closeOwnerSheet();
+  ensureOwnerBranches();   // load branches once; reveals the switcher when >1
   var app=$("#app"); clear(app);
   var top=el("div",{class:"app-topbar"},[
     el("span",{class:"brand"},[el("span",{class:"logo",text:"M"}),"مولدتي"]),
@@ -734,6 +805,8 @@ function ownerShell(activeRoute,content){
     }})
   ]);
   var wrap=el("div",{class:"app-wrap"});
+  var bb=ownerBranchBar();      // persistent active-branch switcher (app-like)
+  if(bb) wrap.appendChild(bb);
   wrap.appendChild(content);
   app.appendChild(top);
   app.appendChild(wrap);
@@ -1251,7 +1324,8 @@ var SYNC_ENTITIES=[
   {value:"receipts",label:"الوصولات"},
   {value:"expenses",label:"المصاريف"},
   {value:"monthly_prices",label:"الأسعار الشهرية"},
-  {value:"accountants",label:"المحاسبون"}
+  {value:"accountants",label:"المحاسبون"},
+  {value:"branches",label:"الفروع"}
 ];
 function entityLabel(value){
   for(var i=0;i<SYNC_ENTITIES.length;i++){ if(SYNC_ENTITIES[i].value===value) return SYNC_ENTITIES[i].label; }
@@ -1265,7 +1339,8 @@ var OWNER_ENTITIES=[
   {value:"receipts",label:"الوصولات",icon:"receipt_long"},
   {value:"expenses",label:"المصروفات",icon:"payments"},
   {value:"monthly_prices",label:"أسعار الأشهر",icon:"calendar_month"},
-  {value:"accountants",label:"المحاسبون",icon:"badge"}
+  {value:"accountants",label:"المحاسبون",icon:"badge"},
+  {value:"branches",label:"الفروع",icon:"account_tree"}
 ];
 function ownerEntityLabel(value){
   for(var i=0;i<OWNER_ENTITIES.length;i++){ if(OWNER_ENTITIES[i].value===value) return OWNER_ENTITIES[i].label; }
@@ -1372,6 +1447,12 @@ var SYNC_COLUMNS={
   accountants:[
     {label:"الاسم",get:function(d){ return syncText(d.name||d.username); }},
     {label:"اسم المستخدم",get:function(d){ return syncText(d.username); }},
+    {label:"الحالة",get:function(d){ return (d.active===0||d.active===false)?"موقوف":"مفعّل"; }}
+  ],
+  branches:[
+    {label:"الاسم",get:function(d){ return syncText(d.name); }},
+    {label:"الرمز",get:function(d){ return syncText(d.code); }},
+    {label:"رئيسي",get:function(d){ return (d.is_main===1||d.is_main===true)?"نعم":"لا"; }},
     {label:"الحالة",get:function(d){ return (d.active===0||d.active===false)?"موقوف":"مفعّل"; }}
   ]
 };
@@ -1915,7 +1996,8 @@ function ownerFeatureBlock(){
 
 function viewMyDashboard(){
   shell("#/my",loadingBlock("جارٍ تحميل لوحتك…"));
-  API.myStats().then(function(res){
+  // Scope the home stats to the active branch (full isolation, app-like).
+  API.myStats(null,null,ownerBranchParam()).then(function(res){
     var counts=(res&&(res.stats||res.counts))||res||{};
     var dash=(res&&res.dashboard)||null;   // paid/unpaid app stats (newer backend)
     var me=state.me||{};
@@ -1943,7 +2025,8 @@ function viewMyDashboard(){
         {label:"إجمالي البوردات",value:dash.boards,icon:"grid_view",chip:"indigo",href:"#/my/data/boards"},
         {label:"الجوزات",value:dash.circuits,icon:"electrical_services",chip:"teal",href:"#/my/data/circuits"},
         {label:"الوصولات",value:counts.receipts,icon:"receipt_long",chip:"orange",href:"#/my/data/receipts"},
-        {label:"المحاسبون",value:counts.accountants,icon:"badge",chip:"purple"}
+        {label:"المحاسبون",value:counts.accountants,icon:"badge",chip:"purple"},
+        {label:"الفروع",value:counts.branches,icon:"account_tree",chip:"indigo",href:"#/my/data/branches"}
       ];
     } else {
       cards=[
@@ -1951,7 +2034,8 @@ function viewMyDashboard(){
         {label:"إجمالي البوردات",value:counts.boards,icon:"grid_view",chip:"indigo",href:"#/my/data/boards"},
         {label:"الجوزات",value:counts.circuits,icon:"electrical_services",chip:"teal",href:"#/my/data/circuits"},
         {label:"الوصولات",value:counts.receipts,icon:"receipt_long",chip:"orange",href:"#/my/data/receipts"},
-        {label:"المحاسبون",value:counts.accountants,icon:"badge",chip:"purple"}
+        {label:"المحاسبون",value:counts.accountants,icon:"badge",chip:"purple"},
+        {label:"الفروع",value:counts.branches,icon:"account_tree",chip:"indigo",href:"#/my/data/branches"}
       ];
     }
     var grid=el("div",{class:"app-grid"});
@@ -2097,6 +2181,7 @@ function viewMyReports(){
     var content=el("div");
     content.appendChild(el("div",{class:"app-section-title",text:"التقارير الشهرية"}));
     content.appendChild(monthPicker());
+    // Branch is controlled globally by the owner-shell switcher (ownerBranch).
     content.appendChild(accountantFilter());
     content.appendChild(inner);
     shell("#/my/reports",content);
@@ -2114,14 +2199,14 @@ function viewMyReports(){
     }).catch(function(){ accountants=[]; return accountants; });
   }
   function load(){
-    var reqMonth=month, reqAcc=accountantId;
+    var reqMonth=month, reqAcc=accountantId, reqBranch=ownerBranch.id;
     paint(loadingBlock("جارٍ تحميل تقرير "+reqMonth+"…"));
-    Promise.all([API.myStats(reqMonth,reqAcc),ensureAccountants()]).then(function(both){
-      if(reqMonth!==month||reqAcc!==accountantId) return;   // stale response after another switch
+    Promise.all([API.myStats(reqMonth,reqAcc,ownerBranchParam()),ensureAccountants()]).then(function(both){
+      if(reqMonth!==month||reqAcc!==accountantId||reqBranch!==ownerBranch.id) return;   // stale after a switch
       paint(reportBody(both[0]));
     }).catch(function(err){
       if(err.status===401) return;
-      if(reqMonth!==month||reqAcc!==accountantId) return;
+      if(reqMonth!==month||reqAcc!==accountantId||reqBranch!==ownerBranch.id) return;
       if(isFeatureDisabled(err)){ shell("#/my/reports",ownerFeatureBlock()); return; }
       paint(errorBlock(err,load));
     });
@@ -2263,7 +2348,8 @@ function viewMyEntity(entity,relField,relValue){
     clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
     clear(pagerWrap);
     Promise.all([
-      API.myData(entity,{q:query,page:page,limit:SYNC_PAGE_LIMIT,relField:relField,relValue:relValue}),
+      API.myData(entity,{q:query,page:page,limit:SYNC_PAGE_LIMIT,relField:relField,relValue:relValue,
+        branchId:isBranchScopedEntity(entity)?ownerBranchParam():undefined}),
       ensureRelMaps()
     ]).then(function(both){
       var res=both[0], maps=both[1];

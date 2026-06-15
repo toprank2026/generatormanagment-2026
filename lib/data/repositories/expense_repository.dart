@@ -19,17 +19,23 @@ class ExpenseRepository {
     required int limit,
     required int offset,
     String? accountantId,
+    String? branchId,
   }) async {
     // monthPrefix expected as 'YYYY-MM'
     final db = await _dbHelper.database;
-    final where = accountantId == null
-        ? 'date LIKE ?'
-        : 'date LIKE ? AND accountant_id = ?';
-    final args =
-        accountantId == null ? ['$monthPrefix%'] : ['$monthPrefix%', accountantId];
+    final clauses = <String>['date LIKE ?'];
+    final args = <dynamic>['$monthPrefix%'];
+    if (accountantId != null) {
+      clauses.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
     final res = await db.query(
       'expenses',
-      where: where,
+      where: clauses.join(' AND '),
       whereArgs: args,
       orderBy: 'date DESC',
       limit: limit,
@@ -39,13 +45,20 @@ class ExpenseRepository {
   }
 
   Future<double> getTotalExpenses(String monthPrefix,
-      {String? accountantId}) async {
+      {String? accountantId, String? branchId}) async {
     final db = await _dbHelper.database;
-    final scope = accountantId == null ? '' : 'AND accountant_id = ?';
-    final args =
-        accountantId == null ? ['$monthPrefix%'] : ['$monthPrefix%', accountantId];
+    final scopes = <String>[];
+    final args = <dynamic>['$monthPrefix%'];
+    if (accountantId != null) {
+      scopes.add('AND accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      scopes.add('AND branch_id = ?');
+      args.add(branchId);
+    }
     final res = await db.rawQuery(
-      'SELECT SUM(amount) as total FROM expenses WHERE date LIKE ? $scope',
+      'SELECT SUM(amount) as total FROM expenses WHERE date LIKE ? ${scopes.join(' ')}',
       args,
     );
     if (res.isNotEmpty && res.first['total'] != null) {

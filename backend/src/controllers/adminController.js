@@ -175,6 +175,7 @@ const SEARCH_FIELDS = {
   expenses: ['category', 'note'],
   monthly_prices: ['month'],
   accountants: ['name', 'username'],
+  branches: ['name', 'code'],
 };
 
 /** Escape regex metacharacters so q is treated as a literal substring. */
@@ -221,11 +222,20 @@ async function listUserData(userId, query = {}) {
   }
 
   // Optional relationship filter (drill-down). Whitelisted fields only.
-  const REL_FIELDS = ['subscriber_id', 'board_id', 'circuit_id'];
+  const REL_FIELDS = ['subscriber_id', 'board_id', 'circuit_id', 'branch_id', 'accountant_id'];
   const relField = typeof query.relField === 'string' ? query.relField : '';
   const relValue = query.relValue;
   if (relField && REL_FIELDS.includes(relField) && typeof relValue === 'string' && relValue) {
     filter[`data.${relField}`] = relValue;
+  }
+
+  // Optional active-branch scope (full isolation): composes with q/relField so a
+  // panel-wide branch switch narrows EVERY entity list to that branch. Applies
+  // only to branch-partitioned rows (those carry data.branch_id); the branches
+  // and accountants identity tables have no branch_id, so this is a no-op there.
+  const branchId = typeof query.branchId === 'string' ? query.branchId.trim() : '';
+  if (branchId && entity !== 'branches' && entity !== 'accountants') {
+    filter['data.branch_id'] = branchId;
   }
 
   const page = Math.max(1, parseInt(query.page, 10) || 1);
@@ -294,6 +304,7 @@ const labelFor = (entity, data) => {
     case 'expenses': return [data.category, data.amount].filter((v) => v != null).join(' — ') || null;
     case 'monthly_prices': return data.month || null;
     case 'accountants': return data.name || data.username || null;
+    case 'branches': return data.name || data.code || null;
     default: return null;
   }
 };
