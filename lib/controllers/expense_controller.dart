@@ -23,7 +23,8 @@ class ExpenseController extends GetxController {
   var isLoading = false.obs;
 
   // Pagination
-  static const int expensesPerPage = 10;
+  // Large page (R1): show all expenses for normal sizes; loadMore handles scale.
+  static const int expensesPerPage = 100;
   var expensesCurrentPage = 1.obs;
   var expensesHasNextPage = false.obs;
   var expensesMoreLoading = false.obs;

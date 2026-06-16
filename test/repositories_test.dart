@@ -385,16 +385,13 @@ void main() {
         ),
       );
 
-      final paid = await subRepo.getByPaymentStatus(
-        month: month,
-        pricePerAmp: pricePerAmp,
-        isPaid: true,
-      );
-      final unpaid = await subRepo.getByPaymentStatus(
-        month: month,
-        pricePerAmp: pricePerAmp,
-        isPaid: false,
-      );
+      // Due is now category-aware: it comes from monthly_prices (standard
+      // category) rather than a passed price.
+      await MonthlyPriceRepository()
+          .insert(MonthlyPrice(month: month, pricePerAmp: pricePerAmp));
+      final paid = await subRepo.getByPaymentStatus(month: month, isPaid: true);
+      final unpaid =
+          await subRepo.getByPaymentStatus(month: month, isPaid: false);
 
       // total valid paid (50) >= bill (50) -> classified as paid.
       expect(paid.map((s) => s.id), contains('s1'));
@@ -428,16 +425,13 @@ void main() {
         ),
       );
 
-      final paid = await subRepo.getByPaymentStatus(
-        month: month,
-        pricePerAmp: pricePerAmp,
-        isPaid: true,
-      );
-      final unpaid = await subRepo.getByPaymentStatus(
-        month: month,
-        pricePerAmp: pricePerAmp,
-        isPaid: false,
-      );
+      // Due is now category-aware: it comes from monthly_prices (standard
+      // category) rather than a passed price.
+      await MonthlyPriceRepository()
+          .insert(MonthlyPrice(month: month, pricePerAmp: pricePerAmp));
+      final paid = await subRepo.getByPaymentStatus(month: month, isPaid: true);
+      final unpaid =
+          await subRepo.getByPaymentStatus(month: month, isPaid: false);
 
       expect(unpaid.map((s) => s.id), contains('s1'));
       expect(paid.map((s) => s.id), isNot(contains('s1')));

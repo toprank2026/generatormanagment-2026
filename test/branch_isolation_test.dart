@@ -85,6 +85,12 @@ void main() {
           id: 'e1', category: 'fuel', amount: 3000, date: '$month-05', branchId: bMain));
       await expenses.addExpense(Expense(
           id: 'e2', category: 'oil', amount: 1000, date: '$month-06', branchId: bTwo));
+      // Standard-category price per branch so the category-aware paid/unpaid
+      // join resolves the due (s1/s2 default to the standard category).
+      await prices.insert(
+          MonthlyPrice(month: month, pricePerAmp: 1000, branchId: bMain));
+      await prices.insert(
+          MonthlyPrice(month: month, pricePerAmp: 1000, branchId: bTwo));
     });
 
     test('boards: each branch sees only its own; consolidated sees all', () async {
@@ -125,19 +131,19 @@ void main() {
       //             s2 (amps15, due 15000, paid 5000)  UNPAID in branch-2.
       expect(
           await subs.countByPaymentStatus(
-              month: month, pricePerAmp: 1000, isPaid: true, branchId: bMain),
+              month: month, isPaid: true, branchId: bMain),
           1);
       expect(
           await subs.countByPaymentStatus(
-              month: month, pricePerAmp: 1000, isPaid: false, branchId: bMain),
+              month: month, isPaid: false, branchId: bMain),
           0);
       expect(
           await subs.countByPaymentStatus(
-              month: month, pricePerAmp: 1000, isPaid: true, branchId: bTwo),
+              month: month, isPaid: true, branchId: bTwo),
           0);
       expect(
           await subs.countByPaymentStatus(
-              month: month, pricePerAmp: 1000, isPaid: false, branchId: bTwo),
+              month: month, isPaid: false, branchId: bTwo),
           1);
     });
   });
@@ -163,6 +169,8 @@ void main() {
       // m1 in main: amps 10, price 1000 -> due 10000. Main receipt 4000 (unpaid
       // in main). A stray branch-2 receipt of 8000 must NOT push m1 to "paid".
       await subs.insert(sub('m1', bMain, amps: 10));
+      await prices.insert(
+          MonthlyPrice(month: month, pricePerAmp: 1000, branchId: bMain));
       await receipts.insert(rec('rm', 1, 'm1', bMain, 4000));
       await receipts.insert(rec('rt', 1, 'm1', bTwo, 8000));
 
@@ -170,11 +178,11 @@ void main() {
       // 4000 < 10000 (correctly UNPAID).
       expect(
           await subs.countByPaymentStatus(
-              month: month, pricePerAmp: 1000, isPaid: true, branchId: bMain),
+              month: month, isPaid: true, branchId: bMain),
           0);
       expect(
           await subs.countByPaymentStatus(
-              month: month, pricePerAmp: 1000, isPaid: false, branchId: bMain),
+              month: month, isPaid: false, branchId: bMain),
           1);
     });
   });
@@ -199,9 +207,9 @@ void main() {
 
       expect((await prices.getByMonth(month, branchId: bMain))!.pricePerAmp, 1500);
       expect((await prices.getByMonth(month, branchId: bTwo))!.pricePerAmp, 2000);
-      // Synthetic PK keeps both rows distinct (no clash on the month).
+      // Synthetic PK keeps rows distinct per branch AND category (v6).
       expect(MonthlyPrice(month: month, pricePerAmp: 0, branchId: bMain).id,
-          '$month|$bMain');
+          '$month|$bMain|standard');
     });
   });
 
@@ -317,6 +325,11 @@ void main() {
         'id': 's1', 'name': 'Legacy Sub', 'amps': 12,
         'board_id': 'b1', 'circuit_id': 'c1', 'status': 'active',
       });
+      // Two ACTIVE subscribers on the SAME circuit — v6 must deactivate one (R7).
+      await v4.insert('subscribers', {
+        'id': 's1b', 'name': 'Legacy Dup', 'amps': 8,
+        'board_id': 'b1', 'circuit_id': 'c1', 'status': 'active',
+      });
       await v4.insert('monthly_prices',
           {'month': month, 'price_per_amp': 1500, 'locked': 0});
       await v4.close();
@@ -331,12 +344,24 @@ void main() {
       final s = await db.query('subscribers', where: 'id = ?', whereArgs: ['s1']);
       expect(s.first['branch_id'], bMain);
 
-      // 3b) monthly_prices reshaped to the synthetic per-branch primary key.
+      // 3b) monthly_prices reshaped to the synthetic per-branch, per-category
+      //     primary key (v6 appends the standard category to the legacy id).
       final mp = await db.query('monthly_prices');
       expect(mp.length, 1);
-      expect(mp.first['id'], '$month|$bMain');
+      expect(mp.first['id'], '$month|$bMain|standard');
       expect(mp.first['branch_id'], bMain);
+      expect(mp.first['category'], 'standard');
       expect(mp.first['price_per_amp'], 1500);
+
+      // 3b-ii) Legacy subscribers default to the standard category (R4).
+      expect(s.first['category'], 'standard');
+
+      // 3c-R7) Exactly one active subscriber remains on the duplicated circuit;
+      //        the migration deactivated the other (keeps the latest rowid).
+      final activeOnC1 = await db.query('subscribers',
+          where: "circuit_id = 'c1' AND status = 'active'");
+      expect(activeOnC1.length, 1);
+      expect(activeOnC1.first['id'], 's1b'); // latest inserted kept
 
       // 3c) The branches table now exists; ensureMain seeds the Main Branch row.
       await BranchRepository().ensureMain();

@@ -3,7 +3,6 @@ import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart';
-import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
@@ -13,7 +12,6 @@ class CoreController extends GetxController {
   final BoardRepository _boardRepo = BoardRepository();
   final CircuitRepository _circuitRepo = CircuitRepository();
   final SubscriberRepository _subscriberRepo = SubscriberRepository();
-  final MonthlyPriceRepository _priceRepo = MonthlyPriceRepository();
   final AuthController _auth = Get.find();
   final BranchController _branch = Get.find();
 
@@ -31,22 +29,23 @@ class CoreController extends GetxController {
   var subscribers = <Subscriber>[].obs;
   var isLoading = false.obs;
 
-  // Pagination (subscribers)
-  static const int itemsPerPage = 6;
+  // Pagination (subscribers). Large page (R1/D1): effectively "show all" for
+  // normal data sizes; infinite scroll (loadMore) still loads the rest at scale.
+  static const int itemsPerPage = 100;
   var currentPage = 1.obs;
   var hasNextPage = false.obs;
   var isMoreLoading = false.obs;
   // Keep track of current query to maintain state across pages
   String? _currentQuery;
 
-  // Pagination (boards)
-  static const int boardsPerPage = 6;
+  // Pagination (boards) — large page (R1): show all for normal sizes.
+  static const int boardsPerPage = 100;
   var boardsPage = 1.obs;
   var boardsHasNext = false.obs;
   var isBoardsMoreLoading = false.obs;
 
-  // Pagination (circuits)
-  static const int circuitsPerPage = 10;
+  // Pagination (circuits) — large page (R1): show all for normal sizes.
+  static const int circuitsPerPage = 100;
   var circuitsPage = 1.obs;
   var circuitsHasNext = false.obs;
   var isCircuitsMoreLoading = false.obs;
@@ -286,6 +285,7 @@ class CoreController extends GetxController {
     // Stamp the active branch (full isolation): the view doesn't know about
     // branches, so the controller assigns the new subscriber to the current one.
     sub.branchId ??= _branch.writeBranchId;
+    await _validateSubscriber(sub); // R7/R8 — throws ValidationException
     await _subscriberRepo.insert(sub);
     loadSubscribers(); // Refresh list if showing all
     _refreshDashboard();
@@ -293,10 +293,26 @@ class CoreController extends GetxController {
   }
 
   Future<void> updateSubscriber(Subscriber sub) async {
+    sub.branchId ??= _branch.writeBranchId;
+    await _validateSubscriber(sub, exceptId: sub.id);
     await _subscriberRepo.update(sub);
     loadSubscribers();
     _refreshDashboard();
     update();
+  }
+
+  /// R8 (unique name, per branch) + R7 (one active subscriber per socket, per
+  /// branch). Throws [ValidationException] with a translation key for the UI.
+  Future<void> _validateSubscriber(Subscriber sub, {String? exceptId}) async {
+    final branch = sub.branchId ?? _branch.writeBranchId;
+    if (await _subscriberRepo.nameExists(sub.name,
+        branchId: branch, exceptId: exceptId)) {
+      throw ValidationException('duplicate_name');
+    }
+    if (await _subscriberRepo.isCircuitTaken(sub.circuitId,
+        branchId: branch, exceptId: exceptId)) {
+      throw ValidationException('circuit_in_use');
+    }
   }
 
   Future<void> deleteSubscriber(String id) async {
@@ -309,24 +325,15 @@ class CoreController extends GetxController {
   Future<void> loadFilteredSubscribers(String filter) async {
     isLoading.value = true;
     try {
-      String month;
-      double price;
-
-      // Try to get from BillingController if available (active state)
-      if (Get.isRegistered<BillingController>()) {
-        final billing = Get.find<BillingController>();
-        month = billing.selectedMonth.value;
-        price = billing.currentPrice.value?.pricePerAmp ?? 0.0;
-      } else {
-        // Fallback to current month and DB price
-        month = DateFormat('yyyy-MM').format(DateTime.now());
-        final priceObj = await _priceRepo.getByMonth(month, branchId: _branchScope);
-        price = priceObj?.pricePerAmp ?? 0.0;
-      }
+      // The selected month drives paid/unpaid; the price is now category-aware
+      // and resolved inside the query (per subscriber's category), so no single
+      // price is needed here.
+      final String month = Get.isRegistered<BillingController>()
+          ? Get.find<BillingController>().selectedMonth.value
+          : DateFormat('yyyy-MM').format(DateTime.now());
 
       subscribers.value = await _subscriberRepo.getByPaymentStatus(
         month: month,
-        pricePerAmp: price,
         isPaid: filter == 'paid',
         accountantId: null,
         branchId: _branchScope,

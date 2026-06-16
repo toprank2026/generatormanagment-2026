@@ -14,22 +14,46 @@ class MonthlyPriceRepository {
     );
   }
 
-  /// Price for a [month] in a given branch (D-4: pricing varies per branch).
-  /// [branchId] null = consolidated/legacy — returns any row for the month
-  /// (owner reporting only); concrete branch in normal operation.
-  Future<MonthlyPrice?> getByMonth(String month, {String? branchId}) async {
+  /// Price for a [month] in a given branch + [category] (R4: pricing varies per
+  /// branch AND per category). [branchId] null = consolidated/legacy.
+  Future<MonthlyPrice?> getByMonth(String month,
+      {String? branchId, String category = 'standard'}) async {
     final db = await _dbHelper.database;
-    final where =
-        branchId == null ? 'month = ?' : 'month = ? AND branch_id = ?';
-    final args = branchId == null ? [month] : [month, branchId];
+    final clauses = <String>['month = ?', 'category = ?'];
+    final args = <dynamic>[month, category];
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
     final List<Map<String, dynamic>> maps = await db.query(
       'monthly_prices',
-      where: where,
+      where: clauses.join(' AND '),
       whereArgs: args,
       limit: 1,
     );
     if (maps.isNotEmpty) return MonthlyPrice.fromMap(maps.first);
     return null;
+  }
+
+  /// All category prices for a [month]/branch as {category: pricePerAmp} — used
+  /// to compute category-aware expected totals without N+1 queries.
+  Future<Map<String, double>> pricesForMonth(String month,
+      {String? branchId}) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>['month = ?'];
+    final args = <dynamic>[month];
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
+    final rows = await db.query('monthly_prices',
+        where: clauses.join(' AND '), whereArgs: args);
+    final map = <String, double>{};
+    for (final r in rows) {
+      final mp = MonthlyPrice.fromMap(r);
+      map[mp.category] = mp.pricePerAmp;
+    }
+    return map;
   }
 }
 

@@ -91,6 +91,10 @@ void main() {
       await subs.insert(sub('s2', a2, amps: 15));
       await receipts.insert(rec('r1', 's1', a1, 10000)); // s1 fully paid
       await receipts.insert(rec('r2', 's2', a2, 5000)); // s2 underpaid
+      // Standard-category price (default branch) so the category-aware paid/
+      // unpaid join resolves each subscriber's due.
+      await MonthlyPriceRepository()
+          .insert(MonthlyPrice(month: month, pricePerAmp: 1000));
     });
 
     test('boards: accountant sees only own; owner sees all', () async {
@@ -116,24 +120,23 @@ void main() {
       // due 15000, paid 5000) UNPAID.
       expect(
           await subs.countByPaymentStatus(
-              month: month, pricePerAmp: 1000, isPaid: true, accountantId: a1),
+              month: month, isPaid: true, accountantId: a1),
           1);
       expect(
           await subs.countByPaymentStatus(
-              month: month, pricePerAmp: 1000, isPaid: false, accountantId: a1),
+              month: month, isPaid: false, accountantId: a1),
           0);
       expect(
           await subs.countByPaymentStatus(
-              month: month, pricePerAmp: 1000, isPaid: true, accountantId: a2),
+              month: month, isPaid: true, accountantId: a2),
           0);
       expect(
           await subs.countByPaymentStatus(
-              month: month, pricePerAmp: 1000, isPaid: false, accountantId: a2),
+              month: month, isPaid: false, accountantId: a2),
           1);
       // Owner-wide: 1 paid, 1 unpaid.
       expect(
-          await subs.countByPaymentStatus(
-              month: month, pricePerAmp: 1000, isPaid: true),
+          await subs.countByPaymentStatus(month: month, isPaid: true),
           1);
     });
   });

@@ -34,7 +34,7 @@ class DbHelper {
     final String path = testPath ?? await _defaultPath();
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -211,6 +211,40 @@ class DbHelper {
       // The Main Branch row itself is seeded idempotently by BranchRepository
       // (.ensureMain), called on launch by the branch-context layer.
     }
+    if (oldVersion < 6) {
+      // ---- Enhancements v6 (additive) ----
+      // R4: subscriber categories with per-category pricing.
+      // 1) subscribers.category — enum 'commercial'|'standard'|'gold'. The
+      //    DEFAULT backfills every legacy row to 'standard', so billing is
+      //    unchanged on upgrade until the owner sets the other categories' prices.
+      await _addColumn(
+          db, 'subscribers', 'category', "TEXT DEFAULT 'standard'");
+      // 2) monthly_prices is now keyed per CATEGORY too: synthetic id grows from
+      //    "<month>|<branchId>" -> "<month>|<branchId>|<category>". Add the column
+      //    and append '|standard' to legacy 2-part ids (re-enqueues to sync; the
+      //    old 2-part server rows are harmlessly orphaned, push-only mirror).
+      await _addColumn(
+          db, 'monthly_prices', 'category', "TEXT DEFAULT 'standard'");
+      await db.execute(
+          "UPDATE monthly_prices SET category = 'standard' WHERE category IS NULL OR category = ''");
+      await db.execute(
+          "UPDATE monthly_prices SET id = id || '|standard' WHERE id NOT LIKE '%|%|%'");
+      // R3 (audit) snapshot: the category in force when a receipt was collected,
+      // so historical reports stay correct if a subscriber's category changes.
+      await _addColumn(db, 'receipts', 'category_snapshot', 'TEXT');
+      // R5/R7: a circuit may belong to at most ONE active subscriber per branch.
+      // Resolve legacy duplicates BEFORE the repo guard takes effect: keep the
+      // most-recently-inserted active subscriber per (circuit, branch); deactivate
+      // the rest (these UPDATEs enqueue so the server mirror deactivates them too).
+      await db.execute('''
+        UPDATE subscribers SET status = 'inactive'
+        WHERE status = 'active' AND rowid NOT IN (
+          SELECT MAX(rowid) FROM subscribers
+          WHERE status = 'active'
+          GROUP BY circuit_id, IFNULL(branch_id, '$kMainBranchId')
+        )
+      ''');
+    }
   }
 
   Future<String> _defaultPath() async {
@@ -303,6 +337,7 @@ class DbHelper {
         board_id TEXT NOT NULL,
         circuit_id TEXT NOT NULL,
         status TEXT DEFAULT 'active',
+        category TEXT DEFAULT 'standard', -- 'commercial' | 'standard' | 'gold' (R4)
         accountant_id TEXT,
         branch_id TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -311,7 +346,8 @@ class DbHelper {
       )
     ''');
 
-    // 5. Monthly Prices — per branch (synthetic id = "<month>|<branchId>").
+    // 5. Monthly Prices — per branch AND per category (R4): synthetic
+    //    id = "<month>|<branchId>|<category>". Each category prices independently.
     await db.execute('''
       CREATE TABLE monthly_prices (
         id TEXT PRIMARY KEY,
@@ -319,6 +355,7 @@ class DbHelper {
         price_per_amp REAL NOT NULL,
         locked INTEGER DEFAULT 0,
         branch_id TEXT,
+        category TEXT DEFAULT 'standard',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     ''');
@@ -336,6 +373,7 @@ class DbHelper {
         remaining_after REAL NOT NULL,
         accountant_id TEXT,
         branch_id TEXT,
+        category_snapshot TEXT, -- subscriber category at collection time (R4 audit)
         performed_by_user_id TEXT,
         issued_at TEXT NOT NULL,
         status TEXT DEFAULT 'valid', -- valid, refunded

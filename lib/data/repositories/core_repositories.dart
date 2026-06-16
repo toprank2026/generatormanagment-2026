@@ -2,6 +2,18 @@ import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:sqflite/sqflite.dart';
 
+/// Thrown by controllers when a subscriber create/edit breaks a business rule
+/// (R7 socket already in use, R8 duplicate name). [messageKey] is a translation
+/// key the UI shows. Enforced at the app layer only (the raw sync-pull path
+/// writes server rows directly and must not be blocked).
+class ValidationException implements Exception {
+  final String messageKey;
+  final String? arg;
+  ValidationException(this.messageKey, {this.arg});
+  @override
+  String toString() => messageKey;
+}
+
 // Per-accountant scoping convention used across these repositories:
 //   accountantId == null  -> owner/admin view: no filter (sees & owns all).
 //   accountantId != null  -> only rows whose accountant_id matches.
@@ -205,6 +217,70 @@ class SubscriberRepository {
     );
   }
 
+  /// R5/R7: is [circuitId] already held by an ACTIVE subscriber (other than
+  /// [exceptId]) in the same branch? Branch-scoped so a circuit can be reused
+  /// across branches but is exclusive within one.
+  Future<bool> isCircuitTaken(String circuitId,
+      {String? branchId, String? exceptId}) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>['circuit_id = ?', "status = 'active'"];
+    final args = <dynamic>[circuitId];
+    if (branchId != null) {
+      clauses.add("IFNULL(branch_id, '${DbHelper.kMainBranchId}') = ?");
+      args.add(branchId);
+    }
+    if (exceptId != null) {
+      clauses.add('id != ?');
+      args.add(exceptId);
+    }
+    final n = Sqflite.firstIntValue(await db.rawQuery(
+          'SELECT COUNT(*) FROM subscribers WHERE ${clauses.join(' AND ')}',
+          args,
+        )) ??
+        0;
+    return n > 0;
+  }
+
+  /// R8: does another subscriber (other than [exceptId]) in the same branch
+  /// already use [name] (case-insensitive, trimmed)?
+  Future<bool> nameExists(String name,
+      {String? branchId, String? exceptId}) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>['TRIM(name) = ? COLLATE NOCASE'];
+    final args = <dynamic>[name.trim()];
+    if (branchId != null) {
+      clauses.add("IFNULL(branch_id, '${DbHelper.kMainBranchId}') = ?");
+      args.add(branchId);
+    }
+    if (exceptId != null) {
+      clauses.add('id != ?');
+      args.add(exceptId);
+    }
+    final n = Sqflite.firstIntValue(await db.rawQuery(
+          'SELECT COUNT(*) FROM subscribers WHERE ${clauses.join(' AND ')}',
+          args,
+        )) ??
+        0;
+    return n > 0;
+  }
+
+  /// Circuit ids in [branchId] that already have an active subscriber — used to
+  /// grey-out/hide taken sockets in the add/edit picker (R5).
+  Future<Set<String>> takenCircuitIds({String? branchId}) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>["status = 'active'"];
+    final args = <dynamic>[];
+    if (branchId != null) {
+      clauses.add("IFNULL(branch_id, '${DbHelper.kMainBranchId}') = ?");
+      args.add(branchId);
+    }
+    final rows = await db.rawQuery(
+      'SELECT DISTINCT circuit_id FROM subscribers WHERE ${clauses.join(' AND ')}',
+      args.isEmpty ? null : args,
+    );
+    return rows.map((r) => r['circuit_id'] as String).toSet();
+  }
+
   /// Cascades manually: removes the subscriber's receipts (and their refunds).
   Future<int> delete(String id, {String? accountantId}) async {
     final db = await _dbHelper.database;
@@ -295,25 +371,27 @@ class SubscriberRepository {
     return List.generate(maps.length, (i) => Subscriber.fromMap(maps[i]));
   }
 
+  /// Subscribers whose paid total for [month] is >= (paid) or < (unpaid) their
+  /// expected due. Due is **category-aware** (R4): each subscriber's expected =
+  /// amps × the price for ITS category that month/branch, via a join to
+  /// monthly_prices (a category with no price set yields due 0 → counts paid).
   Future<List<Subscriber>> getByPaymentStatus({
     required String month,
-    required double pricePerAmp,
     required bool isPaid,
     String? accountantId,
     String? branchId,
   }) async {
     final db = await _dbHelper.database;
-    // We use a raw query to join with aggregated receipts. Args are assembled in
-    // the exact textual order of the `?` placeholders below:
-    //   inner: month [, branch_id]   then   outer: pricePerAmp [, s.accountant_id] [, s.branch_id]
+    const main = DbHelper.kMainBranchId;
     final String operator = isPaid ? '>=' : '<';
+    // Arg order follows the `?` placeholders below:
+    //   inner receipts: month [, branch]   mp join: month   outer: [accountant] [branch]
     final args = <dynamic>[month];
-    // The receipts sub-query is branch-scoped too: a shared subscriber id can
-    // carry receipts in more than one branch, so the paid total must count only
-    // the active branch's receipts (full isolation). null = all branches.
+    // Receipts sub-query is branch-scoped (a shared subscriber id can carry
+    // receipts in >1 branch — count only this branch's). null = all branches.
     final String innerScope = branchId == null ? '' : 'AND branch_id = ?';
     if (branchId != null) args.add(branchId);
-    args.add(pricePerAmp);
+    args.add(month); // monthly_prices join month
     final outerScopes = <String>[];
     if (accountantId != null) {
       outerScopes.add('AND s.accountant_id = ?');
@@ -333,7 +411,11 @@ class SubscriberRepository {
         WHERE month = ? AND status = 'valid' $innerScope
         GROUP BY subscriber_id
       ) r ON s.id = r.subscriber_id
-      WHERE COALESCE(r.total_paid, 0) $operator (s.amps * ?) ${outerScopes.join(' ')}
+      LEFT JOIN monthly_prices mp
+        ON mp.month = ?
+        AND mp.category = IFNULL(s.category, 'standard')
+        AND IFNULL(mp.branch_id, '$main') = IFNULL(s.branch_id, '$main')
+      WHERE COALESCE(r.total_paid, 0) $operator (s.amps * COALESCE(mp.price_per_amp, 0)) ${outerScopes.join(' ')}
     """;
 
     final List<Map<String, dynamic>> maps = await db.rawQuery(sql, args);
@@ -342,14 +424,12 @@ class SubscriberRepository {
 
   Future<int> countByPaymentStatus({
     required String month,
-    required double pricePerAmp,
     required bool isPaid,
     String? accountantId,
     String? branchId,
   }) async {
     final list = await getByPaymentStatus(
       month: month,
-      pricePerAmp: pricePerAmp,
       isPaid: isPaid,
       accountantId: accountantId,
       branchId: branchId,

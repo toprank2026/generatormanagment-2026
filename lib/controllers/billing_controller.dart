@@ -13,7 +13,9 @@ class BillingController extends GetxController {
   final ReceiptRepository _receiptRepo = ReceiptRepository();
   final BranchController _branch = Get.find();
 
-  var currentPrice = Rxn<MonthlyPrice>();
+  var currentPrice = Rxn<MonthlyPrice>(); // standard price (back-compat)
+  // Per-category prices for the selected month {category: pricePerAmp} (R4).
+  var currentPrices = <String, double>{}.obs;
   var isLoading = false.obs;
   var selectedMonth = DateFormat('yyyy-MM').format(DateTime.now()).obs;
 
@@ -46,22 +48,31 @@ class BillingController extends GetxController {
 
   Future<void> loadMonthPrice(String month) async {
     isLoading.value = true;
-    currentPrice.value =
-        await _priceRepo.getByMonth(month, branchId: _branch.scopeBranchId);
+    currentPrice.value = await _priceRepo.getByMonth(month,
+        branchId: _branch.scopeBranchId, category: SubscriberCategory.standard);
+    // All category prices for the month (R4) for the pricing screen.
+    currentPrices.value =
+        await _priceRepo.pricesForMonth(month, branchId: _branch.scopeBranchId);
     isLoading.value = false;
     update();
   }
 
-  Future<void> setPrice(double price) async {
-    // Pricing is per-branch (D-4): stamp the active branch so each branch keeps
-    // its own monthly price (synthetic PK "<month>|<branchId>").
+  /// Price-per-amp set for [month] in the active branch, for the given
+  /// [category] (R4). Each category is independent.
+  Future<void> setPrice(double price,
+      {String category = SubscriberCategory.standard}) async {
     final mp = MonthlyPrice(
       month: selectedMonth.value,
       pricePerAmp: price,
       branchId: _branch.writeBranchId,
+      category: category,
     );
     await _priceRepo.insert(mp); // Insert or replace
-    loadMonthPrice(selectedMonth.value);
+    await loadMonthPrice(selectedMonth.value);
+    // R10: pricing changed → recompute the dashboard's Collected/Remaining now.
+    if (Get.isRegistered<DashboardController>()) {
+      Get.find<DashboardController>().loadStats();
+    }
     update();
   }
 
@@ -123,9 +134,10 @@ class BillingController extends GetxController {
     // (active branch null), and never counts another branch's payments.
     final String? branchId = sub.branchId ?? _branch.scopeBranchId;
 
-    // 1. Get price for the month (per-branch pricing)
-    MonthlyPrice? mp = await _priceRepo.getByMonth(month, branchId: branchId);
-    if (mp == null) return 0.0; // No price set
+    // 1. Get price for the month (per-branch AND per-category pricing, R4)
+    MonthlyPrice? mp = await _priceRepo.getByMonth(month,
+        branchId: branchId, category: sub.category);
+    if (mp == null) return 0.0; // No price set for this category/month
 
     double totalDue = sub.amps * mp.pricePerAmp;
 
@@ -150,8 +162,8 @@ class BillingController extends GetxController {
     // collecting from the consolidated view, where the active branch is null).
     final String branchId = sub.branchId ?? _branch.writeBranchId;
 
-    MonthlyPrice? mp =
-        await _priceRepo.getByMonth(selectedMonth.value, branchId: branchId);
+    MonthlyPrice? mp = await _priceRepo.getByMonth(selectedMonth.value,
+        branchId: branchId, category: sub.category);
     if (mp == null) return null;
 
     double due = await getDueAmount(sub, selectedMonth.value);
@@ -183,6 +195,8 @@ class BillingController extends GetxController {
       accountantId: auth.currentUser.value?.id,
       // Full isolation: the receipt belongs to the subscriber's branch.
       branchId: branchId,
+      // Audit: the category (and thus price) in force at collection time (R4).
+      categorySnapshot: sub.category,
       issuedAt: DateTime.now().toIso8601String(),
     );
 

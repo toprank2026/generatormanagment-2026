@@ -96,12 +96,17 @@ class ReportsController extends GetxController {
       totalSubscribers.value = subs.length;
       totalAmps.value = subs.fold(0.0, (sum, s) => sum + s.amps);
 
-      // 2. Price for the selected month (per-branch)
-      final priceObj = await _priceRepo.getByMonth(m, branchId: branch);
-      pricePerAmp.value = priceObj?.pricePerAmp ?? 0.0;
+      // 2. Per-category prices for the month (R4). The single "price per amp"
+      //    figure shown on the report uses the standard category as representative.
+      final prices = await _priceRepo.pricesForMonth(m, branchId: branch);
+      pricePerAmp.value = prices['standard'] ?? 0.0;
 
-      // 3. Financials — collected/expenses scoped to branch + accountant
-      expectedTotal.value = totalAmps.value * pricePerAmp.value;
+      // 3. Financials. Expected is CATEGORY-AWARE: Σ amps × price[category] (R4).
+      double expected = 0.0;
+      for (final s in subs) {
+        expected += s.amps * (prices[s.category] ?? 0.0);
+      }
+      expectedTotal.value = expected;
       collectedTotal.value = await _receiptRepo.getCollectedSum(m,
           accountantId: scope, branchId: branch);
       remainingTotal.value = expectedTotal.value - collectedTotal.value;
@@ -109,16 +114,14 @@ class ReportsController extends GetxController {
           accountantId: scope, branchId: branch);
       netProfit.value = collectedTotal.value - expensesTotal.value;
 
-      // 4. Paid / Unpaid counts (branch-scoped subscriber base)
+      // 4. Paid / Unpaid counts — category-aware, branch-scoped (R4).
       paidCount.value = await _subRepo.countByPaymentStatus(
         month: m,
-        pricePerAmp: pricePerAmp.value,
         isPaid: true,
         branchId: branch,
       );
       unpaidCount.value = await _subRepo.countByPaymentStatus(
         month: m,
-        pricePerAmp: pricePerAmp.value,
         isPaid: false,
         branchId: branch,
       );

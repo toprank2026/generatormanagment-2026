@@ -2,8 +2,10 @@ class MonthlyPrice {
   String month; // YYYY-MM
   double pricePerAmp;
   int locked; // 0 or 1
-  // Per-branch pricing (v5): the PK is a synthetic id "<month>|<branchId>".
+  // Per-branch (v5) AND per-category (v6) pricing: the PK is a synthetic id
+  // "<month>|<branchId>|<category>". Each category prices independently (R4).
   String? branchId;
+  String category;
   String? createdAt;
 
   MonthlyPrice({
@@ -11,14 +13,15 @@ class MonthlyPrice {
     required this.pricePerAmp,
     this.locked = 0,
     this.branchId,
+    this.category = 'standard',
     this.createdAt,
   });
 
-  /// Synthetic per-branch primary key used by the table + sync localId.
-  static String buildId(String month, String? branchId) =>
-      '$month|${branchId ?? ''}';
+  /// Synthetic per-branch, per-category primary key (table PK + sync localId).
+  static String buildId(String month, String? branchId, String? category) =>
+      '$month|${branchId ?? ''}|${category ?? 'standard'}';
 
-  String get id => buildId(month, branchId);
+  String get id => buildId(month, branchId, category);
 
   Map<String, dynamic> toMap() {
     return {
@@ -27,6 +30,7 @@ class MonthlyPrice {
       'price_per_amp': pricePerAmp,
       'locked': locked,
       'branch_id': branchId,
+      'category': category,
       'created_at': createdAt,
     };
   }
@@ -37,6 +41,7 @@ class MonthlyPrice {
       pricePerAmp: map['price_per_amp'],
       locked: map['locked'] ?? 0,
       branchId: map['branch_id'],
+      category: (map['category'] as String?) ?? 'standard',
       createdAt: map['created_at'],
     );
   }
@@ -53,6 +58,9 @@ class Receipt {
   double remainingAfter;
   String? accountantId;
   String? branchId;
+  // Subscriber category at collection time (R4 audit) — keeps historical
+  // reports correct if the subscriber's category later changes.
+  String? categorySnapshot;
   String? performedByUserId;
   String issuedAt;
   String status; // valid, refunded
@@ -69,6 +77,7 @@ class Receipt {
     required this.remainingAfter,
     this.accountantId,
     this.branchId,
+    this.categorySnapshot,
     this.performedByUserId,
     required this.issuedAt,
     this.status = 'valid',
@@ -87,6 +96,7 @@ class Receipt {
       'remaining_after': remainingAfter,
       'accountant_id': accountantId,
       'branch_id': branchId,
+      'category_snapshot': categorySnapshot,
       'performed_by_user_id': performedByUserId,
       'issued_at': issuedAt,
       'status': status,
@@ -106,6 +116,7 @@ class Receipt {
       remainingAfter: map['remaining_after'],
       accountantId: map['accountant_id'],
       branchId: map['branch_id'],
+      categorySnapshot: map['category_snapshot'],
       performedByUserId: map['performed_by_user_id'],
       issuedAt: map['issued_at'],
       status: map['status'],

@@ -5,6 +5,7 @@ import 'package:generatormanagment/controllers/expense_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/data/models/expense_model.dart';
+import 'package:generatormanagment/views/widgets/date_field.dart';
 
 class ExpensesScreen extends StatefulWidget {
   const ExpensesScreen({super.key});
@@ -340,6 +341,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final amountCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
     String selectedCategory = category ?? "Fuel";
+    // R12: expense date is editable (manual entry + picker); defaults to today.
+    DateTime selectedDate = DateTime.now();
     final List<String> categories = [
       "Fuel",
       "Oil",
@@ -414,6 +417,14 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 16),
+
+              // R12: manual date entry + picker for the expense date.
+              DateField(
+                label: 'date'.tr,
+                initial: selectedDate,
+                onChanged: (d) => selectedDate = d,
+              ),
               const SizedBox(height: 24),
 
               SizedBox(
@@ -427,6 +438,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                           category: selectedCategory,
                           amount: val,
                           note: noteCtrl.text,
+                          date: selectedDate,
                         );
                         Get.back();
                       }

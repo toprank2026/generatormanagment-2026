@@ -65,6 +65,7 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
 
         return ListView.builder(
           controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
           itemCount:
               controller.circuits.length +
               (controller.isCircuitsMoreLoading.value ? 1 : 0),
@@ -121,21 +122,22 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
       ),
       textConfirm: "add".tr,
       textCancel: "cancel".tr,
-      onConfirm: () {
-        if (nameCtrl.text.isNotEmpty) {
-          controller.addCircuit(
-            widget.board.id,
-            nameCtrl.text,
-            phaseCtrl.text,
-          );
-          Get.back();
-          Get.snackbar(
-            "success".tr,
-            "circuit_added".tr,
-            backgroundColor: Colors.green,
-            colorText: Colors.white,
-          );
-        }
+      // Await the write BEFORE closing so the dialog always closes exactly once
+      // and only after the circuit is persisted (R2). Empty name keeps it open.
+      onConfirm: () async {
+        if (nameCtrl.text.trim().isEmpty) return;
+        await controller.addCircuit(
+          widget.board.id,
+          nameCtrl.text.trim(),
+          phaseCtrl.text.trim(),
+        );
+        Get.back();
+        Get.snackbar(
+          "success".tr,
+          "circuit_added".tr,
+          backgroundColor: Colors.green,
+          colorText: Colors.white,
+        );
       },
     );
   }

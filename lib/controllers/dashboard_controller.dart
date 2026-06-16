@@ -48,6 +48,14 @@ class DashboardController extends GetxController {
     loadStats();
   }
 
+  /// Switch the dashboard month (R11) — every figure (revenue, remaining,
+  /// paid/unpaid, expected) rebinds to the selected month.
+  void changeMonth(String month) {
+    currentMonth.value = month;
+    loadStats();
+    update();
+  }
+
   Future<void> loadStats() async {
     isLoading.value = true;
     try {
@@ -61,30 +69,32 @@ class DashboardController extends GetxController {
       totalSubscribers.value = subs.length;
       totalAmps.value = subs.fold(0.0, (sum, s) => sum + s.amps);
 
-      // 2. Financials for current month (price is per-branch)
+      // 2. Financials for the SELECTED month. Expected is CATEGORY-AWARE (R4):
+      //    each subscriber's due = amps × the price for ITS category this
+      //    month/branch (a category with no price set contributes 0).
       final month = currentMonth.value;
-      final priceObj = await _priceRepo.getByMonth(month, branchId: branch);
-      final price = priceObj?.pricePerAmp ?? 0.0;
+      final prices = await _priceRepo.pricesForMonth(month, branchId: branch);
+      double expected = 0.0;
+      for (final s in subs) {
+        expected += s.amps * (prices[s.category] ?? 0.0);
+      }
 
-      double calculatedTotalDue = totalAmps.value * price;
-
-      // 3. Collected — active branch + this accountant's own receipts (owner=all)
+      // 3. Monthly Revenue = collected valid receipts this month (active branch +
+      //    this accountant; owner = all) (R6/R9).
       totalCollected.value = await _receiptRepo.getCollectedSum(month,
           accountantId: scope, branchId: branch);
 
-      // Remaining = Total Expected - Collected
-      totalDue.value = calculatedTotalDue - totalCollected.value;
+      // Monthly Remaining Fees = expected − collected (R6/R9).
+      totalDue.value = expected - totalCollected.value;
 
-      // 4. Paid / Unpaid Counts (branch-scoped subscriber base)
+      // 4. Paid / Unpaid Counts — category-aware, branch-scoped (R4).
       paidCount.value = await _subRepo.countByPaymentStatus(
         month: month,
-        pricePerAmp: price,
         isPaid: true,
         branchId: branch,
       );
       unpaidCount.value = await _subRepo.countByPaymentStatus(
         month: month,
-        pricePerAmp: price,
         isPaid: false,
         branchId: branch,
       );

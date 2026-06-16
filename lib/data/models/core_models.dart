@@ -86,6 +86,20 @@ class Circuit {
   }
 }
 
+/// Subscriber pricing category (R4) — each is priced independently per month.
+/// Stored as a lowercase string for sync simplicity.
+class SubscriberCategory {
+  SubscriberCategory._();
+  static const String commercial = 'commercial'; // shops
+  static const String standard = 'standard';
+  static const String gold = 'gold'; // 24 hours
+  static const List<String> all = [commercial, standard, gold];
+
+  /// Normalize an arbitrary/legacy value to a valid category (default standard).
+  static String normalize(String? v) =>
+      all.contains(v) ? v! : standard;
+}
+
 class Subscriber {
   String id;
   String name;
@@ -94,6 +108,9 @@ class Subscriber {
   String boardId;
   String circuitId;
   String status;
+  // Pricing category (R4): commercial | standard | gold. Default standard so
+  // legacy rows bill exactly as before until other categories are priced.
+  String category;
   String? accountantId;
   String? branchId;
   String? createdAt;
@@ -106,6 +123,7 @@ class Subscriber {
     required this.boardId,
     required this.circuitId,
     this.status = 'active',
+    this.category = SubscriberCategory.standard,
     this.accountantId,
     this.branchId,
     this.createdAt,
@@ -120,6 +138,7 @@ class Subscriber {
       'board_id': boardId,
       'circuit_id': circuitId,
       'status': status,
+      'category': category,
       'accountant_id': accountantId,
       'branch_id': branchId,
       'created_at': createdAt,
@@ -135,6 +154,7 @@ class Subscriber {
       boardId: map['board_id'],
       circuitId: map['circuit_id'],
       status: map['status'] ?? 'active',
+      category: SubscriberCategory.normalize(map['category'] as String?),
       accountantId: map['accountant_id'],
       branchId: map['branch_id'],
       createdAt: map['created_at'],

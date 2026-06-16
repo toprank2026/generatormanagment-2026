@@ -99,6 +99,9 @@ class _BoardsScreenState extends State<BoardsScreen> {
 
           return GridView.builder(
             controller: _scrollController,
+            // Explicit physics so the grid always scrolls through the GetBuilder
+            // wrapper to the last board (R3).
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
@@ -252,28 +255,33 @@ class _BoardsScreenState extends State<BoardsScreen> {
       textCancel: "cancel".tr,
       confirmTextColor: Colors.white,
       buttonColor: const Color(0xFF1565C0),
-      onConfirm: () {
-        if (nameCtrl.text.isNotEmpty) {
-          if (isEdit) {
-            controller.updateBoard(
-              Board(
-                id: board.id,
-                name: nameCtrl.text,
-                code: codeCtrl.text,
-                createdAt: board.createdAt,
-              ),
-            );
-          } else {
-            controller.addBoard(nameCtrl.text, codeCtrl.text);
-          }
-          Get.back();
-          Get.snackbar(
-            "success".tr,
-            isEdit ? "board_updated".tr : "board_added".tr,
-            backgroundColor: Colors.green,
-            colorText: Colors.white,
+      // Await the write before closing so the dialog always closes once, after
+      // the board is persisted (R2). Empty name keeps it open.
+      onConfirm: () async {
+        if (nameCtrl.text.trim().isEmpty) return;
+        if (isEdit) {
+          await controller.updateBoard(
+            Board(
+              id: board.id,
+              name: nameCtrl.text.trim(),
+              code: codeCtrl.text.trim(),
+              // Preserve scope on edit — a full-row update would otherwise null
+              // these out and move the board to the legacy/Main branch.
+              accountantId: board.accountantId,
+              branchId: board.branchId,
+              createdAt: board.createdAt,
+            ),
           );
+        } else {
+          await controller.addBoard(nameCtrl.text.trim(), codeCtrl.text.trim());
         }
+        Get.back();
+        Get.snackbar(
+          "success".tr,
+          isEdit ? "board_updated".tr : "board_added".tr,
+          backgroundColor: Colors.green,
+          colorText: Colors.white,
+        );
       },
     );
   }
