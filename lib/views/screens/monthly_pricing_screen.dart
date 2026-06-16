@@ -21,6 +21,10 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
   late final Map<String, TextEditingController> _priceCtrls = {
     for (final cat in SubscriberCategory.all) cat: TextEditingController(),
   };
+  // The reactive worker that re-seeds the fields on month/price change. MUST be
+  // disposed with the State, else it fires after the controllers are disposed
+  // (writing to a disposed TextEditingController throws and wedges loadMonthPrice).
+  Worker? _pricesWorker;
 
   @override
   void initState() {
@@ -28,11 +32,12 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
     _seedFields(controller.currentPrices);
     // Re-seed the three fields whenever the selected month's prices change
     // (e.g. after picking a different month or saving).
-    ever(controller.currentPrices, _seedFields);
+    _pricesWorker = ever(controller.currentPrices, _seedFields);
   }
 
   /// Pre-fill each category field from [prices] (blank when no price is set).
   void _seedFields(Map<String, double> prices) {
+    if (!mounted) return; // the worker may outlive a fast pop; guard anyway
     for (final cat in SubscriberCategory.all) {
       final v = prices[cat];
       _priceCtrls[cat]!.text = v == null ? '' : _fmt(v);
@@ -77,6 +82,7 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
 
   @override
   void dispose() {
+    _pricesWorker?.dispose();
     for (final c in _priceCtrls.values) {
       c.dispose();
     }
