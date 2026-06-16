@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/core/app_binding.dart';
 import 'package:generatormanagment/core/dev_seed.dart';
@@ -54,6 +55,18 @@ class MyApp extends StatelessWidget {
       translations: Messages(), // your translations class
       locale: initialLocale, // default locale, or use Get.deviceLocale
       fallbackLocale: const Locale('en', 'US'),
+      // Register the Material/Widgets/Cupertino localizations so date pickers and
+      // other Material dialogs work under Arabic (otherwise showDatePicker throws
+      // "No MaterialLocalizations found" and the month picker never opens).
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('en', 'US'),
+        Locale('ar', 'AR'),
+      ],
       theme: ThemeData(
         fontFamily: 'Cairo',
         colorScheme: ColorScheme.fromSeed(

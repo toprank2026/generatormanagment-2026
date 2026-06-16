@@ -30,6 +30,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Material/Cupertino/Widgets localizations for non-English locales — required
+  # so showDatePicker (and other Material dialogs) resolve MaterialLocalizations
+  # under the Arabic locale instead of throwing "No MaterialLocalizations found".
+  flutter_localizations:
+    sdk: flutter
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -44,7 +49,7 @@ dependencies:
   printing: ^5.13.0
   barcode: ^2.2.9   # render QR to an image for reliable thermal printing
   shared_preferences: ^2.5.1
-  intl: ^0.19.0
+  intl: ^0.20.2   # bumped for flutter_localizations compatibility
   path_provider: ^2.1.5
   crypto: ^3.0.6
   shimmer: ^3.0.0
