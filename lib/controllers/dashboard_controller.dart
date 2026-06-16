@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
@@ -31,6 +32,10 @@ class DashboardController extends GetxController {
   var circuitsCount = 0.obs;
   var currentMonth = "".obs;
   var isLoading = false.obs;
+  // True when the selected month/branch has at least one price row set. When
+  // false the dashboard shows a "no pricing set for this month" notice (R: month
+  // pricing check) — the figures still recompute (revenue/remaining = 0).
+  var hasPriceForMonth = true.obs;
 
   @override
   void onInit() {
@@ -49,10 +54,21 @@ class DashboardController extends GetxController {
   }
 
   /// Switch the dashboard month (R11) — every figure (revenue, remaining,
-  /// paid/unpaid, expected) rebinds to the selected month.
-  void changeMonth(String month) {
+  /// paid/unpaid, expected) rebinds to the selected month. If that month has no
+  /// pricing set, surface a message (the figures still recompute to 0).
+  Future<void> changeMonth(String month) async {
     currentMonth.value = month;
-    loadStats();
+    await loadStats();
+    if (!hasPriceForMonth.value) {
+      Get.snackbar(
+        'no_pricing'.tr,
+        'no_pricing_set_for_month'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: const Color(0xFFFFF3E0),
+        colorText: const Color(0xFFE65100),
+        margin: const EdgeInsets.all(12),
+      );
+    }
     update();
   }
 
@@ -74,6 +90,8 @@ class DashboardController extends GetxController {
       //    month/branch (a category with no price set contributes 0).
       final month = currentMonth.value;
       final prices = await _priceRepo.pricesForMonth(month, branchId: branch);
+      // Month pricing check: has the owner set any price for this month/branch?
+      hasPriceForMonth.value = prices.isNotEmpty;
       double expected = 0.0;
       for (final s in subs) {
         expected += s.amps * (prices[s.category] ?? 0.0);

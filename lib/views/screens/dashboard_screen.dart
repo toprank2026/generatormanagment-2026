@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/views/widgets/shimmer_loading.dart';
 import 'package:generatormanagment/views/widgets/branch_selector.dart';
@@ -40,6 +41,7 @@ class DashboardScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final DashboardController controller = Get.find<DashboardController>();
     final AuthController authController = Get.find<AuthController>();
+    final BranchController branchController = Get.find<BranchController>();
     final SyncController syncController = Get.find<SyncController>();
 
     return Scaffold(
@@ -73,7 +75,7 @@ class DashboardScreen extends StatelessWidget {
             children: [
               // Banner / Carousel Placeholder
               Container(
-                height: 275,
+                height: 330,
                 width: double.infinity,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
@@ -108,25 +110,77 @@ class DashboardScreen extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                // Generator name (business identity) — headline
+                                // Headline = the ACTIVE BRANCH name (the
+                                // generator's identity for the active branch),
+                                // falling back to the account generator name.
+                                // Tapping it opens the branch switcher when
+                                // Multi-Branch is enabled (title + button).
                                 Obx(() {
+                                  final branchName =
+                                      branchController.currentBranch.value?.name;
                                   final g = authController
                                       .account.value?.generatorName;
-                                  return _bannerRow(
-                                    Icons.bolt,
-                                    Text(
-                                      (g == null || g.isEmpty)
+                                  final title = (branchName != null &&
+                                          branchName.trim().isNotEmpty)
+                                      ? branchName
+                                      : ((g == null || g.isEmpty)
                                           ? 'generator_name'.tr
-                                          : g,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
+                                          : g);
+                                  final canSwitch =
+                                      authController.canMultiBranch;
+                                  return InkWell(
+                                    onTap: canSwitch
+                                        ? () => openBranchSheet(context)
+                                        : null,
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Row(
+                                      children: [
+                                        _bannerIconBox(Icons.account_tree),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            title,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        if (canSwitch)
+                                          const Icon(Icons.unfold_more,
+                                              color: Colors.white, size: 20),
+                                      ],
                                     ),
                                   );
                                 }),
+                                const SizedBox(height: 10),
+                                // Month selector (R11) moved into the banner —
+                                // a pill button that opens the date picker.
+                                Obx(
+                                  () => _bannerChipButton(
+                                    icon: Icons.calendar_month,
+                                    label: controller.currentMonth.value,
+                                    onTap: () async {
+                                      DateTime initial = DateTime.now();
+                                      final cur = DateTime.tryParse(
+                                          '${controller.currentMonth.value}-01');
+                                      if (cur != null) initial = cur;
+                                      final picked = await showDatePicker(
+                                        context: context,
+                                        initialDate: initial,
+                                        firstDate: DateTime(2020),
+                                        lastDate: DateTime(2030),
+                                      );
+                                      if (picked != null) {
+                                        controller.changeMonth(DateFormat(
+                                                'yyyy-MM')
+                                            .format(picked));
+                                      }
+                                    },
+                                  ),
+                                ),
                                 const SizedBox(height: 10),
                                 // Account / phone (icon + data)
                                 _bannerRow(
@@ -285,77 +339,39 @@ class DashboardScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
 
-              // Active-branch selector (only when the plan includes Multi-Branch).
-              const BranchSelector(),
-
-              // Month selector (R11): all the figures below recompute for the
-              // dashboard's currentMonth.
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.blue.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'billing_month'.tr,
-                      style: const TextStyle(color: Colors.grey),
-                    ),
-                    Row(
-                      children: [
-                        Obx(
-                          () => Text(
-                            controller.currentMonth.value,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1565C0),
-                            ),
+              // Month pricing check: when the selected month/branch has no
+              // price set, show a notice. The figures below still recompute
+              // (revenue/remaining = 0). The month + branch controls now live
+              // in the banner above.
+              Obx(() {
+                if (controller.hasPriceForMonth.value) {
+                  return const SizedBox.shrink();
+                }
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3E0),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFFB74D)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, color: Color(0xFFE65100)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'no_pricing_set_for_month'.tr,
+                          style: const TextStyle(
+                            color: Color(0xFFE65100),
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.calendar_month,
-                            color: Color(0xFF1565C0),
-                          ),
-                          onPressed: () async {
-                            DateTime initial = DateTime.now();
-                            final cur = DateTime.tryParse(
-                              '${controller.currentMonth.value}-01',
-                            );
-                            if (cur != null) initial = cur;
-                            DateTime? picked = await showDatePicker(
-                              context: context,
-                              initialDate: initial,
-                              firstDate: DateTime(2020),
-                              lastDate: DateTime(2030),
-                            );
-                            if (picked != null) {
-                              controller.changeMonth(
-                                DateFormat('yyyy-MM').format(picked),
-                              );
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
+                      ),
+                    ],
+                  ),
+                );
+              }),
 
               // Stats Grid
               Text(
@@ -444,6 +460,45 @@ class DashboardScreen extends StatelessWidget {
                 );
               }),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A compact white pill button for the banner (e.g. the month selector).
+  Widget _bannerChipButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: Material(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: Colors.white, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.expand_more, color: Colors.white, size: 16),
+              ],
+            ),
           ),
         ),
       ),

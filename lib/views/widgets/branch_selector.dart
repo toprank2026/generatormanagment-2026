@@ -4,13 +4,15 @@ import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/data/models/branch_model.dart';
 import 'package:generatormanagment/views/screens/branches_screen.dart';
-import 'package:generatormanagment/views/widgets/app_form_field.dart';
 
 /// Active-branch selector card (dashboard). Switching the active branch swaps
 /// the WHOLE app data context (full isolation) — controllers listen on
 /// [BranchController.currentBranch] and reload. Renders only when the plan
 /// includes Multi-Branch (`auth.canMultiBranch`); otherwise the app silently
 /// stays on the single Main Branch and nothing is shown.
+///
+/// The dashboard now hosts the switcher as a button INSIDE the top banner (see
+/// [openBranchSheet]); this standalone card is kept for any other entry points.
 class BranchSelector extends StatelessWidget {
   const BranchSelector({super.key});
 
@@ -28,18 +30,18 @@ class BranchSelector extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 16),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () => _openSheet(context, branch, auth),
+          onTap: () => openBranchSheet(context),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: kAppBlue.withValues(alpha: 0.3)),
+              border: Border.all(color: const Color(0xFF1565C0)),
             ),
             child: Row(
               children: [
                 Icon(consolidated ? Icons.dashboard : Icons.account_tree,
-                    color: kAppBlue),
+                    color: const Color(0xFF1565C0)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -59,7 +61,7 @@ class BranchSelector extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Icon(Icons.unfold_more, color: kAppBlue),
+                const Icon(Icons.unfold_more, color: Color(0xFF1565C0)),
               ],
             ),
           ),
@@ -67,10 +69,16 @@ class BranchSelector extends StatelessWidget {
       );
     });
   }
+}
 
-  void _openSheet(
-      BuildContext context, BranchController branch, AuthController auth) {
-    Get.bottomSheet(
+/// Opens the "switch branch" bottom sheet (branches + consolidated + manage).
+/// Shared by the standalone [BranchSelector] card and the dashboard banner's
+/// branch button.
+void openBranchSheet(BuildContext context) {
+  const kAppBlue = Color(0xFF1565C0);
+  final BranchController branch = Get.find<BranchController>();
+  final AuthController auth = Get.find<AuthController>();
+  Get.bottomSheet(
       Container(
         padding: const EdgeInsets.all(16),
         decoration: const BoxDecoration(
@@ -149,5 +157,4 @@ class BranchSelector extends StatelessWidget {
       ),
       isScrollControlled: true,
     );
-  }
 }

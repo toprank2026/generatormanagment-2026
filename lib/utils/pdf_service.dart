@@ -5,6 +5,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/core/api_config.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
@@ -122,8 +123,13 @@ class PdfService {
     );
   }
 
-  /// The owner's generator/business name (header), with a safe fallback.
+  /// The header printed on the receipt: the ACTIVE BRANCH name (the generator's
+  /// identity for that branch), falling back to the account generator name.
   String _generatorName() {
+    try {
+      final b = Get.find<BranchController>().currentBranch.value?.name;
+      if (b != null && b.trim().isNotEmpty) return b.trim();
+    } catch (_) {}
     try {
       final g = Get.find<AuthController>().account.value?.generatorName;
       if (g != null && g.trim().isNotEmpty) return g.trim();
