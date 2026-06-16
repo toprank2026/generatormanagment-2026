@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
@@ -287,6 +288,75 @@ class DashboardScreen extends StatelessWidget {
               // Active-branch selector (only when the plan includes Multi-Branch).
               const BranchSelector(),
 
+              // Month selector (R11): all the figures below recompute for the
+              // dashboard's currentMonth.
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.blue.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'billing_month'.tr,
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                    Row(
+                      children: [
+                        Obx(
+                          () => Text(
+                            controller.currentMonth.value,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1565C0),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.calendar_month,
+                            color: Color(0xFF1565C0),
+                          ),
+                          onPressed: () async {
+                            DateTime initial = DateTime.now();
+                            final cur = DateTime.tryParse(
+                              '${controller.currentMonth.value}-01',
+                            );
+                            if (cur != null) initial = cur;
+                            DateTime? picked = await showDatePicker(
+                              context: context,
+                              initialDate: initial,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2030),
+                            );
+                            if (picked != null) {
+                              controller.changeMonth(
+                                DateFormat('yyyy-MM').format(picked),
+                              );
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
               // Stats Grid
               Text(
                 'overview'.tr,
@@ -360,13 +430,13 @@ class DashboardScreen extends StatelessWidget {
                       _buildStatCard(
                         icon: Icons.account_balance_wallet,
                         color: Colors.green,
-                        label: 'collected_revenue'.tr,
+                        label: 'monthly_revenue'.tr,
                         value: ctrl.totalCollected.value.toStringAsFixed(0),
                       ),
                       _buildStatCard(
                         icon: Icons.monetization_on,
                         color: Colors.redAccent,
-                        label: 'remaining_fees'.tr,
+                        label: 'monthly_remaining'.tr,
                         value: ctrl.totalDue.value.toStringAsFixed(0),
                       ),
                     ],

@@ -3,17 +3,88 @@ import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
+import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:intl/intl.dart';
 
-class MonthlyPricingScreen extends StatelessWidget {
+class MonthlyPricingScreen extends StatefulWidget {
   const MonthlyPricingScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final BillingController controller = Get.find<BillingController>();
-    final AuthController auth = Get.find<AuthController>();
-    final priceCtrl = TextEditingController();
+  State<MonthlyPricingScreen> createState() => _MonthlyPricingScreenState();
+}
 
+class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
+  final BillingController controller = Get.find<BillingController>();
+  final AuthController auth = Get.find<AuthController>();
+
+  // One price input per category (R4): commercial / standard / gold.
+  late final Map<String, TextEditingController> _priceCtrls = {
+    for (final cat in SubscriberCategory.all) cat: TextEditingController(),
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _seedFields(controller.currentPrices);
+    // Re-seed the three fields whenever the selected month's prices change
+    // (e.g. after picking a different month or saving).
+    ever(controller.currentPrices, _seedFields);
+  }
+
+  /// Pre-fill each category field from [prices] (blank when no price is set).
+  void _seedFields(Map<String, double> prices) {
+    for (final cat in SubscriberCategory.all) {
+      final v = prices[cat];
+      _priceCtrls[cat]!.text = v == null ? '' : _fmt(v);
+    }
+  }
+
+  /// Trim a trailing `.0` so whole numbers show without a decimal point.
+  String _fmt(double v) =>
+      v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+
+  String _catLabel(String cat) {
+    switch (cat) {
+      case SubscriberCategory.commercial:
+        return 'cat_commercial'.tr;
+      case SubscriberCategory.gold:
+        return 'cat_gold'.tr;
+      default:
+        return 'cat_standard'.tr;
+    }
+  }
+
+  /// Save every category whose field holds a non-empty, valid number (R4).
+  Future<void> _saveAll() async {
+    bool any = false;
+    for (final cat in SubscriberCategory.all) {
+      final text = _priceCtrls[cat]!.text.trim();
+      if (text.isEmpty) continue;
+      final p = double.tryParse(text);
+      if (p == null) continue;
+      await controller.setPrice(p, category: cat);
+      any = true;
+    }
+    if (any) {
+      Get.snackbar(
+        'success'.tr,
+        'price_updated'.tr,
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _priceCtrls.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFE3F2FD), // Light blue background
       appBar: AppBar(
@@ -100,7 +171,7 @@ class MonthlyPricingScreen extends StatelessWidget {
               final price = controller.currentPrice.value;
               return Column(
                 children: [
-                  // Current Price Display
+                  // Current Price Display (standard, back-compat headline)
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(32),
@@ -177,7 +248,7 @@ class MonthlyPricingScreen extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
-                  // Set New Price Input
+                  // Set New Prices Input — one field per category (R4).
                   if (price?.locked != 1 && auth.can(Perm.prices)) ...[
                     Container(
                       padding: const EdgeInsets.all(24),
@@ -204,47 +275,46 @@ class MonthlyPricingScreen extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 16),
-                          TextField(
-                            controller: priceCtrl,
-                            keyboardType: TextInputType.number,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            decoration: InputDecoration(
-                              hintText: 'enter_new_price'.tr,
-                              prefixText: "IQD ",
-                              filled: true,
-                              fillColor: Colors.grey[50],
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide.none,
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 16,
+                          for (final cat in SubscriberCategory.all) ...[
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                '${_catLabel(cat)} — ${'price_per_amp'.tr}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1565C0),
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 20),
+                            TextField(
+                              controller: _priceCtrls[cat],
+                              keyboardType: TextInputType.number,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: 'enter_new_price'.tr,
+                                prefixText: "IQD ",
+                                filled: true,
+                                fillColor: Colors.grey[50],
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide.none,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 16,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                          const SizedBox(height: 4),
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton(
-                              onPressed: () {
-                                if (priceCtrl.text.isNotEmpty) {
-                                  double? p = double.tryParse(priceCtrl.text);
-                                  if (p != null) {
-                                    controller.setPrice(p);
-                                    priceCtrl.clear();
-                                    Get.snackbar(
-                                      'success'.tr,
-                                      'price_updated'.tr,
-                                      backgroundColor: Colors.green,
-                                      colorText: Colors.white,
-                                    );
-                                  }
-                                }
-                              },
+                              onPressed: _saveAll,
                               style: FilledButton.styleFrom(
                                 backgroundColor: const Color(0xFF1565C0),
                                 padding: const EdgeInsets.symmetric(

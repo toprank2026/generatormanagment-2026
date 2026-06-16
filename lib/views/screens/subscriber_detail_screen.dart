@@ -32,6 +32,13 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
 
   double dueAmount = 0.0;
 
+  // R4: maps a subscriber category to its translation key (translated at use).
+  static const Map<String, String> _categoryLabels = {
+    SubscriberCategory.commercial: 'cat_commercial',
+    SubscriberCategory.standard: 'cat_standard',
+    SubscriberCategory.gold: 'cat_gold',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -150,6 +157,15 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
                     Icons.phone,
                     widget.subscriber.phone ?? 'no_phone'.tr,
                     'phone'.tr,
+                  ),
+                  Container(width: 1, height: 40, color: Colors.grey[200]),
+                  // R4: pricing category
+                  _buildInfoItem(
+                    Icons.category,
+                    (_categoryLabels[widget.subscriber.category] ??
+                            widget.subscriber.category)
+                        .tr,
+                    'category'.tr,
                   ),
                 ],
               ),

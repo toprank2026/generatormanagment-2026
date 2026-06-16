@@ -35,11 +35,14 @@ const num = (value) => {
 
 /**
  * Builds the app-style dashboard for the caller's mirror, replicating the
- * Flutter dashboard for month M with P = monthly_prices[M]
- * (0 if absent): a subscriber is PAID when the sum of their month-M receipts'
- * paid_amount is >= amps * P — so with P = 0 every subscriber counts as paid,
- * exactly like the app. totalDue is kept raw (totalAmps * P - collected),
- * which may go negative, again matching the app.
+ * Flutter dashboard for month M. Pricing is category-aware: a per-category
+ * price map P = { [category]: price_per_amp } is built from the month's
+ * monthly_prices (legacy/missing categories default to 'standard'; absent = 0).
+ * A subscriber's due = amps * P[category]; it is PAID when the sum of its
+ * month-M receipts' paid_amount is >= that due — so with no price every
+ * subscriber counts as paid, exactly like the app. The expected total is
+ * Σ amps × P[category] over the in-scope subscribers, and totalDue is kept raw
+ * (expected - collected), which may go negative, again matching the app.
  *
  * @param {*} userId Mongo id of the caller.
  * @param {object} counts Per-entity counts (reused for boards/circuits).
@@ -58,10 +61,11 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
   // (collected/expenses), applied in JS. monthly_prices is per-branch (its PK
   // is "<month>|<branchId>") so we match it by data.month + branch.
   const branchMatch = branchId ? { 'data.branch_id': branchId } : {};
-  const [priceRow, subscribers, receipts, expenses, lastUpload, boardsCount, circuitsCount] = await Promise.all([
-    // Per-branch monthly price (matched by data.month + branch; legacy rows that
-    // predate per-branch pricing carry no branch_id and only match consolidated).
-    SyncRecord.findOne(
+  const [priceRows, subscribers, receipts, expenses, lastUpload, boardsCount, circuitsCount] = await Promise.all([
+    // Per-branch, per-category monthly prices (matched by data.month + branch;
+    // legacy rows that predate per-branch pricing carry no branch_id and only
+    // match consolidated). One row per category — we build a category→price map.
+    SyncRecord.find(
       { user: userId, entity: 'monthly_prices', deleted: false, 'data.month': month, ...branchMatch },
       { data: 1 }
     ),
@@ -93,8 +97,18 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     SyncRecord.countDocuments({ user: userId, entity: 'circuits', deleted: false, ...branchMatch }),
   ]);
 
-  const priceData = (priceRow && priceRow.data) || {};
-  const pricePerAmp = num(priceData.price_per_amp ?? priceData.price ?? 0);
+  // Category-aware price map for the month/branch: { [category]: price_per_amp }.
+  // Each subscriber's due uses the price for its own category (default 'standard'
+  // for legacy rows), so the expected total is Σ amps × priceMap[category].
+  const priceMap = {};
+  for (const row of priceRows) {
+    const pd = row.data || {};
+    const cat = pd.category || 'standard';
+    priceMap[cat] = num(pd.price_per_amp ?? pd.price ?? 0);
+  }
+  // Back-compat single price reported in the payload: prefer 'standard', else the
+  // first category present (or 0). Per-subscriber math below uses priceMap.
+  const pricePerAmp = priceMap.standard != null ? priceMap.standard : num(Object.values(priceMap)[0] ?? 0);
 
   // True when a row belongs to the selected accountant (or no filter set).
   const inScope = (data) => !accountantId || (data || {}).accountant_id === accountantId;
@@ -112,13 +126,17 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
   }
 
   let totalAmps = 0;
+  let expected = 0; // Σ amps × priceMap[category] over all in-scope subscribers.
   let paidCount = 0;
   for (const s of subscribers) {
     const data = s.data || {};
     const amps = num(data.amps);
     totalAmps += amps;
+    const catPrice = num(priceMap[data.category || 'standard'] || 0);
+    const due = amps * catPrice;
+    expected += due;
     const paid = paidBySubscriber.get(data.id || s.localId) || 0;
-    if (paid >= amps * pricePerAmp) paidCount += 1;
+    if (paid >= due) paidCount += 1;
   }
 
   // Expenses total scoped to the selected accountant (or all when unfiltered).
@@ -127,6 +145,9 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     if (inScope(e.data)) expensesTotal += num((e.data || {}).amount);
   }
 
+  // Category-aware due: expected (Σ per-category) minus what was collected.
+  const remaining = expected - collected;
+
   return {
     month,
     pricePerAmp,
@@ -134,8 +155,12 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     totalAmps,
     paidCount,
     unpaidCount: subscribers.length - paidCount,
-    totalDue: totalAmps * pricePerAmp - collected,
+    totalDue: remaining,
     collected,
+    // Explicit aliases for the app/panels: revenue = collected valid receipts,
+    // remaining = expected (category-aware) − collected.
+    monthlyRevenue: collected,
+    monthlyRemaining: remaining,
     expensesTotal,
     netProfit: collected - expensesTotal,
     boards: boardsCount,

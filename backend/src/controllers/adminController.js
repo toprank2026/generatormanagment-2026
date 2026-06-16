@@ -168,7 +168,7 @@ const unbindDevice = asyncHandler(async (req, res) => {
  * entities fall back to matching the record's localId only.
  */
 const SEARCH_FIELDS = {
-  subscribers: ['name', 'phone'],
+  subscribers: ['name', 'phone', 'category'],
   boards: ['name', 'code'],
   circuits: ['name', 'phase'],
   receipts: ['receipt_no', 'month'],

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:uuid/uuid.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
+import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/data/repositories/core_repositories.dart';
 
 class AddSubscriberScreen extends StatefulWidget {
   final Subscriber? subscriber;
@@ -23,7 +25,22 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
   Board? selectedBoard;
   Circuit? selectedCircuit;
 
+  // R4: pricing category (commercial | standard | gold).
+  late String _category =
+      isEdit ? widget.subscriber!.category : SubscriberCategory.standard;
+
+  // R5: circuit ids already held by an active subscriber in this branch; these
+  // are excluded from the circuit picker (except the edited subscriber's own).
+  Set<String> _takenCircuitIds = {};
+
   bool get isEdit => widget.subscriber != null;
+
+  // R4: human-readable category labels for the dropdown.
+  Map<String, String> get _categoryLabels => {
+        SubscriberCategory.commercial: 'cat_commercial'.tr,
+        SubscriberCategory.standard: 'cat_standard'.tr,
+        SubscriberCategory.gold: 'cat_gold'.tr,
+      };
 
   @override
   void initState() {
@@ -39,6 +56,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
 
   Future<void> _initData() async {
     await controller.loadBoards();
+    await _loadTakenCircuits();
     if (isEdit) {
       // Find and select the board
       selectedBoard = controller.boards.firstWhereOrNull(
@@ -51,6 +69,28 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
         );
       }
       if (mounted) setState(() {});
+    }
+  }
+
+  // R5: load the set of circuit ids already taken by an active subscriber in
+  // the current branch, then drop the edited subscriber's own circuit so it
+  // stays selectable.
+  Future<void> _loadTakenCircuits() async {
+    final taken = await SubscriberRepository().takenCircuitIds(
+      branchId: Get.find<BranchController>().writeBranchId,
+    );
+    if (isEdit) taken.remove(widget.subscriber!.circuitId);
+    if (mounted) {
+      setState(() {
+        _takenCircuitIds = taken;
+        // If the currently-selected circuit is now excluded, clear it.
+        if (selectedCircuit != null &&
+            _takenCircuitIds.contains(selectedCircuit!.id)) {
+          selectedCircuit = null;
+        }
+      });
+    } else {
+      _takenCircuitIds = taken;
     }
   }
 
@@ -131,6 +171,27 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
                     ),
                     const SizedBox(height: 20),
 
+                    // Category Dropdown (R4)
+                    DropdownButtonFormField<String>(
+                      decoration: _inputDecoration(
+                        "category".tr,
+                        Icons.category,
+                      ),
+                      value: _category,
+                      items: SubscriberCategory.all
+                          .map(
+                            (value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(_categoryLabels[value] ?? value),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (val) {
+                        if (val != null) setState(() => _category = val);
+                      },
+                    ),
+                    const SizedBox(height: 20),
+
                     const Divider(height: 32),
 
                     // Board Dropdown
@@ -156,6 +217,8 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
                           });
                           if (val != null) {
                             await controller.loadCircuits(val.id);
+                            // R5: refresh taken-set when the board changes.
+                            await _loadTakenCircuits();
                           }
                         },
                         validator: (v) => v == null ? "required".tr : null,
@@ -164,7 +227,8 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
 
                     const SizedBox(height: 20),
 
-                    // Circuit Dropdown
+                    // Circuit Dropdown (R5: exclude circuits already taken by an
+                    // active subscriber in this branch)
                     Obx(
                       () => DropdownButtonFormField<Circuit>(
                         decoration: _inputDecoration(
@@ -173,6 +237,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
                         ),
                         value: selectedCircuit,
                         items: controller.circuits
+                            .where((c) => !_takenCircuitIds.contains(c.id))
                             .map(
                               (c) => DropdownMenuItem(
                                 value: c,
@@ -261,7 +326,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
     );
   }
 
-  void _save() {
+  void _save() async {
     if (_formKey.currentState!.validate()) {
       final amps = double.tryParse(_ampsCtrl.text.trim());
       if (amps == null) {
@@ -282,26 +347,37 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
         amps: amps,
         boardId: selectedBoard!.id,
         circuitId: selectedCircuit!.id,
+        category: _category,
         accountantId: null,
         // Preserve original status/createdAt when editing.
         status: isEdit ? widget.subscriber!.status : 'active',
         createdAt: isEdit ? widget.subscriber!.createdAt : null,
       );
 
-      if (isEdit) {
-        controller.updateSubscriber(sub);
-      } else {
-        controller.addSubscriber(sub);
-      }
+      try {
+        if (isEdit) {
+          await controller.updateSubscriber(sub);
+        } else {
+          await controller.addSubscriber(sub);
+        }
 
-      Get.back();
-      Get.snackbar(
-        "success".tr,
-        isEdit ? "subscriber_updated".tr : "subscriber_added".tr,
-        backgroundColor: Colors.green,
-        colorText: Colors.white,
-        margin: const EdgeInsets.all(16),
-      );
+        Get.back();
+        Get.snackbar(
+          "success".tr,
+          isEdit ? "subscriber_updated".tr : "subscriber_added".tr,
+          backgroundColor: Colors.green,
+          colorText: Colors.white,
+          margin: const EdgeInsets.all(16),
+        );
+      } on ValidationException catch (e) {
+        // R7/R8: socket already taken or duplicate name — keep the screen open.
+        Get.snackbar(
+          'error'.tr,
+          e.messageKey.tr,
+          backgroundColor: Colors.redAccent,
+          colorText: Colors.white,
+        );
+      }
     }
   }
 }

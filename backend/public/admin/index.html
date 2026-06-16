@@ -1417,7 +1417,11 @@ var SYNC_COLUMNS={
   subscribers:[
     {label:"الاسم",get:function(d){ return syncText(d.name); }},
     {label:"الهاتف",get:function(d){ return syncText(d.phone); }},
-    {label:"الأمبيرات",get:function(d){ return syncText(d.amps); }}
+    {label:"الأمبيرات",get:function(d){ return syncText(d.amps); }},
+    {label:"الفئة",get:function(d){
+      var m={commercial:"تجاري",standard:"عادي",gold:"ذهبي (٢٤ ساعة)"};
+      return m[d.category]||syncText(d.category);
+    }}
   ],
   boards:[
     {label:"الاسم",get:function(d){ return syncText(d.name); }},
