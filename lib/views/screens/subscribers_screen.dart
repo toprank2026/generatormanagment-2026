@@ -166,27 +166,32 @@ class _SubscribersScreenState extends State<SubscribersScreen>
         ),
       ),
       // R3: the Add-Subscriber button appears ONLY on the All Subscribers
-      // screen (filter == null) — never on Paid / Unpaid lists.
-      floatingActionButton: Obx(
-        () => (widget.filter == null &&
-                widget.boardId == null &&
-                auth.can(Perm.subscribers))
-            ? FloatingActionButton.extended(
-                onPressed: () => Get.to(
-                  () => const AddSubscriberScreen(),
-                )?.then((_) => _reload()),
-                icon: const Icon(Icons.person_add, color: Colors.white),
-                label: Text(
-                  'add_new'.tr,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                backgroundColor: const Color(0xFF1565C0),
-              )
-            : const SizedBox.shrink(),
-      ),
+      // screen (filter == null & no board). Build the Obx ONLY there, so its
+      // builder ALWAYS reads an observable (auth.can -> currentUser). Putting
+      // the filter check INSIDE the Obx short-circuits the `&&` before any
+      // observable is read on Paid/Unpaid, which throws GetX's "improper use of
+      // Obx" error — rendered as a grey ErrorWidget over the whole screen in
+      // release builds.
+      floatingActionButton: (widget.filter == null && widget.boardId == null)
+          ? Obx(
+              () => auth.can(Perm.subscribers)
+                  ? FloatingActionButton.extended(
+                      onPressed: () => Get.to(
+                        () => const AddSubscriberScreen(),
+                      )?.then((_) => _reload()),
+                      icon: const Icon(Icons.person_add, color: Colors.white),
+                      label: Text(
+                        'add_new'.tr,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      backgroundColor: const Color(0xFF1565C0),
+                    )
+                  : const SizedBox.shrink(),
+            )
+          : null,
       body: GetBuilder<CoreController>(
         builder: (ctrl) {
           if (ctrl.isLoading.value) {
