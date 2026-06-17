@@ -173,7 +173,7 @@ const SEARCH_FIELDS = {
   circuits: ['name', 'phase'],
   receipts: ['receipt_no', 'month'],
   expenses: ['category', 'note'],
-  monthly_prices: ['month'],
+  monthly_prices: ['month', 'category'],
   accountants: ['name', 'username'],
   branches: ['name', 'code'],
 };

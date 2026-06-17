@@ -3,13 +3,14 @@ import 'package:generatormanagment/data/models/expense_model.dart';
 import 'package:generatormanagment/data/repositories/expense_repository.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
-import 'package:intl/intl.dart';
+import 'package:generatormanagment/controllers/month_controller.dart';
 import 'package:uuid/uuid.dart';
 
 class ExpenseController extends GetxController {
   final ExpenseRepository _repo = ExpenseRepository();
   final AuthController _auth = Get.find();
   final BranchController _branch = Get.find();
+  final MonthController _month = Get.find();
 
   /// Per-accountant scope: null = owner/admin (all). Expenses are owner-only.
   String? get _scope => _auth.scopeAccountantId;
@@ -19,7 +20,11 @@ class ExpenseController extends GetxController {
 
   var expenses = <Expense>[].obs;
   var totalExpenses = 0.0.obs;
-  var selectedMonth = "".obs;
+
+  /// The globally-selected month (R9) — sourced from [MonthController]. Expenses
+  /// browse the same month as the rest of the app; the month is changed only on
+  /// the Monthly Pricing screen.
+  RxString get selectedMonth => _month.selectedMonth;
   var isLoading = false.obs;
 
   // Pagination
@@ -32,23 +37,18 @@ class ExpenseController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    selectedMonth.value = DateFormat('yyyy-MM').format(DateTime.now());
     // Re-scope expenses when the acting user changes.
     ever(_auth.currentUser, (_) => loadExpenses());
     // Re-scope when the active branch switches (full system-context swap).
     ever(_branch.currentBranch, (_) => loadExpenses());
+    // R9: re-load when the global month changes (changed from Monthly Pricing).
+    ever(_month.selectedMonth, (_) => loadExpenses());
   }
 
   @override
   void onReady() {
     super.onReady();
     loadExpenses();
-  }
-
-  void changeMonth(String month) {
-    selectedMonth.value = month;
-    loadExpenses();
-    update();
   }
 
   Future<void> loadExpenses({int page = 1}) async {

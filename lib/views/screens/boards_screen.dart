@@ -4,6 +4,8 @@ import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/data/repositories/core_repositories.dart'
+    show ValidationException;
 import 'package:generatormanagment/views/widgets/app_form_field.dart';
 import 'package:generatormanagment/views/screens/subscribers_screen.dart';
 import 'package:generatormanagment/views/screens/circuits_screen.dart';
@@ -259,21 +261,33 @@ class _BoardsScreenState extends State<BoardsScreen> {
       // the board is persisted (R2). Empty name keeps it open.
       onConfirm: () async {
         if (nameCtrl.text.trim().isEmpty) return;
-        if (isEdit) {
-          await controller.updateBoard(
-            Board(
-              id: board.id,
-              name: nameCtrl.text.trim(),
-              code: codeCtrl.text.trim(),
-              // Preserve scope on edit — a full-row update would otherwise null
-              // these out and move the board to the legacy/Main branch.
-              accountantId: board.accountantId,
-              branchId: board.branchId,
-              createdAt: board.createdAt,
-            ),
+        try {
+          if (isEdit) {
+            await controller.updateBoard(
+              Board(
+                id: board.id,
+                name: nameCtrl.text.trim(),
+                code: codeCtrl.text.trim(),
+                // Preserve scope on edit — a full-row update would otherwise
+                // null these out and move the board to the legacy/Main branch.
+                accountantId: board.accountantId,
+                branchId: board.branchId,
+                createdAt: board.createdAt,
+              ),
+            );
+          } else {
+            await controller.addBoard(
+                nameCtrl.text.trim(), codeCtrl.text.trim());
+          }
+        } on ValidationException catch (e) {
+          // R1: duplicate name — keep the dialog open, show the reason.
+          Get.snackbar(
+            'error'.tr,
+            e.messageKey.tr,
+            backgroundColor: Colors.redAccent,
+            colorText: Colors.white,
           );
-        } else {
-          await controller.addBoard(nameCtrl.text.trim(), codeCtrl.text.trim());
+          return;
         }
         Get.back();
         Get.snackbar(

@@ -98,9 +98,8 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   /// then refreshes this history list. Mirrors the detail screen's dialog so the
   /// business logic stays in one place.
   void _showCollectDialog() async {
-    // Ensure the controller targets the current month and has its price loaded,
-    // matching the detail-screen flow.
-    _billing.selectedMonth.value = DateFormat('yyyy-MM').format(DateTime.now());
+    // R6/R9: collect against the GLOBALLY-selected month (chosen on Monthly
+    // Pricing / shown on Home) — never silently reset to the current month.
     await _billing.loadMonthPrice(_billing.selectedMonth.value);
     final due = await _billing.getDueAmount(
       widget.subscriber,

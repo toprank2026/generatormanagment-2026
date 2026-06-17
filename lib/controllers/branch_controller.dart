@@ -83,6 +83,23 @@ class BranchController extends GetxController {
   /// Switch to the consolidated / All-branches view (owner reporting only).
   Future<void> setConsolidated() => setBranch(null);
 
+  /// R7: after a branch-switch clear+pull, re-establish branches from the
+  /// freshly-pulled local DB and activate [targetId] (null = consolidated).
+  /// Setting the active branch fires every controller's `ever(currentBranch)`
+  /// reload against the new data, so the whole app re-binds to the branch.
+  Future<void> reloadAndActivate(String? targetId) async {
+    await _repo.ensureMain();
+    await loadBranches();
+    if (targetId == null) {
+      await setBranch(null);
+      return;
+    }
+    final b = branches.firstWhereOrNull((x) => x.id == targetId) ??
+        branches.firstWhereOrNull((x) => x.id == DbHelper.kMainBranchId) ??
+        (branches.isNotEmpty ? branches.first : null);
+    await setBranch(b);
+  }
+
   // --- Owner CRUD (gated by AuthController.canMultiBranch at the UI layer) ---
 
   /// Create a new branch and refresh the list. Returns the created branch.

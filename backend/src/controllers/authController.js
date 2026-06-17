@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
 const { signToken } = require('../utils/token');
-const { serializeAccount } = require('../utils/serialize');
+const { serializeAccount, serializeSubscription } = require('../utils/serialize');
 const { featuresForUser } = require('../utils/planFeatures');
 const { upsertDevice } = require('../utils/devices');
 const { adminEvents } = require('../utils/events');
@@ -80,6 +80,23 @@ const login = asyncHandler(async (req, res) => {
     throw new HttpError(403, 'Account blocked', 'BLOCKED');
   }
 
+  if (user.role === 'accountant') {
+    // Accountants are device-binding exempt (skip upsert/maxDevices entirely)
+    // and inherit the OWNER's subscription/features. A blocked/missing owner
+    // must reject the accountant too — the admin's block on an owner is the
+    // whole-account kill switch (block is orthogonal to subscription.status).
+    const owner = user.owner ? await User.findById(user.owner) : null;
+    if (!owner || owner.blocked) {
+      throw new HttpError(403, 'Account blocked', 'BLOCKED');
+    }
+    const token = signToken(user);
+    const account = serializeAccount(user);
+    account.subscription = serializeSubscription(owner.subscription);
+    account.subscription.features = await featuresForUser(owner);
+    res.status(200).json({ token, account });
+    return;
+  }
+
   // Bind / validate device. Throws 403 DEVICE_LIMIT when a NEW device exceeds
   // the active plan's maxDevices.
   if (device) await upsertDevice(user, device);
@@ -94,6 +111,22 @@ const login = asyncHandler(async (req, res) => {
 /** GET /api/auth/me (auth) */
 const me = asyncHandler(async (req, res) => {
   const account = serializeAccount(req.user);
+
+  if (req.user.role === 'accountant') {
+    // Inherit the owner's subscription + features (see login). requireAuth has
+    // already rejected a blocked/missing owner and attached req.ownerAccount.
+    const owner =
+      req.ownerAccount ||
+      (req.user.owner ? await User.findById(req.user.owner) : null);
+    if (!owner || owner.blocked) {
+      throw new HttpError(403, 'Account blocked', 'BLOCKED');
+    }
+    account.subscription = serializeSubscription(owner.subscription);
+    account.subscription.features = await featuresForUser(owner);
+    res.status(200).json({ account });
+    return;
+  }
+
   account.subscription.features = await featuresForUser(req.user);
   res.status(200).json({ account });
 });

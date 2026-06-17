@@ -3,6 +3,7 @@
 const SyncRecord = require('../models/SyncRecord');
 const asyncHandler = require('../utils/asyncHandler');
 const { HttpError } = require('../middleware/error');
+const { effectiveOwnerId } = require('../utils/effectiveOwner');
 
 /**
  * POST /api/sync/push (auth)
@@ -17,7 +18,9 @@ const push = asyncHandler(async (req, res) => {
     throw new HttpError(400, 'records must be an array', 'BAD_RECORDS');
   }
 
-  const userId = req.user._id;
+  // Accountants push into the OWNER's mirror (effective owner); owners/admins
+  // into their own.
+  const userId = effectiveOwnerId(req.user);
   let count = 0;
 
   for (const rec of records) {
@@ -49,7 +52,8 @@ const push = asyncHandler(async (req, res) => {
  * to restore the mirror.
  */
 const pull = asyncHandler(async (req, res) => {
-  const filter = { user: req.user._id };
+  // Accountants pull the OWNER's mirror (effective owner); owners/admins their own.
+  const filter = { user: effectiveOwnerId(req.user) };
 
   if (req.query.since) {
     const since = new Date(req.query.since);

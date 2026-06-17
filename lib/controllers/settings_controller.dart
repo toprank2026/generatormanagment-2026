@@ -5,11 +5,14 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/controllers/branch_controller.dart';
+import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/core/session_cache.dart';
 import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
+import 'package:generatormanagment/data/repositories/auth_repository.dart';
 import 'package:generatormanagment/data/repositories/backup_repository.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/utils/printer_prefs.dart';
@@ -19,6 +22,8 @@ import 'package:share_plus/share_plus.dart';
 
 class SettingsController extends GetxController {
   final AccountantRepository _accountantRepo = AccountantRepository();
+  final AuthRepository _authRepo = AuthRepository();
+  final ConnectivityService _net = ConnectivityService();
   final DbHelper _dbHelper = DbHelper();
   final BackupRepository _backupRepo = BackupRepository();
   final AuthController auth = Get.find();
@@ -138,27 +143,69 @@ class SettingsController extends GetxController {
     update();
   }
 
-  /// Create a new accountant (credential + synced identity rows).
+  /// Create a new accountant (R8). The accountant is a REAL backend sub-account
+  /// (so it can log in via the Login screen), tied to a branch — so creation
+  /// REQUIRES the network. We register the backend account first (source of
+  /// truth for login), then mirror the local identity/credential rows (same id)
+  /// for the synced admin-panel identity and the offline owner profile-switch.
   Future<void> createAccountant(
       String name, String username, String password,
-      {Iterable<String> permissions = const []}) async {
+      {Iterable<String> permissions = const [], String? branchId}) async {
+    if (!await _net.isOnline()) {
+      Get.snackbar('error'.tr, 'accountant_needs_internet'.tr,
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      return;
+    }
+    final id = const Uuid().v4();
+    final branch = (branchId != null && branchId.isNotEmpty)
+        ? branchId
+        : Get.find<BranchController>().writeBranchId;
     try {
-      await _accountantRepo.create(
-        id: const Uuid().v4(),
-        username: username,
+      // 1. Register the backend account first (login source of truth).
+      await _authRepo.createAccountant(
+        localId: id,
         name: name,
+        username: username,
         password: password,
+        branchId: branch,
         permissions: permissions,
       );
+      // 2. Mirror the synced identity + offline credential rows (same id). If
+      //    this local write fails AFTER the backend created the account, roll
+      //    the backend account back so the username isn't permanently consumed
+      //    by an orphan the owner can't see (keeps the two sides consistent).
+      try {
+        await _accountantRepo.create(
+          id: id,
+          username: username,
+          name: name,
+          password: password,
+          permissions: permissions,
+        );
+      } catch (localErr) {
+        try {
+          await _authRepo.deleteAccountant(id);
+        } catch (_) {/* best-effort rollback */}
+        rethrow;
+      }
       await loadAccountants();
       Get.snackbar('success'.tr, 'add_accountant'.tr);
+    } on ApiException catch (e) {
+      final msg = e.statusCode == 409
+          ? 'username_taken'.tr
+          : (e.isNetworkError ? 'online_only'.tr : e.message);
+      Get.snackbar('error'.tr, msg,
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
     } catch (e) {
       Get.snackbar('error'.tr, "${'add_accountant'.tr}: $e");
     }
     update();
   }
 
-  /// Update an accountant's name / active state and optionally reset password.
+  /// Update an accountant (R8). A disable (active:false), password reset, or
+  /// rename MUST reach the BACKEND or it doesn't take effect (the accountant is
+  /// a real backend login) — so this is online-required and backend-first, then
+  /// mirrors locally. The backend resolves the accountant by its local id.
   Future<void> updateAccountant(
     String id, {
     String? name,
@@ -166,7 +213,19 @@ class SettingsController extends GetxController {
     String? newPassword,
     Iterable<String>? permissions,
   }) async {
+    if (!await _net.isOnline()) {
+      Get.snackbar('error'.tr, 'accountant_needs_internet'.tr,
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      return;
+    }
     try {
+      await _authRepo.updateAccountant(
+        id,
+        name: name,
+        active: active,
+        permissions: permissions,
+        password: newPassword,
+      );
       await _accountantRepo.update(
         id: id,
         name: name,
@@ -176,21 +235,35 @@ class SettingsController extends GetxController {
       );
       await loadAccountants();
       Get.snackbar('success'.tr, 'edit_accountant'.tr);
+    } on ApiException catch (e) {
+      Get.snackbar('error'.tr, e.isNetworkError ? 'online_only'.tr : e.message,
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
     } catch (e) {
       Get.snackbar('error'.tr, "${'edit_accountant'.tr}: $e");
     }
     update();
   }
 
-  /// Delete an accountant (both rows).
+  /// Delete an accountant (R8). Must delete the BACKEND account first (so the
+  /// accountant can no longer log in / push into the owner's mirror), then the
+  /// local rows. Online-required for the same reason as update.
   Future<void> deleteAccountant(String id) async {
     if (id == auth.currentUser.value?.id) {
       Get.snackbar('error'.tr, 'cannot_delete_self'.tr);
       return;
     }
+    if (!await _net.isOnline()) {
+      Get.snackbar('error'.tr, 'accountant_needs_internet'.tr,
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      return;
+    }
     try {
+      await _authRepo.deleteAccountant(id);
       await _accountantRepo.delete(id);
       accountants.removeWhere((a) => a.id == id);
+    } on ApiException catch (e) {
+      Get.snackbar('error'.tr, e.isNetworkError ? 'online_only'.tr : e.message,
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
     } catch (e) {
       Get.snackbar('error'.tr, "${'delete'.tr}: $e");
     }

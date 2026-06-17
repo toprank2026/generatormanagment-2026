@@ -11,7 +11,15 @@ const asyncHandler = require('../utils/asyncHandler');
  */
 function requireFeature(name) {
   return asyncHandler(async (req, res, next) => {
-    const f = await featuresForUser(req.user);
+    // Accountants inherit the OWNER's plan: gate against the owner's features
+    // (attached by requireAuth as req.ownerAccount), never the accountant's own
+    // empty subscription — which would otherwise default every feature to TRUE
+    // and bypass a restricted owner's plan.
+    const subject =
+      req.user && req.user.role === 'accountant' && req.ownerAccount
+        ? req.ownerAccount
+        : req.user;
+    const f = await featuresForUser(subject);
     if (!f[name]) {
       return res.status(403).json({
         message: 'هذه الميزة غير متوفرة في خطتك',

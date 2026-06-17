@@ -68,6 +68,63 @@ class AuthRepository {
 
   Future<void> logout() => _store.clearToken();
 
+  /// R8: register an accountant as a real BACKEND sub-account tied to a branch.
+  /// The owner/admin (current session) calls this; the server creates a User
+  /// with role 'accountant', owner = caller, the given branch + permissions, and
+  /// stores [localId] so business rows attribute to the same app-side id.
+  /// Returns the created accountant map. Throws [ApiException] on failure
+  /// (e.g. 409 USERNAME_TAKEN, or offline → network error).
+  Future<Map<String, dynamic>> createAccountant({
+    required String localId,
+    required String name,
+    required String username,
+    required String password,
+    required String branchId,
+    Iterable<String> permissions = const [],
+  }) async {
+    final res = await _api.post(
+      ApiConfig.accountants,
+      body: {
+        'localId': localId,
+        'name': name,
+        'username': username,
+        'password': password,
+        'branchId': branchId,
+        'permissions': permissions.toList(),
+      },
+    );
+    final map = (res as Map).cast<String, dynamic>();
+    final acc = map['accountant'] ?? map;
+    return (acc as Map).cast<String, dynamic>();
+  }
+
+  /// R8: update a backend accountant sub-account (by the app-side [localId]).
+  /// Used to disable (active:false), rename, re-scope branch/permissions, or
+  /// reset the password ON THE SERVER so a revoke/disable actually takes effect
+  /// (the local-only path could not stop a backend login). Throws [ApiException].
+  Future<void> updateAccountant(
+    String localId, {
+    String? name,
+    Iterable<String>? permissions,
+    String? branchId,
+    bool? active,
+    String? password,
+  }) async {
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (permissions != null) body['permissions'] = permissions.toList();
+    if (branchId != null) body['branchId'] = branchId;
+    if (active != null) body['active'] = active;
+    if (password != null && password.isNotEmpty) body['password'] = password;
+    await _api.put(ApiConfig.accountantById(localId), body: body);
+  }
+
+  /// R8: delete the backend accountant sub-account (by the app-side [localId]),
+  /// so a deleted accountant can no longer log in. Throws [ApiException].
+  Future<void> deleteAccountant(String localId) async {
+    await _api.delete(ApiConfig.accountantById(localId));
+  }
+
   Future<AuthResult> _parseAuth(dynamic res) async {
     final map = (res as Map).cast<String, dynamic>();
     final token = (map['token'] ?? map['accessToken'] ?? '').toString();

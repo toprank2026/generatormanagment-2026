@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
+import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/data/models/branch_model.dart';
 import 'package:generatormanagment/views/screens/branches_screen.dart';
 
@@ -113,8 +114,11 @@ void openBranchSheet(BuildContext context) {
                             ? const Icon(Icons.check_circle, color: kAppBlue)
                             : null,
                         onTap: () {
-                          branch.setBranch(b);
                           Get.back();
+                          // R7: clear local + pull this branch's data from the
+                          // server (offline → local-only switch). Shows a
+                          // blocking progress overlay.
+                          Get.find<SyncController>().switchBranch(b);
                         },
                       ),
                     // Consolidated (All branches) — owner reporting only.
@@ -130,8 +134,8 @@ void openBranchSheet(BuildContext context) {
                             ? const Icon(Icons.check_circle, color: kAppBlue)
                             : null,
                         onTap: () {
-                          branch.setConsolidated();
                           Get.back();
+                          Get.find<SyncController>().switchBranch(null);
                         },
                       ),
                     ],

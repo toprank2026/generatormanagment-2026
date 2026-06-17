@@ -58,6 +58,11 @@ function serializeAccount(user, currentDeviceId) {
     phone: user.phone || null,
     username: user.username,
     role: user.role || 'owner',
+    // Accountant sub-account fields (null/[] for owners/admins).
+    ownerId: user.owner ? String(user.owner) : null,
+    branchId: user.branchId || null,
+    permissions: Array.isArray(user.permissions) ? user.permissions : [],
+    localId: user.localId || null,
     blocked: Boolean(user.blocked),
     createdAt: toIso(user.createdAt),
     subscription: serializeSubscription(user.subscription),

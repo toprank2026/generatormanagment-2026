@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
+import 'package:generatormanagment/controllers/month_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
@@ -15,7 +16,11 @@ class MonthlyPricingScreen extends StatefulWidget {
 
 class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
   final BillingController controller = Get.find<BillingController>();
+  final MonthController month = Get.find<MonthController>();
   final AuthController auth = Get.find<AuthController>();
+
+  // The pricing form — all three category prices are required (R4).
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   // One price input per category (R4): commercial / standard / gold.
   late final Map<String, TextEditingController> _priceCtrls = {
@@ -59,25 +64,44 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
     }
   }
 
-  /// Save every category whose field holds a non-empty, valid number (R4).
+  /// Accent colour per category for the prices card.
+  Color _catColor(String cat) {
+    switch (cat) {
+      case SubscriberCategory.gold:
+        return const Color(0xFFFFB300); // amber
+      case SubscriberCategory.commercial:
+        return const Color(0xFF00897B); // teal
+      default:
+        return const Color(0xFF1565C0); // blue (standard)
+    }
+  }
+
+  /// Validate a single category price field (R4): required, numeric, > 0.
+  String? _priceValidator(String? v) {
+    final t = (v ?? '').trim();
+    if (t.isEmpty) return 'price_required'.tr;
+    final p = double.tryParse(t);
+    if (p == null) return 'invalid_price'.tr;
+    if (p <= 0) return 'price_must_be_positive'.tr;
+    return null;
+  }
+
+  /// Save ALL THREE category prices together (R4). Every category (Gold /
+  /// Regular / Commercial) is required — if any field is empty/invalid the
+  /// whole save is aborted (no partial write) and the errors are shown.
   Future<void> _saveAll() async {
-    bool any = false;
-    for (final cat in SubscriberCategory.all) {
-      final text = _priceCtrls[cat]!.text.trim();
-      if (text.isEmpty) continue;
-      final p = double.tryParse(text);
-      if (p == null) continue;
-      await controller.setPrice(p, category: cat);
-      any = true;
-    }
-    if (any) {
-      Get.snackbar(
-        'success'.tr,
-        'price_updated'.tr,
-        backgroundColor: Colors.green,
-        colorText: Colors.white,
-      );
-    }
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final prices = <String, double>{
+      for (final cat in SubscriberCategory.all)
+        cat: double.parse(_priceCtrls[cat]!.text.trim()),
+    };
+    await controller.setPrices(prices);
+    Get.snackbar(
+      'success'.tr,
+      'price_updated'.tr,
+      backgroundColor: Colors.green,
+      colorText: Colors.white,
+    );
   }
 
   @override
@@ -150,15 +174,20 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
                           color: Color(0xFF1565C0),
                         ),
                         onPressed: () async {
+                          DateTime initial = DateTime.now();
+                          final cur = DateTime.tryParse(
+                              '${controller.selectedMonth.value}-01');
+                          if (cur != null) initial = cur;
                           DateTime? picked = await showDatePicker(
                             context: context,
-                            initialDate: DateTime.now(),
+                            initialDate: initial,
                             firstDate: DateTime(2020),
                             lastDate: DateTime(2030),
                           );
                           if (picked != null) {
-                            String m = DateFormat('yyyy-MM').format(picked);
-                            controller.changeMonth(m);
+                            // R9: Monthly Pricing is the ONLY place that sets the
+                            // global month — propagates to Home & subscribers.
+                            month.setMonth(DateFormat('yyyy-MM').format(picked));
                           }
                         },
                       ),
@@ -202,16 +231,51 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        Text(
-                          price?.pricePerAmp.toString() ?? 'not_set'.tr,
-                          style: TextStyle(
-                            fontSize: 48,
-                            fontWeight: FontWeight.bold,
-                            color: (price?.pricePerAmp != null)
-                                ? const Color(0xFF43A047)
-                                : Colors.grey,
+                        // All three category per-amp prices currently set for
+                        // this month/branch (R4) — gold / regular / commercial.
+                        for (final cat in SubscriberCategory.all)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 7),
+                            child: Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 10,
+                                      height: 10,
+                                      decoration: BoxDecoration(
+                                        color: _catColor(cat),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _catLabel(cat),
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Builder(builder: (_) {
+                                  final v = controller.currentPrices[cat];
+                                  return Text(
+                                    v != null ? _fmt(v) : 'not_set'.tr,
+                                    style: TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      color: v != null
+                                          ? const Color(0xFF43A047)
+                                          : Colors.grey,
+                                    ),
+                                  );
+                                }),
+                              ],
+                            ),
                           ),
-                        ),
                         const SizedBox(height: 8),
                         if (price?.locked == 1)
                           Container(
@@ -269,7 +333,9 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
                           ),
                         ],
                       ),
-                      child: Column(
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
@@ -278,6 +344,14 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                               color: Color(0xFF1565C0),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'all_prices_required'.tr,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
                             ),
                           ),
                           const SizedBox(height: 16),
@@ -292,9 +366,10 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
                                 ),
                               ),
                             ),
-                            TextField(
+                            TextFormField(
                               controller: _priceCtrls[cat],
                               keyboardType: TextInputType.number,
+                              validator: _priceValidator,
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -340,6 +415,7 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
                             ),
                           ),
                         ],
+                        ),
                       ),
                     ),
                   ] else if (price?.locked == 1)

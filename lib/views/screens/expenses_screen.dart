@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/expense_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
-import 'package:generatormanagment/data/models/expense_model.dart';
 import 'package:generatormanagment/views/widgets/date_field.dart';
 
 class ExpensesScreen extends StatefulWidget {
@@ -66,9 +65,14 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             ),
             child: Column(
               children: [
+                // R9: month is READ-ONLY here — selected only on Monthly Pricing
+                // and shown across the app as information.
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
+                    const Icon(Icons.calendar_month,
+                        color: Colors.white70, size: 18),
+                    const SizedBox(width: 6),
                     Obx(
                       () => Text(
                         controller.selectedMonth.value,
@@ -77,24 +81,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                           fontSize: 16,
                         ),
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.calendar_month,
-                        color: Colors.white70,
-                      ),
-                      onPressed: () async {
-                        DateTime? picked = await showDatePicker(
-                          context: context,
-                          initialDate: DateTime.now(),
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime(2030),
-                        );
-                        if (picked != null) {
-                          String m = DateFormat('yyyy-MM').format(picked);
-                          controller.changeMonth(m);
-                        }
-                      },
                     ),
                   ],
                 ),

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
@@ -126,8 +125,11 @@ class DashboardScreen extends StatelessWidget {
                                       : ((g == null || g.isEmpty)
                                           ? 'generator_name'.tr
                                           : g);
+                                  // R8: accountants are confined to their
+                                  // assigned branch — never offer switching.
                                   final canSwitch =
-                                      authController.canMultiBranch;
+                                      authController.canMultiBranch &&
+                                          !authController.isAccountant;
                                   return InkWell(
                                     onTap: canSwitch
                                         ? () => openBranchSheet(context)
@@ -156,29 +158,12 @@ class DashboardScreen extends StatelessWidget {
                                   );
                                 }),
                                 const SizedBox(height: 10),
-                                // Month selector (R11) moved into the banner —
-                                // a pill button that opens the date picker.
+                                // Month is READ-ONLY here (R9): it is selected
+                                // only on the Monthly Pricing screen and shown
+                                // on Home as information. Tapping does nothing.
                                 Obx(
-                                  () => _bannerChipButton(
-                                    icon: Icons.calendar_month,
-                                    label: controller.currentMonth.value,
-                                    onTap: () async {
-                                      DateTime initial = DateTime.now();
-                                      final cur = DateTime.tryParse(
-                                          '${controller.currentMonth.value}-01');
-                                      if (cur != null) initial = cur;
-                                      final picked = await showDatePicker(
-                                        context: context,
-                                        initialDate: initial,
-                                        firstDate: DateTime(2020),
-                                        lastDate: DateTime(2030),
-                                      );
-                                      if (picked != null) {
-                                        controller.changeMonth(DateFormat(
-                                                'yyyy-MM')
-                                            .format(picked));
-                                      }
-                                    },
+                                  () => _bannerMonthChip(
+                                    controller.currentMonth.value,
                                   ),
                                 ),
                                 const SizedBox(height: 10),
@@ -466,40 +451,32 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  /// A compact white pill button for the banner (e.g. the month selector).
-  Widget _bannerChipButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
+  /// A compact, READ-ONLY white pill showing the selected month in the banner
+  /// (R9). The month is chosen only on the Monthly Pricing screen; here it is
+  /// information only, so there is no tap/picker.
+  Widget _bannerMonthChip(String label) {
     return Align(
       alignment: AlignmentDirectional.centerStart,
-      child: Material(
-        color: Colors.white.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.2),
           borderRadius: BorderRadius.circular(10),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: Colors.white, size: 16),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Icon(Icons.expand_more, color: Colors.white, size: 16),
-              ],
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.calendar_month, color: Colors.white, size: 16),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

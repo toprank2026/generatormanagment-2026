@@ -29,6 +29,8 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
   final ReceiptRepository receiptRepo = ReceiptRepository();
   final _amountCtrl = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  // Re-binds this screen when the global month changes (R6/R9). Disposed below.
+  Worker? _monthWorker;
 
   double dueAmount = 0.0;
 
@@ -45,16 +47,17 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
     _scrollController.addListener(_onScroll);
     // Defer state updates to after the first frame to avoid "setState during build" errors
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Reset to current month when entering screen to avoid stale state from previous visits
-      controller.selectedMonth.value = DateFormat(
-        'yyyy-MM',
-      ).format(DateTime.now());
+      // R6/R9: do NOT reset the month here — inherit the globally-selected month
+      // (chosen on Home/Monthly Pricing) so opening a subscriber from Home uses
+      // exactly that month. Re-bind whenever the global month changes too.
+      _monthWorker = ever(controller.selectedMonth, (_) => _refresh());
       _refresh();
     });
   }
 
   @override
   void dispose() {
+    _monthWorker?.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _amountCtrl.dispose();
@@ -195,6 +198,8 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
                   ),
                   Row(
                     children: [
+                      // R9: month is READ-ONLY here — it is selected only on the
+                      // Monthly Pricing screen and inherited globally.
                       Obx(
                         () => Text(
                           controller.selectedMonth.value,
@@ -204,26 +209,6 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
                             color: Color(0xFF1565C0),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.calendar_month,
-                          color: Color(0xFF1565C0),
-                        ),
-                        onPressed: () async {
-                          DateTime? picked = await showDatePicker(
-                            context: context,
-                            initialDate: DateTime.now(),
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime(2030),
-                          );
-                          if (picked != null) {
-                            String m = DateFormat('yyyy-MM').format(picked);
-                            controller.changeMonth(m);
-                            _refresh();
-                          }
-                        },
                       ),
                     ],
                   ),

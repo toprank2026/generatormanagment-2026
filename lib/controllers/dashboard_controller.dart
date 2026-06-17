@@ -1,11 +1,10 @@
-import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
-import 'package:intl/intl.dart';
+import 'package:generatormanagment/controllers/month_controller.dart';
 
 class DashboardController extends GetxController {
   final SubscriberRepository _subRepo = SubscriberRepository();
@@ -15,12 +14,19 @@ class DashboardController extends GetxController {
   final CircuitRepository _circuitRepo = CircuitRepository();
   final AuthController _auth = Get.find();
   final BranchController _branch = Get.find();
+  final MonthController _month = Get.find();
 
   /// Per-accountant scope: null = owner/admin (all), else the accountant's id.
   String? get _scope => _auth.scopeAccountantId;
 
   /// Active-branch read scope (null = consolidated / All branches).
   String? get _branchScope => _branch.scopeBranchId;
+
+  /// The globally-selected month (R9) — sourced from [MonthController], NOT
+  /// owned here. Exposed as the same [RxString] so the dashboard banner stays
+  /// reactive while only displaying it (the picker now lives on Monthly
+  /// Pricing). The dashboard shows this month read-only.
+  RxString get currentMonth => _month.selectedMonth;
 
   var totalSubscribers = 0.obs;
   var totalAmps = 0.0.obs;
@@ -30,7 +36,6 @@ class DashboardController extends GetxController {
   var unpaidCount = 0.obs;
   var boardsCount = 0.obs;
   var circuitsCount = 0.obs;
-  var currentMonth = "".obs;
   var isLoading = false.obs;
   // True when the selected month/branch has at least one price row set. When
   // false the dashboard shows a "no pricing set for this month" notice (R: month
@@ -40,36 +45,20 @@ class DashboardController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    currentMonth.value = DateFormat('yyyy-MM').format(DateTime.now());
     // Re-scope the stats whenever the acting user changes (owner <-> accountant).
     ever(_auth.currentUser, (_) => loadStats());
     // Re-scope when the active branch switches (full system-context swap).
     ever(_branch.currentBranch, (_) => loadStats());
+    // R9: re-bind ALL figures when the global month changes (the change is
+    // initiated from the Monthly Pricing screen). This keeps paid/unpaid,
+    // revenue, remaining and the no-pricing notice synchronized to one month.
+    ever(_month.selectedMonth, (_) => loadStats());
   }
 
   @override
   void onReady() {
     super.onReady();
     loadStats();
-  }
-
-  /// Switch the dashboard month (R11) — every figure (revenue, remaining,
-  /// paid/unpaid, expected) rebinds to the selected month. If that month has no
-  /// pricing set, surface a message (the figures still recompute to 0).
-  Future<void> changeMonth(String month) async {
-    currentMonth.value = month;
-    await loadStats();
-    if (!hasPriceForMonth.value) {
-      Get.snackbar(
-        'no_pricing'.tr,
-        'no_pricing_set_for_month'.tr,
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: const Color(0xFFFFF3E0),
-        colorText: const Color(0xFFE65100),
-        margin: const EdgeInsets.all(12),
-      );
-    }
-    update();
   }
 
   Future<void> loadStats() async {

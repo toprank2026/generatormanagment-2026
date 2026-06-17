@@ -32,6 +32,18 @@ const requireAuth = asyncHandler(async (req, res, next) => {
     return res.status(403).json({ message: 'Account blocked', code: 'BLOCKED' });
   }
 
+  // An accountant sub-account is only as alive as its OWNER: a blocked/missing
+  // owner must cut off all the owner's accountants (the admin's block is the
+  // whole-account kill switch). Load the owner once and expose it as the
+  // effective account for feature-gating (see requireFeature).
+  if (user.role === 'accountant') {
+    const owner = user.owner ? await User.findById(user.owner) : null;
+    if (!owner || owner.blocked) {
+      return res.status(403).json({ message: 'Account blocked', code: 'BLOCKED' });
+    }
+    req.ownerAccount = owner;
+  }
+
   req.user = user;
   return next();
 });

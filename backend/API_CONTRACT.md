@@ -53,6 +53,19 @@ Authenticates, binds/validates the device, returns a JWT.
 Errors: `401` bad credentials, `403` account blocked, `403 code=DEVICE_LIMIT`
 when the plan's `maxDevices` is exceeded by a new device.
 
+**Accountant logins.** When the matched user has `role:"accountant"` (a
+sub-account created via `POST /api/account/accountants`):
+- the password is verified normally, but device binding / `maxDevices` is **not**
+  enforced or mutated (accountants are device-exempt — `DEVICE_LIMIT` never fires
+  and no device is added);
+- the returned `subscription` (incl. `features`) is **inherited from the OWNER
+  account** (`ownerId`), so an accountant is never `subscriptionBlocked` on its
+  own (empty) subscription;
+- the returned account carries `role:"accountant"`, `ownerId`, `branchId`,
+  `permissions`, `localId` (see the **Account** object).
+
+`GET /api/auth/me` applies the same inheritance for an accountant token.
+
 ### GET `/api/auth/me`  (auth)
 Returns the current account (used for offline-first re-validation on launch /
 reconnect). A `401`/`403` here is the **only** thing that ends the local session.
@@ -188,6 +201,63 @@ is kept raw (`totalAmps * P - collected`) and may go negative, like the app.
   }
 }
 ```
+
+### Accountants — `/api/account/accountants`  (auth; role owner|admin)
+
+Manage **accountant sub-accounts** of the caller. An accountant is a `User` with
+`role:"accountant"`, `owner` = the caller, scoped to a `branchId`, with a set of
+`permissions`. Accountants log in via `/api/auth/login` (device-exempt) and read/
+write the **owner's** data mirror (effective-owner scoping — their `/api/sync`
+push/pull and `/api/account/stats|data|recent` all resolve to the owner's mirror).
+
+A non-owner/non-admin caller hitting any of these → `403 code=FORBIDDEN`.
+
+The Accountant object returned here (compact, not the full Account):
+```jsonc
+{ "id": "mongoid", "localId": "uuid|null", "name": "...", "username": "...",
+  "branchId": "...|null", "permissions": ["..."], "active": true }
+```
+`active` is the inverse of the underlying `blocked` flag.
+
+#### POST `/api/account/accountants`  (owner|admin)
+Creates an accountant owned by the caller. `username` is lowercased/trimmed and
+must be unique across all accounts.
+```jsonc
+// request
+{ "name": "Acct Name", "username": "acct1", "password": "secret",
+  "branchId": "branch-uuid|null", "permissions": ["receipts","expenses"],
+  "localId": "app-side-uuid|null" }
+// 201 response
+{ "accountant": { "id": "...", "localId": "...", "name": "Acct Name",
+  "username": "acct1", "branchId": "...", "permissions": [...], "active": true } }
+```
+Errors: `409 code=USERNAME_TAKEN`, `400 code=VALIDATION` (missing name/username
+or password < 4 chars).
+
+#### GET `/api/account/accountants`  (owner|admin)
+```jsonc
+{ "accountants": [ { /* Accountant */ } ] }   // the caller's sub-accounts only
+```
+
+#### PUT `/api/account/accountants/:id`  (owner|admin)
+Updates any of `{ name, permissions, branchId, active, password }` of one of the
+caller's accountants (ownership guarded). A provided `password` is re-hashed;
+`active:false` blocks the accountant (cannot log in).
+```jsonc
+// request (any subset)
+{ "name": "...", "permissions": ["..."], "branchId": "...", "active": false, "password": "newpass" }
+// 200 response
+{ "accountant": { /* Accountant */ } }
+```
+Errors: `404 code=ACCOUNTANT_NOT_FOUND` (not the caller's accountant).
+
+#### DELETE `/api/account/accountants/:id`  (owner|admin)
+Deletes one of the caller's accountants (ownership guarded).
+```jsonc
+// 200 response
+{ "ok": true }
+```
+Errors: `404 code=ACCOUNTANT_NOT_FOUND`.
 
 ---
 
@@ -335,13 +405,20 @@ The Flutter receipt QR encodes `${API_BASE_URL}/admin/#/r/<uuid>`; the admin SPA
   "name": "Owner Name",
   "phone": "0770...",
   "username": "owner1",
-  "role": "owner|admin",
+  "role": "owner|admin|accountant",
+  "ownerId": null,          // accountant only: the parent owner/admin account id (string); null for owner/admin
+  "branchId": null,         // accountant only: the branch the accountant is scoped to; null otherwise
+  "permissions": [],        // accountant only: granted permission keys; [] for owner/admin
+  "localId": null,          // accountant only: the app-side accountant UUID (attribution round-trip); null otherwise
   "blocked": false,
   "createdAt": "ISO",
   "subscription": { /* Subscription */ },
   "devices": [ { /* Device */ } ]
 }
 ```
+`ownerId`/`branchId`/`permissions`/`localId` are always present; they carry
+values only for `role:"accountant"` sub-accounts (see **Accountant logins** and
+**Account → Accountants** below) and are `null`/`[]` for owners and admins.
 ### Subscription
 ```jsonc
 {

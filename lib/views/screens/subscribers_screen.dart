@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
+import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/views/screens/add_subscriber_screen.dart';
 import 'package:generatormanagment/views/screens/subscriber_detail_screen.dart';
 
@@ -15,29 +16,59 @@ class SubscribersScreen extends StatefulWidget {
   State<SubscribersScreen> createState() => _SubscribersScreenState();
 }
 
-class _SubscribersScreenState extends State<SubscribersScreen> {
+class _SubscribersScreenState extends State<SubscribersScreen>
+    with SingleTickerProviderStateMixin {
   final CoreController controller = Get.find<CoreController>();
   final AuthController auth = Get.find<AuthController>();
   final TextEditingController searchCtrl = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
+  // R5: category-filter tabs. Shown on All / Paid / Unpaid (boardId == null),
+  // not in the board-scoped mode. `null` value = "All categories".
+  static const List<MapEntry<String, String?>> _categoryTabs = [
+    MapEntry('all_categories', null),
+    MapEntry('cat_gold', SubscriberCategory.gold),
+    MapEntry('cat_standard', SubscriberCategory.standard),
+    MapEntry('cat_commercial', SubscriberCategory.commercial),
+  ];
+  TabController? _tabController;
+  String? _category; // active category filter (null = all)
+
+  bool get _showTabs => widget.boardId == null;
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.filter != null) {
-        controller.loadFilteredSubscribers(widget.filter!);
-      } else if (widget.boardId != null) {
-        controller.loadBoardSubscribers(widget.boardId!);
-      } else {
-        controller.loadSubscribers();
-      }
-    });
+    if (_showTabs) {
+      _tabController =
+          TabController(length: _categoryTabs.length, vsync: this);
+      _tabController!.addListener(() {
+        if (_tabController!.indexIsChanging) return;
+        _category = _categoryTabs[_tabController!.index].value;
+        _reload();
+      });
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
+  }
+
+  /// Reload the list for the current variant + category tab (R5).
+  void _reload() {
+    if (widget.filter != null) {
+      controller.loadFilteredSubscribers(widget.filter!, category: _category);
+    } else if (widget.boardId != null) {
+      controller.loadBoardSubscribers(widget.boardId!);
+    } else {
+      controller.loadSubscribers(
+        query: searchCtrl.text.isEmpty ? null : searchCtrl.text,
+        category: _category,
+      );
+    }
   }
 
   @override
   void dispose() {
+    _tabController?.dispose();
     _scrollController.dispose();
     searchCtrl.dispose();
     super.dispose();
@@ -46,6 +77,7 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
+      // Only the All list paginates (Paid/Unpaid load in full).
       if (widget.filter == null && widget.boardId == null) {
         controller.loadMore();
       }
@@ -82,46 +114,67 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
         elevation: 0,
         centerTitle: true,
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(80),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
+          preferredSize: Size.fromHeight(_showTabs ? 128 : 80),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Search field first.
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, _showTabs ? 6 : 16),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: TextField(
-                controller: searchCtrl,
-                decoration: InputDecoration(
-                  hintText: 'search_hint'.tr,
-                  prefixIcon: Icon(Icons.search, color: Color(0xFF1565C0)),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
+                  child: TextField(
+                    controller: searchCtrl,
+                    decoration: InputDecoration(
+                      hintText: 'search_hint'.tr,
+                      prefixIcon: Icon(Icons.search, color: Color(0xFF1565C0)),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                    ),
+                    onChanged: (val) => _reload(),
                   ),
                 ),
-                onChanged: (val) {
-                  controller.loadSubscribers(query: val);
-                },
               ),
-            ),
+              // R5: category filter tabs UNDER the search field.
+              if (_showTabs && _tabController != null)
+                TabBar(
+                  controller: _tabController,
+                  isScrollable: true,
+                  indicatorColor: Colors.white,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.white70,
+                  tabAlignment: TabAlignment.center,
+                  tabs: [
+                    for (final t in _categoryTabs) Tab(text: t.key.tr),
+                  ],
+                ),
+            ],
           ),
         ),
       ),
+      // R3: the Add-Subscriber button appears ONLY on the All Subscribers
+      // screen (filter == null) — never on Paid / Unpaid lists.
       floatingActionButton: Obx(
-        () => auth.can(Perm.subscribers)
+        () => (widget.filter == null &&
+                widget.boardId == null &&
+                auth.can(Perm.subscribers))
             ? FloatingActionButton.extended(
                 onPressed: () => Get.to(
                   () => const AddSubscriberScreen(),
-                )?.then((_) => controller.loadSubscribers()),
+                )?.then((_) => _reload()),
                 icon: const Icon(Icons.person_add, color: Colors.white),
                 label: Text(
                   'add_new'.tr,

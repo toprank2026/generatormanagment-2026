@@ -112,6 +112,29 @@ class BoardRepository {
     );
     return List.generate(maps.length, (i) => Board.fromMap(maps[i]));
   }
+
+  /// R1: does another board (other than [exceptId]) in the same branch already
+  /// use [name] (case-insensitive, trimmed)? Legacy NULL branch maps to Main.
+  Future<bool> nameExists(String name,
+      {String? branchId, String? exceptId}) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>['TRIM(name) = ? COLLATE NOCASE'];
+    final args = <dynamic>[name.trim()];
+    if (branchId != null) {
+      clauses.add("IFNULL(branch_id, '${DbHelper.kMainBranchId}') = ?");
+      args.add(branchId);
+    }
+    if (exceptId != null) {
+      clauses.add('id != ?');
+      args.add(exceptId);
+    }
+    final n = Sqflite.firstIntValue(await db.rawQuery(
+          'SELECT COUNT(*) FROM boards WHERE ${clauses.join(' AND ')}',
+          args,
+        )) ??
+        0;
+    return n > 0;
+  }
 }
 
 class CircuitRepository {
@@ -192,6 +215,33 @@ class CircuitRepository {
       offset: limit < 0 ? null : offset,
     );
     return List.generate(maps.length, (i) => Circuit.fromMap(maps[i]));
+  }
+
+  /// R1: does another circuit (other than [exceptId]) under the SAME board
+  /// already use [name] (case-insensitive, trimmed)? Feed names are unique per
+  /// board. Branch is also matched (legacy NULL → Main) for full isolation.
+  Future<bool> nameExists(String name, String boardId,
+      {String? branchId, String? exceptId}) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>[
+      'board_id = ?',
+      'TRIM(name) = ? COLLATE NOCASE',
+    ];
+    final args = <dynamic>[boardId, name.trim()];
+    if (branchId != null) {
+      clauses.add("IFNULL(branch_id, '${DbHelper.kMainBranchId}') = ?");
+      args.add(branchId);
+    }
+    if (exceptId != null) {
+      clauses.add('id != ?');
+      args.add(exceptId);
+    }
+    final n = Sqflite.firstIntValue(await db.rawQuery(
+          'SELECT COUNT(*) FROM circuits WHERE ${clauses.join(' AND ')}',
+          args,
+        )) ??
+        0;
+    return n > 0;
   }
 }
 
@@ -306,6 +356,7 @@ class SubscriberRepository {
     String? query,
     String? accountantId,
     String? branchId,
+    String? category,
   }) async {
     final db = await _dbHelper.database;
 
@@ -322,6 +373,12 @@ class SubscriberRepository {
     if (branchId != null) {
       clauses.add('branch_id = ?');
       args.add(branchId);
+    }
+    // R5: category-tab filter (null = all categories). Legacy NULL category
+    // rows behave as 'standard'.
+    if (category != null) {
+      clauses.add("IFNULL(category, 'standard') = ?");
+      args.add(category);
     }
 
     final List<Map<String, dynamic>> maps = await db.query(
@@ -380,12 +437,14 @@ class SubscriberRepository {
     required bool isPaid,
     String? accountantId,
     String? branchId,
+    String? category,
   }) async {
     final db = await _dbHelper.database;
     const main = DbHelper.kMainBranchId;
     final String operator = isPaid ? '>=' : '<';
     // Arg order follows the `?` placeholders below:
-    //   inner receipts: month [, branch]   mp join: month   outer: [accountant] [branch]
+    //   inner receipts: month [, branch]   mp join: month
+    //   outer: [accountant] [branch] [category]
     final args = <dynamic>[month];
     // Receipts sub-query is branch-scoped (a shared subscriber id can carry
     // receipts in >1 branch — count only this branch's). null = all branches.
@@ -400,6 +459,12 @@ class SubscriberRepository {
     if (branchId != null) {
       outerScopes.add('AND s.branch_id = ?');
       args.add(branchId);
+    }
+    // R5: category-tab filter (null = all). MUST stay last so the appended arg
+    // matches this clause's position in the WHERE.
+    if (category != null) {
+      outerScopes.add("AND IFNULL(s.category, 'standard') = ?");
+      args.add(category);
     }
 
     final String sql =
@@ -427,12 +492,14 @@ class SubscriberRepository {
     required bool isPaid,
     String? accountantId,
     String? branchId,
+    String? category,
   }) async {
     final list = await getByPaymentStatus(
       month: month,
       isPaid: isPaid,
       accountantId: accountantId,
       branchId: branchId,
+      category: category,
     );
     return list.length;
   }

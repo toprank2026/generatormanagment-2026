@@ -4,6 +4,8 @@ import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/data/repositories/core_repositories.dart'
+    show ValidationException;
 import 'package:generatormanagment/views/widgets/app_form_field.dart';
 
 class CircuitsScreen extends StatefulWidget {
@@ -126,11 +128,22 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
       // and only after the circuit is persisted (R2). Empty name keeps it open.
       onConfirm: () async {
         if (nameCtrl.text.trim().isEmpty) return;
-        await controller.addCircuit(
-          widget.board.id,
-          nameCtrl.text.trim(),
-          phaseCtrl.text.trim(),
-        );
+        try {
+          await controller.addCircuit(
+            widget.board.id,
+            nameCtrl.text.trim(),
+            phaseCtrl.text.trim(),
+          );
+        } on ValidationException catch (e) {
+          // R1: duplicate feed name — keep the dialog open, show the reason.
+          Get.snackbar(
+            'error'.tr,
+            e.messageKey.tr,
+            backgroundColor: Colors.redAccent,
+            colorText: Colors.white,
+          );
+          return;
+        }
         Get.back();
         Get.snackbar(
           "success".tr,

@@ -1,12 +1,11 @@
 import 'package:get/get.dart';
 import 'package:uuid/uuid.dart';
-import 'package:intl/intl.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart';
-import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
+import 'package:generatormanagment/controllers/month_controller.dart';
 
 class CoreController extends GetxController {
   final BoardRepository _boardRepo = BoardRepository();
@@ -37,6 +36,9 @@ class CoreController extends GetxController {
   var isMoreLoading = false.obs;
   // Keep track of current query to maintain state across pages
   String? _currentQuery;
+  // Active category-tab filter (R5): null = All categories. Preserved across
+  // pages so loadMore keeps the same category.
+  String? _currentCategory;
 
   // Pagination (boards) — large page (R1): show all for normal sizes.
   static const int boardsPerPage = 100;
@@ -130,12 +132,17 @@ class CoreController extends GetxController {
   }
 
   Future<void> addBoard(String name, String? code, {String? accountantId}) async {
+    final branch = _branch.writeBranchId;
+    // R1: reject a duplicate board name within the branch.
+    if (await _boardRepo.nameExists(name, branchId: branch)) {
+      throw ValidationException('duplicate_board_name');
+    }
     Board b = Board(
       id: const Uuid().v4(),
       name: name,
       code: code,
       accountantId: accountantId,
-      branchId: _branch.writeBranchId,
+      branchId: branch,
     );
     await _boardRepo.insert(b);
     loadBoards();
@@ -144,6 +151,11 @@ class CoreController extends GetxController {
   }
 
   Future<void> updateBoard(Board b) async {
+    // R1: reject a name that collides with ANOTHER board in the same branch.
+    if (await _boardRepo.nameExists(b.name,
+        branchId: b.branchId ?? _branch.writeBranchId, exceptId: b.id)) {
+      throw ValidationException('duplicate_board_name');
+    }
     await _boardRepo.update(b);
     loadBoards();
     _refreshDashboard();
@@ -211,13 +223,18 @@ class CoreController extends GetxController {
 
   Future<void> addCircuit(String boardId, String name, String? phase,
       {String? accountantId}) async {
+    final branch = _branch.writeBranchId;
+    // R1: reject a duplicate feed/circuit name within the same board.
+    if (await _circuitRepo.nameExists(name, boardId, branchId: branch)) {
+      throw ValidationException('duplicate_circuit_name');
+    }
     Circuit c = Circuit(
       id: const Uuid().v4(),
       boardId: boardId,
       name: name,
       phase: phase,
       accountantId: accountantId,
-      branchId: _branch.writeBranchId,
+      branchId: branch,
     );
     await _circuitRepo.insert(c);
     loadCircuits(boardId);
@@ -233,7 +250,8 @@ class CoreController extends GetxController {
   }
 
   // --- Subscribers ---
-  Future<void> loadSubscribers({String? query, int page = 1}) async {
+  Future<void> loadSubscribers(
+      {String? query, int page = 1, String? category}) async {
     if (page == 1) {
       isLoading.value = true;
       subscribers.clear();
@@ -242,6 +260,7 @@ class CoreController extends GetxController {
     }
 
     _currentQuery = query;
+    _currentCategory = category;
     currentPage.value = page;
 
     try {
@@ -252,6 +271,7 @@ class CoreController extends GetxController {
         offset: (page - 1) * itemsPerPage,
         accountantId: null,
         branchId: _branchScope,
+        category: category, // R5: category-tab filter (null = all)
       );
 
       List<Subscriber> newItems;
@@ -277,7 +297,10 @@ class CoreController extends GetxController {
 
   void loadMore() {
     if (hasNextPage.value && !isMoreLoading.value && !isLoading.value) {
-      loadSubscribers(query: _currentQuery, page: currentPage.value + 1);
+      loadSubscribers(
+          query: _currentQuery,
+          page: currentPage.value + 1,
+          category: _currentCategory);
     }
   }
 
@@ -322,21 +345,21 @@ class CoreController extends GetxController {
     update();
   }
 
-  Future<void> loadFilteredSubscribers(String filter) async {
+  Future<void> loadFilteredSubscribers(String filter, {String? category}) async {
     isLoading.value = true;
     try {
-      // The selected month drives paid/unpaid; the price is now category-aware
-      // and resolved inside the query (per subscriber's category), so no single
-      // price is needed here.
-      final String month = Get.isRegistered<BillingController>()
-          ? Get.find<BillingController>().selectedMonth.value
-          : DateFormat('yyyy-MM').format(DateTime.now());
+      // The globally-selected month (R9) drives paid/unpaid; the price is
+      // category-aware and resolved inside the query (per subscriber's
+      // category), so no single price is needed here.
+      _currentCategory = category;
+      final String month = Get.find<MonthController>().selectedMonth.value;
 
       subscribers.value = await _subscriberRepo.getByPaymentStatus(
         month: month,
         isPaid: filter == 'paid',
         accountantId: null,
         branchId: _branchScope,
+        category: category, // R5: category-tab filter (null = all)
       );
     } catch (e) {
       print("Error loading filtered subscribers: $e");

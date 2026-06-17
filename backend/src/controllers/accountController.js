@@ -3,6 +3,7 @@
 const SyncRecord = require('../models/SyncRecord');
 const asyncHandler = require('../utils/asyncHandler');
 const { listUserData, labelFor } = require('./adminController');
+const { effectiveOwnerId } = require('../utils/effectiveOwner');
 
 /** Entities getMyStats always reports a count for (missing in mirror = 0). */
 const STAT_ENTITIES = [
@@ -24,7 +25,8 @@ const STAT_ENTITIES = [
  * always scoped to the JWT user. Read-only — there is no delete counterpart.
  */
 const getMyData = asyncHandler(async (req, res) => {
-  res.status(200).json(await listUserData(req.user._id, req.query));
+  // Accountants read the OWNER's mirror (effective owner); owners/admins their own.
+  res.status(200).json(await listUserData(effectiveOwnerId(req.user), req.query));
 });
 
 /** Coerce a mirrored (untyped) value to a finite number, defaulting to 0. */
@@ -184,8 +186,12 @@ const getMyStats = asyncHandler(async (req, res) => {
     ? requested
     : new Date().toISOString().slice(0, 7); // 'YYYY-MM' (UTC)
 
+  // Accountants resolve to the OWNER's mirror (effective owner); owners/admins
+  // to their own.
+  const ownerId = effectiveOwnerId(req.user);
+
   const rows = await SyncRecord.aggregate([
-    { $match: { user: req.user._id, deleted: false } },
+    { $match: { user: ownerId, deleted: false } },
     { $group: { _id: '$entity', count: { $sum: 1 } } },
   ]);
 
@@ -197,7 +203,7 @@ const getMyStats = asyncHandler(async (req, res) => {
   // branch (full isolation). Both default to null = whole account / all branches.
   const accId = String(req.query.accountantId || '').trim() || null;
   const branchId = String(req.query.branchId || '').trim() || null;
-  const dashboard = await buildDashboard(req.user._id, counts, month, accId, branchId);
+  const dashboard = await buildDashboard(ownerId, counts, month, accId, branchId);
 
   res.status(200).json({ counts, dashboard });
 });
@@ -212,7 +218,9 @@ const getMyRecent = asyncHandler(async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
 
-  const filter = { user: req.user._id, deleted: false };
+  // Accountants see the OWNER's recent uploads (effective owner); owners/admins
+  // their own.
+  const filter = { user: effectiveOwnerId(req.user), deleted: false };
   const total = await SyncRecord.countDocuments(filter);
   const records = await SyncRecord.find(filter)
     .sort({ updatedAt: -1 })

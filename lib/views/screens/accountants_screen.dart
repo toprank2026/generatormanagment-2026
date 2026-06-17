@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
@@ -140,6 +141,10 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
     final usernameCtrl = TextEditingController();
     final passwordCtrl = TextEditingController();
     final selected = <String>{};
+    final branch = Get.find<BranchController>();
+    // R8: the accountant is tied to a branch. Multi-branch owners pick one;
+    // single-branch owners default to the active (Main) branch.
+    String selectedBranchId = branch.writeBranchId;
 
     Get.dialog(
       StatefulBuilder(
@@ -171,8 +176,35 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
                     icon: Icons.lock,
                     obscureText: true,
                   ),
+                  // R8: branch selector (multi-branch plans only).
+                  if (auth.canMultiBranch && branch.branches.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: branch.branches
+                              .any((b) => b.id == selectedBranchId)
+                          ? selectedBranchId
+                          : branch.branches.first.id,
+                      decoration: InputDecoration(
+                        labelText: 'branch'.tr,
+                        prefixIcon: const Icon(Icons.account_tree),
+                        border: const OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (final b in branch.branches)
+                          DropdownMenuItem(value: b.id, child: Text(b.name)),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) selectedBranchId = v;
+                      },
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   _buildPermissionsSection(selected, setLocalState),
+                  const SizedBox(height: 12),
+                  Text(
+                    'accountant_login_hint'.tr,
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
                 ],
               ),
             ),
@@ -202,6 +234,7 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
                     username,
                     password,
                     permissions: selected,
+                    branchId: selectedBranchId,
                   );
                 },
                 child: Text('add'.tr),

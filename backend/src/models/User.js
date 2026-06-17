@@ -47,10 +47,17 @@ const UserSchema = new Schema(
       lowercase: true,
     },
     passwordHash: { type: String, required: true },
-    role: { type: String, enum: ['owner', 'admin'], default: 'owner' },
+    role: { type: String, enum: ['owner', 'admin', 'accountant'], default: 'owner' },
     blocked: { type: Boolean, default: false },
     subscription: { type: SubscriptionSchema, default: () => ({}) },
     devices: { type: [DeviceSchema], default: [] },
+    // Accountant sub-accounts: the parent owner/admin account, the branch the
+    // accountant is scoped to, the granted permission keys, and the app-side
+    // accountant UUID (for attribution round-trip with the device mirror).
+    owner: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    branchId: { type: String, default: null },
+    permissions: { type: [String], default: [] },
+    localId: { type: String, default: null, index: true },
   },
   { timestamps: true }
 );

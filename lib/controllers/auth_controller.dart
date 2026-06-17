@@ -7,6 +7,8 @@ import 'package:generatormanagment/core/logger.dart';
 import 'package:generatormanagment/core/secure_store.dart';
 import 'package:generatormanagment/core/session_cache.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:generatormanagment/controllers/branch_controller.dart';
+import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/models/user_model.dart';
 import 'package:generatormanagment/data/repositories/auth_repository.dart';
@@ -236,20 +238,39 @@ class AuthController extends GetxController {
 
   void _setAccount(Account acc, {required bool online}) {
     account.value = acc;
-    final owner = User(
-      id: acc.id,
-      username: acc.username,
-      passwordHash: '',
-      role: acc.role,
-      name: acc.name,
-    );
-    ownerUser.value = owner;
-    // Preserve the acting user across background refreshes (an accountant
-    // mid-session must not be silently switched back to the owner). Only set it
-    // when nothing is acting yet, or when the current actor IS the owner.
-    final cur = currentUser.value;
-    if (cur == null || cur.id == acc.id) {
-      currentUser.value = owner;
+    if (acc.role == 'accountant') {
+      // R8: a backend accountant sub-account logged in via the Login screen.
+      // The acting identity uses the app-side localId (so business rows
+      // attribute to the same accountant_id the owner sees) and the granted
+      // permissions; there is no separate owner identity on this device.
+      final actor = User(
+        id: (acc.localId != null && acc.localId!.isNotEmpty)
+            ? acc.localId!
+            : acc.id,
+        username: acc.username,
+        passwordHash: '',
+        role: 'accountant',
+        name: acc.name,
+        permissions: acc.permissions.toSet(),
+      );
+      ownerUser.value = actor;
+      currentUser.value = actor;
+    } else {
+      final owner = User(
+        id: acc.id,
+        username: acc.username,
+        passwordHash: '',
+        role: acc.role,
+        name: acc.name,
+      );
+      ownerUser.value = owner;
+      // Preserve the acting user across background refreshes (an accountant
+      // mid-session must not be silently switched back to the owner). Only set
+      // it when nothing is acting yet, or when the current actor IS the owner.
+      final cur = currentUser.value;
+      if (cur == null || cur.id == acc.id) {
+        currentUser.value = owner;
+      }
     }
     if (acc.blocked) {
       subscriptionBlocked.value = true;
@@ -269,15 +290,26 @@ class AuthController extends GetxController {
       }
       final result = await _auth.login(username: username, password: password);
       await _cache.saveAccount(result.account.toJson());
-      // Fresh owner sign-in always resets the acting user back to the owner.
+      // Fresh sign-in always resets the acting user (then _setAccount re-sets it
+      // to the owner or, for a backend accountant, the accountant actor).
       currentUser.value = null;
       _setAccount(result.account, online: true);
-      await _persistOwnerCredential(username, password);
       await _clearActingUser();
+      // Owner-password hash (for the offline owner profile-switch) is only
+      // meaningful for an owner/admin session, not an accountant one.
+      if (result.account.role != 'accountant') {
+        await _persistOwnerCredential(username, password);
+      }
       await _cache.setLastOnlineValidationAt(DateTime.now().toIso8601String());
       isLoggedIn.value = true;
       logoutReason.value = null; // clear any prior "you were signed out" warning
       update();
+      // R8: an accountant starts with no local data on its own device — pull
+      // the owner's mirror (backend scopes by effective owner) and activate the
+      // accountant's branch so the app opens on its data.
+      if (result.account.role == 'accountant') {
+        await _onAccountantLoggedIn(result.account);
+      }
       return {'success': true};
     } on ApiException catch (e) {
       return {'success': false, 'statusCode': e.statusCode, 'message': e.message};
@@ -434,6 +466,23 @@ class AuthController extends GetxController {
     subscriptionBlocked.value = false;
     logoutReason.value = reason;
     update();
+  }
+
+  /// R8: after a backend accountant signs in, pull the owner's data (the server
+  /// scopes the mirror to the effective owner) and activate the accountant's
+  /// branch. Best-effort: a failed pull leaves the account signed in (data
+  /// loads on the next successful sync).
+  Future<void> _onAccountantLoggedIn(Account acc) async {
+    try {
+      if (Get.isRegistered<SyncController>()) {
+        await Get.find<SyncController>().pull(silent: true);
+      }
+      if (Get.isRegistered<BranchController>()) {
+        await Get.find<BranchController>().reloadAndActivate(acc.branchId);
+      }
+    } catch (e) {
+      Log.w('accountant post-login pull skipped: $e');
+    }
   }
 
   // --- Acting-user (local accountant) layer -------------------------------

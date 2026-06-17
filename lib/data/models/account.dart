@@ -103,11 +103,23 @@ class Account {
   final String? generatorName;
   final String? phone;
   final String username;
-  final String role; // owner | admin
+  final String role; // owner | admin | accountant
   final bool blocked;
   final String? createdAt;
   final Subscription subscription;
   final List<DeviceBinding> devices;
+
+  // --- Accountant sub-account fields (R8) — present only when role ==
+  //     'accountant'. The backend inherits the subscription from the owner. ---
+  /// The parent owner account id (accountant only).
+  final String? ownerId;
+  /// The branch this accountant is tied to (accountant only).
+  final String? branchId;
+  /// Granted permission keys (accountant only); owners/admins do everything.
+  final List<String> permissions;
+  /// The app-side accountant UUID, round-tripped so business rows the
+  /// accountant creates carry the same `accountant_id` the owner already sees.
+  final String? localId;
 
   Account({
     required this.id,
@@ -120,6 +132,10 @@ class Account {
     this.createdAt,
     Subscription? subscription,
     this.devices = const [],
+    this.ownerId,
+    this.branchId,
+    this.permissions = const [],
+    this.localId,
   }) : subscription = subscription ?? Subscription();
 
   factory Account.fromJson(Map<String, dynamic> j) => Account(
@@ -140,6 +156,12 @@ class Account {
             .whereType<Map<String, dynamic>>()
             .map(DeviceBinding.fromJson)
             .toList(),
+        ownerId: j['ownerId']?.toString(),
+        branchId: j['branchId']?.toString(),
+        permissions: (j['permissions'] is List
+            ? (j['permissions'] as List).map((e) => e.toString()).toList()
+            : const <String>[]),
+        localId: j['localId']?.toString(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -153,6 +175,10 @@ class Account {
         'createdAt': createdAt,
         'subscription': subscription.toJson(),
         'devices': devices.map((d) => d.toJson()).toList(),
+        'ownerId': ownerId,
+        'branchId': branchId,
+        'permissions': permissions,
+        'localId': localId,
       };
 }
 

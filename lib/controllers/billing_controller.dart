@@ -1,23 +1,29 @@
 import 'package:get/get.dart';
 import 'package:uuid/uuid.dart';
-import 'package:intl/intl.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
+import 'package:generatormanagment/controllers/month_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
 
 class BillingController extends GetxController {
   final MonthlyPriceRepository _priceRepo = MonthlyPriceRepository();
   final ReceiptRepository _receiptRepo = ReceiptRepository();
   final BranchController _branch = Get.find();
+  final MonthController _month = Get.find();
 
   var currentPrice = Rxn<MonthlyPrice>(); // standard price (back-compat)
   // Per-category prices for the selected month {category: pricePerAmp} (R4).
   var currentPrices = <String, double>{}.obs;
   var isLoading = false.obs;
-  var selectedMonth = DateFormat('yyyy-MM').format(DateTime.now()).obs;
+
+  /// The globally-selected month (R9) — sourced from [MonthController]. Billing
+  /// never owns the month; it only reads it (and the Monthly Pricing screen
+  /// mutates it via MonthController). Same [RxString] so existing
+  /// `selectedMonth.value` reads stay reactive.
+  RxString get selectedMonth => _month.selectedMonth;
 
   // --- Receipt history pagination (subscriber detail screen) ---
   static const int historyItemsPerPage = 10;
@@ -32,18 +38,15 @@ class BillingController extends GetxController {
     super.onInit();
     // The selected month's price is per-branch (D-4): reload it on a switch.
     ever(_branch.currentBranch, (_) => loadMonthPrice(selectedMonth.value));
+    // R9: the global month is owned by MonthController and changed only from the
+    // Monthly Pricing screen — reload this month's prices whenever it changes.
+    ever(_month.selectedMonth, (m) => loadMonthPrice(m));
   }
 
   @override
   void onReady() {
     super.onReady();
     loadMonthPrice(selectedMonth.value);
-  }
-
-  void changeMonth(String month) {
-    selectedMonth.value = month;
-    loadMonthPrice(month);
-    update();
   }
 
   Future<void> loadMonthPrice(String month) async {
@@ -70,6 +73,25 @@ class BillingController extends GetxController {
     await _priceRepo.insert(mp); // Insert or replace
     await loadMonthPrice(selectedMonth.value);
     // R10: pricing changed → recompute the dashboard's Collected/Remaining now.
+    if (Get.isRegistered<DashboardController>()) {
+      Get.find<DashboardController>().loadStats();
+    }
+    update();
+  }
+
+  /// Atomically set ALL category prices for the selected month/branch (R4). Used
+  /// by the Monthly Pricing screen where Gold/Regular/Commercial are all
+  /// required — writes each row then reloads + refreshes the dashboard ONCE.
+  Future<void> setPrices(Map<String, double> pricesByCategory) async {
+    for (final entry in pricesByCategory.entries) {
+      await _priceRepo.insert(MonthlyPrice(
+        month: selectedMonth.value,
+        pricePerAmp: entry.value,
+        branchId: _branch.writeBranchId,
+        category: entry.key,
+      ));
+    }
+    await loadMonthPrice(selectedMonth.value);
     if (Get.isRegistered<DashboardController>()) {
       Get.find<DashboardController>().loadStats();
     }

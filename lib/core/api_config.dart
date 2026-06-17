@@ -23,6 +23,10 @@ class ApiConfig {
   static const String login = '/api/auth/login';
   static const String me = '/api/auth/me';
 
+  // --- Accountant sub-accounts (owner creates/manages; R8) ---
+  static const String accountants = '/api/account/accountants';
+  static String accountantById(String id) => '/api/account/accountants/$id';
+
   // --- Subscription ---
   static const String plans = '/api/subscription/plans';
   static const String subscription = '/api/subscription';
