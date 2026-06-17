@@ -118,8 +118,8 @@ class SyncController extends GetxController {
     // R7b: only a LARGE upload blocks the UI with the overlay; small auto-sync
     // batches (every 30s) push silently with no overlay flicker.
     final bool big = pendingCount.value > largeThreshold;
-    if (big) SyncProgress.show('sync_uploading'.tr);
     try {
+      if (big) SyncProgress.show('sync_uploading'.tr);
       await _sync.push();
       lastSyncAt.value = DateTime.now().toIso8601String();
     } catch (e) {
@@ -145,10 +145,11 @@ class SyncController extends GetxController {
       return;
     }
     isPulling.value = true;
-    // R7b: a pull can be large — block the UI with a progress overlay so it
-    // can't be interrupted mid-apply (the silent auto-pull stays invisible).
-    if (!silent) SyncProgress.show('sync_updating'.tr);
     try {
+      // R7b: a pull can be large — block the UI with a progress overlay so it
+      // can't be interrupted mid-apply (the silent auto-pull stays invisible).
+      // Inside the try so even a failure to show can't strand isPulling.
+      if (!silent) SyncProgress.show('sync_updating'.tr);
       // Preserve local changes first. Push unconditionally — the cached
       // pendingCount can be stale (refreshed only on the heartbeat); push()
       // early-returns when the outbox is truly empty.
@@ -156,18 +157,31 @@ class SyncController extends GetxController {
       final n = await _sync.pull();
       lastPullAt.value = DateTime.now().toIso8601String();
       await _reloadAppData();
-      if (!silent) {
-        Get.snackbar('sync'.tr, '${'pulled_records'.tr}: $n');
-      }
+      _lastPulledCount = n;
     } catch (e) {
       Log.e('pull failed', e);
-      if (!silent) Get.snackbar('sync'.tr, 'sync_failed'.tr);
+      _pullFailed = true;
     } finally {
+      // Close the overlay FIRST, then surface the result snackbar — a snackbar
+      // shown before the close makes Get.isDialogOpen read false and the
+      // overlay would stay stuck.
       if (!silent) SyncProgress.hide();
       isPulling.value = false;
       await refreshPending();
+      if (!silent) {
+        if (_pullFailed) {
+          Get.snackbar('sync'.tr, 'sync_failed'.tr);
+        } else {
+          Get.snackbar('sync'.tr, '${'pulled_records'.tr}: $_lastPulledCount');
+        }
+      }
+      _pullFailed = false;
     }
   }
+
+  // Scratch state for pull() result reporting after the overlay is closed.
+  int _lastPulledCount = 0;
+  bool _pullFailed = false;
 
   /// R7: switch the active branch by CLEARING all local data and PULLING the
   /// account's data fresh from the server, then activating the selected branch.
@@ -194,8 +208,8 @@ class SyncController extends GetxController {
     if (isSyncing.value || isPulling.value) return;
 
     isPulling.value = true;
-    SyncProgress.show('branch_switch_saving'.tr);
     try {
+      SyncProgress.show('branch_switch_saving'.tr);
       // 1. Preserve any unsynced local changes BEFORE the destructive clear.
       //    Push UNCONDITIONALLY — never trust the cached pendingCount here: it
       //    is only refreshed on the 30s heartbeat, so a row written seconds ago
