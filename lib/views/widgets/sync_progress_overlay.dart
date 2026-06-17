@@ -26,31 +26,51 @@ class SyncProgress {
     try {
       Get.dialog(
         Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-            margin: const EdgeInsets.symmetric(horizontal: 40),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation(Color(0xFF1565C0)),
-                ),
-                const SizedBox(height: 18),
-                Obx(
-                  () => Text(
-                    _message.value,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1565C0),
+          // Material gives the Text a proper DefaultTextStyle (without it the
+          // text renders oversized with Flutter's yellow "unstyled" underline).
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: 260,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3.5,
+                      valueColor: AlwaysStoppedAnimation(Color(0xFF1565C0)),
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 20),
+                  Obx(
+                    () => Text(
+                      _message.value,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        height: 1.35,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1565C0),
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
