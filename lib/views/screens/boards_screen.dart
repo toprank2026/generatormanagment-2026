@@ -62,22 +62,29 @@ class _BoardsScreenState extends State<BoardsScreen> {
         elevation: 0,
         centerTitle: true,
       ),
-      floatingActionButton: Obx(
-        () => auth.can(Perm.boards)
-            ? FloatingActionButton.extended(
-                onPressed: () => _showBoardForm(context, controller),
-                icon: const Icon(Icons.add, color: Colors.white),
-                label: Text(
-                  'add_new'.tr,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                backgroundColor: const Color(0xFF1565C0),
-              )
-            : const SizedBox.shrink(),
-      ),
+      // P1: never offer "add board" from the circuit flow (forCircuits). Gate
+      // OUTSIDE the Obx so its builder always reads an observable (auth.can) on
+      // the normal flow — putting the forCircuits check inside the Obx would
+      // short-circuit before any observable is read and throw GetX's "improper
+      // use of Obx" (grey error screen).
+      floatingActionButton: widget.forCircuits
+          ? null
+          : Obx(
+              () => auth.can(Perm.boards)
+                  ? FloatingActionButton.extended(
+                      onPressed: () => _showBoardForm(context, controller),
+                      icon: const Icon(Icons.add, color: Colors.white),
+                      label: Text(
+                        'add_new'.tr,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      backgroundColor: const Color(0xFF1565C0),
+                    )
+                  : const SizedBox.shrink(),
+            ),
       body: GetBuilder<CoreController>(
         builder: (ctrl) {
           if (ctrl.isLoading.value) {

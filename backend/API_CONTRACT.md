@@ -168,11 +168,14 @@ Query params:
   malformed it falls back to the **current month** (server time, UTC).
   `dashboard.month` always echoes the month actually used.
 
-Paid/unpaid formula (same as the app): with `P = monthly_prices[month]`
-(`data.price_per_amp`, `0` if there is no row for the month), a subscriber is
-**paid** when the sum of their `paid_amount` over that month's receipts is
-`>= amps * P` — so with `P = 0` every subscriber counts as paid. `totalDue`
-is kept raw (`totalAmps * P - collected`) and may go negative, like the app.
+Paid/unpaid formula (same as the app): with `P[category] = monthly_prices[month]`
+(`data.price_per_amp` per category, `0` if there is no row), a subscriber is
+**paid** when its month **coverage** — `Σ paid_amount + Σ discount_value` over
+that month's receipts — is `>= amps * P[category]`. The receipt **discount** is
+WAIVED money: it folds into the DUE side (coverage + `totalDue`) but is **never**
+added to `collected`/`monthlyRevenue`/`netProfit`. With `P = 0` every subscriber
+counts as paid. `totalDue` is kept raw (`expected - collected - Σ discount_value`)
+and may go negative, like the app.
 ```jsonc
 // 200 response
 {
@@ -186,13 +189,18 @@ is kept raw (`totalAmps * P - collected`) and may go negative, like the app.
   },
   "dashboard": {
     "month": "2026-06",        // requested ?month, else current month ('YYYY-MM', server UTC)
-    "pricePerAmp": 5000,       // monthly_prices row for that month, 0 if absent
+    "pricePerAmp": 5000,       // back-compat single price (standard tariff, else first), 0 if absent
+    "categoryPrices": {        // per-tariff ampere price map for that month/branch
+      "gold": 7000,            // (keys present only for categories with a monthly_prices row)
+      "standard": 5000,
+      "commercial": 6000
+    },
     "totalSubscribers": 12,
     "totalAmps": 180,          // sum of subscriber amps
-    "paidCount": 9,            // per the formula above
+    "paidCount": 9,            // coverage (paid_amount + discount_value) >= due
     "unpaidCount": 3,
-    "totalDue": 200000,        // totalAmps * pricePerAmp - collected (raw)
-    "collected": 700000,       // sum of paid_amount over that month's receipts
+    "totalDue": 200000,        // expected - collected - Σ discount_value (raw, discount waived)
+    "collected": 700000,       // Σ paid_amount over that month's receipts (discount NOT included)
     "expensesTotal": 150000,   // sum of expenses' data.amount whose data.date starts with the month
     "netProfit": 550000,       // collected - expensesTotal (may go negative)
     "boards": 3,
@@ -201,6 +209,12 @@ is kept raw (`totalAmps * P - collected`) and may go negative, like the app.
   }
 }
 ```
+
+Receipt **discount** fields (`discount_type` `'none'|'ampere'|'value'`,
+`discount_value` IQD waived, `discount_amps` nullable) ride through the
+push-only mirror like any other receipt column (`SyncRecord.data` is whole-row
+`Mixed` — no validation), so legacy receipts without them default to no discount
+and behave exactly as before.
 
 ### Accountants — `/api/account/accountants`  (auth; role owner|admin)
 

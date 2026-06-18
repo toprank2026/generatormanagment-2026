@@ -1413,6 +1413,26 @@ function recentUploadsCard(fetchFn,opts){
   return card;
 }
 function syncText(v){ return (v==null||v==="")?"—":String(v); }
+// Arabic label for a receipt's discount type ('ampere'|'value'|'none').
+var DISCOUNT_TYPE_LABELS={ampere:"أمبير",value:"مبلغ",none:"لا يوجد"};
+// Shared receipt-discount formatter (admin + owner). Shows the waived value with
+// its type when there is a real discount, else "لا يوجد". `verbose` returns a
+// fuller "النوع: …" string for the detail body; otherwise a compact cell value.
+function discountText(d,verbose){
+  d=d||{};
+  var val=Number(d.discount_value);
+  var type=d.discount_type||"none";
+  if(!(val>0)||type==="none") return verbose?"لا يوجد":"—";
+  var typeLbl=DISCOUNT_TYPE_LABELS[type]||type;
+  var amt=fmtPrice(val);
+  // ampere discount also waives a number of amps — include it when present.
+  if(type==="ampere"&&d.discount_amps!=null&&Number(d.discount_amps)>0){
+    return verbose
+      ? ("النوع: "+typeLbl+" ("+syncText(d.discount_amps)+" أمبير) — "+amt)
+      : (amt+" ("+typeLbl+" "+syncText(d.discount_amps)+"A)");
+  }
+  return verbose ? ("النوع: "+typeLbl+" — "+amt) : (amt+" ("+typeLbl+")");
+}
 var SYNC_COLUMNS={
   subscribers:[
     {label:"الاسم",get:function(d){ return syncText(d.name); }},
@@ -1440,7 +1460,8 @@ var SYNC_COLUMNS={
       var m={commercial:"تجاري",standard:"عادي",gold:"ذهبي (٢٤ ساعة)"};
       return m[d.category_snapshot]||syncText(d.category_snapshot);
     }},
-    {label:"المدفوع",get:function(d){ return d.paid_amount!=null?fmtPrice(d.paid_amount):"—"; }}
+    {label:"المدفوع",get:function(d){ return d.paid_amount!=null?fmtPrice(d.paid_amount):"—"; }},
+    {label:"الخصم",get:function(d){ return discountText(d); }}
   ],
   expenses:[
     {label:"الفئة",get:function(d){ return syncText(d.category); }},
@@ -1814,6 +1835,7 @@ function receiptDetailContent(rec,d,subName){
   row("الأمبيرات", d.amps_snapshot);
   row("سعر الأمبير", d.price_snapshot!=null?fmtPrice(d.price_snapshot):"—");
   row("المدفوع", d.paid_amount!=null?fmtPrice(d.paid_amount):"—");
+  row("الخصم", discountText(d,true));
   row("المتبقي بعد الدفع", d.remaining_after!=null?fmtPrice(d.remaining_after):"—");
   row("تاريخ الإصدار", d.issued_at?fmtDate(d.issued_at):"—");
   row("تاريخ المزامنة", fmtDate(rec.updatedAt));
@@ -2260,7 +2282,18 @@ function viewMyReports(){
     ];
     if(hasExpenses) cards.push({label:"المصروفات",value:fmtPrice(expenses),icon:"payments",chip:"orange"});
     if(hasNet) cards.push({label:"صافي الربح",value:fmtPrice(net),icon:"trending_up",chip:"teal",neg:net<0});
-    cards.push({label:"سعر الأمبير",value:fmtPrice(dash.pricePerAmp),icon:"bolt",chip:"indigo"});
+    // Ampere price per tariff: three cards (Gold / Regular / Commercial) from the
+    // categoryPrices map. Gracefully falls back to a single سعر الأمبير card on
+    // older backends that don't return categoryPrices (mirrors the optional-field
+    // null-guard used for expenses/net above).
+    var cp=dash.categoryPrices;
+    if(cp&&typeof cp==="object"){
+      cards.push({label:"سعر الأمبير - ذهبي",value:fmtPrice(repNum(cp.gold)),icon:"bolt",chip:"indigo"});
+      cards.push({label:"سعر الأمبير - عادي",value:fmtPrice(repNum(cp.standard)),icon:"bolt",chip:"indigo"});
+      cards.push({label:"سعر الأمبير - تجاري",value:fmtPrice(repNum(cp.commercial)),icon:"bolt",chip:"indigo"});
+    } else {
+      cards.push({label:"سعر الأمبير",value:fmtPrice(dash.pricePerAmp),icon:"bolt",chip:"indigo"});
+    }
 
     wrap.appendChild(el("div",{class:"app-section-title",text:"إجماليات الشهر"}));
     var grid=el("div",{class:"app-grid"});

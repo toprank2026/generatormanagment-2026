@@ -34,7 +34,7 @@ class DbHelper {
     final String path = testPath ?? await _defaultPath();
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -245,6 +245,16 @@ class DbHelper {
         )
       ''');
     }
+    if (oldVersion < 7) {
+      // ---- v7 (additive): receipt DISCOUNT (P5) ----
+      // A discount is applied ONLY on a full payment: the subscriber pays cash
+      // (paid_amount) AND a discount_value is WAIVED, and is considered fully
+      // paid (coverage = paid_amount + discount_value >= due). Legacy receipts
+      // default discount_type 'none'/value 0, so paid/unpaid math is unchanged.
+      await _addColumn(db, 'receipts', 'discount_type', "TEXT DEFAULT 'none'");
+      await _addColumn(db, 'receipts', 'discount_value', 'REAL DEFAULT 0');
+      await _addColumn(db, 'receipts', 'discount_amps', 'REAL');
+    }
   }
 
   Future<String> _defaultPath() async {
@@ -374,6 +384,9 @@ class DbHelper {
         accountant_id TEXT,
         branch_id TEXT,
         category_snapshot TEXT, -- subscriber category at collection time (R4 audit)
+        discount_type TEXT DEFAULT 'none', -- 'none'|'ampere'|'value' (P5)
+        discount_value REAL DEFAULT 0,     -- IQD waived (P5)
+        discount_amps REAL,                -- amps waived (ampere type, audit)
         performed_by_user_id TEXT,
         issued_at TEXT NOT NULL,
         status TEXT DEFAULT 'valid', -- valid, refunded

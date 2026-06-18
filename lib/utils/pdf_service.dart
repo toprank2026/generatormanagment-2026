@@ -33,6 +33,8 @@ class PdfService {
       ['الأمبيرات', '${receipt.ampsSnapshot}'],
       ['سعر الأمبير', '${receipt.priceSnapshot}'],
       ['المدفوع', '${receipt.paidAmount} د.ع'],
+      // P5: Discount section — type + value, or "no discount".
+      ['الخصم', receiptDiscountText(receipt)],
       ['المتبقي', '${receipt.remainingAfter} د.ع'],
       // The accountant this invoice belongs to (omitted for owner-owned).
       if (accountantName.trim().isNotEmpty) ['المحاسب', accountantName.trim()],

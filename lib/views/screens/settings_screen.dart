@@ -488,7 +488,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () => auth.logout(),
+                // P4: user-initiated logout wipes local data (login re-pulls).
+                onPressed: () => auth.logout(wipeLocal: true),
                 icon: const Icon(Icons.logout, color: Colors.redAccent),
                 label: Text(
                   'logout'.tr,

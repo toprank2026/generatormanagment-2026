@@ -222,11 +222,29 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             value: money.format(net),
                             valueColor: netColor,
                           ),
+                          // P2: ampere price for ALL THREE tariffs (not just
+                          // the normal/standard one).
+                          _buildStatCard(
+                            icon: Icons.electric_bolt,
+                            color: const Color(0xFFFFB300), // gold
+                            label:
+                                '${'cat_gold'.tr} — ${'receipt_price_per_amp'.tr}',
+                            value: money.format(controller.goldPrice.value),
+                          ),
                           _buildStatCard(
                             icon: Icons.electric_bolt,
                             color: Colors.cyan,
-                            label: 'receipt_price_per_amp'.tr,
+                            label:
+                                '${'cat_standard'.tr} — ${'receipt_price_per_amp'.tr}',
                             value: money.format(controller.pricePerAmp.value),
+                          ),
+                          _buildStatCard(
+                            icon: Icons.electric_bolt,
+                            color: const Color(0xFF00897B), // commercial (teal)
+                            label:
+                                '${'cat_commercial'.tr} — ${'receipt_price_per_amp'.tr}',
+                            value:
+                                money.format(controller.commercialPrice.value),
                           ),
                         ],
                       ),

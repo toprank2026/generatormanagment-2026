@@ -471,7 +471,9 @@ class SubscriberRepository {
         """
       SELECT s.* FROM subscribers s
       LEFT JOIN (
-        SELECT subscriber_id, SUM(paid_amount) as total_paid
+        SELECT subscriber_id,
+               SUM(paid_amount) as total_paid,
+               SUM(IFNULL(discount_value, 0)) as total_discount
         FROM receipts
         WHERE month = ? AND status = 'valid' $innerScope
         GROUP BY subscriber_id
@@ -480,7 +482,7 @@ class SubscriberRepository {
         ON mp.month = ?
         AND mp.category = IFNULL(s.category, 'standard')
         AND IFNULL(mp.branch_id, '$main') = IFNULL(s.branch_id, '$main')
-      WHERE COALESCE(r.total_paid, 0) $operator (s.amps * COALESCE(mp.price_per_amp, 0)) ${outerScopes.join(' ')}
+      WHERE (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0)) $operator (s.amps * COALESCE(mp.price_per_amp, 0)) ${outerScopes.join(' ')}
     """;
 
     final List<Map<String, dynamic>> maps = await db.rawQuery(sql, args);

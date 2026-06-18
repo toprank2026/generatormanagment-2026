@@ -3,6 +3,7 @@ import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/repositories/expense_repository.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
+import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:intl/intl.dart';
@@ -46,7 +47,10 @@ class ReportsController extends GetxController {
   var unpaidCount = 0.obs;
 
   var totalAmps = 0.0.obs;
-  var pricePerAmp = 0.0.obs;
+  var pricePerAmp = 0.0.obs; // standard (back-compat; banner + expected math)
+  // P2: per-tariff ampere prices for the selected month/branch.
+  var goldPrice = 0.0.obs;
+  var commercialPrice = 0.0.obs;
   var expectedTotal = 0.0.obs;
   var collectedTotal = 0.0.obs;
   var remainingTotal = 0.0.obs;
@@ -99,7 +103,10 @@ class ReportsController extends GetxController {
       // 2. Per-category prices for the month (R4). The single "price per amp"
       //    figure shown on the report uses the standard category as representative.
       final prices = await _priceRepo.pricesForMonth(m, branchId: branch);
-      pricePerAmp.value = prices['standard'] ?? 0.0;
+      pricePerAmp.value = prices[SubscriberCategory.standard] ?? 0.0;
+      // P2: surface all three tariff prices on the report.
+      goldPrice.value = prices[SubscriberCategory.gold] ?? 0.0;
+      commercialPrice.value = prices[SubscriberCategory.commercial] ?? 0.0;
 
       // 3. Financials. Expected is CATEGORY-AWARE: Σ amps × price[category] (R4).
       double expected = 0.0;

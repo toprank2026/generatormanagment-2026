@@ -307,8 +307,19 @@ class AuthController extends GetxController {
       // R8: an accountant starts with no local data on its own device — pull
       // the owner's mirror (backend scopes by effective owner) and activate the
       // accountant's branch so the app opens on its data.
+      // P4: an owner/admin login also auto-fetches data from the backend (after
+      // a logout wipe the local DB is empty, so this restores it). Login already
+      // required network above, so the pull always has connectivity.
       if (result.account.role == 'accountant') {
         await _onAccountantLoggedIn(result.account);
+      } else {
+        try {
+          if (Get.isRegistered<SyncController>()) {
+            await Get.find<SyncController>().pull(silent: true);
+          }
+        } catch (e) {
+          Log.w('owner post-login pull skipped: $e');
+        }
       }
       return {'success': true};
     } on ApiException catch (e) {
@@ -453,7 +464,22 @@ class AuthController extends GetxController {
   /// Ends the session. [reason] is a translation key for the warning to show on
   /// the login screen (set by [recheckSession]); leave it null for a normal
   /// user-initiated logout so no warning is shown.
-  Future<void> logout({String? reason}) async {
+  Future<void> logout({String? reason, bool wipeLocal = false}) async {
+    // P4: on a user-initiated logout, delete local business data first (push any
+    // unsynced changes up first so they aren't lost). [wipeLocal] is false for
+    // INVOLUNTARY logouts (offline-too-long / session-expired — the user may be
+    // offline and unable to re-pull) and for the settings restore flows (which
+    // logout specifically to reload freshly-restored data). The next login
+    // auto-pulls the account's data fresh from the backend.
+    if (wipeLocal && Get.isRegistered<SyncController>()) {
+      try {
+        final sync = Get.find<SyncController>();
+        await sync.syncNow(silent: true); // best-effort: preserve unsynced edits
+        await sync.deleteLocalData(silent: true);
+      } catch (e) {
+        Log.w('logout local wipe skipped: $e');
+      }
+    }
     await _auth.logout();
     await _cache.clear();
     await _clearActingUser();

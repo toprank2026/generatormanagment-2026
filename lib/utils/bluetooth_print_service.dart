@@ -80,6 +80,8 @@ class BluetoothPrintService {
       ["الأمبيرات", receipt.ampsSnapshot.toString()],
       ["سعر الأمبير", receipt.priceSnapshot.toString()],
       ["المدفوع", "${receipt.paidAmount} د.ع"],
+      // P5: Discount section — type + value, or "no discount".
+      ["الخصم", receiptDiscountText(receipt)],
       ["المتبقي", "${receipt.remainingAfter} د.ع"],
     ];
     if (accountantName.isNotEmpty) rows.add(["المحاسب", accountantName]);

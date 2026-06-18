@@ -19,7 +19,8 @@ class HomeScreen extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Iconsax.logout),
-            onPressed: () => auth.logout(),
+            // P4: user-initiated logout wipes local data (login re-pulls).
+            onPressed: () => auth.logout(wipeLocal: true),
           ),
         ],
       ),

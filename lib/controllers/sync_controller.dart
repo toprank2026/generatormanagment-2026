@@ -5,6 +5,7 @@ import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
+import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/core/logger.dart';
 import 'package:generatormanagment/core/sync_service.dart';
@@ -27,6 +28,10 @@ class SyncController extends GetxController {
   final isPulling = false.obs;
   final lastSyncAt = RxnString();
   final lastPullAt = RxnString();
+  /// P3: last upload failure reason (null = OK). 'plan' = server rejected sync
+  /// for this plan/subscription; 'network' = offline/timeout. Lets the UI show
+  /// WHY pending changes aren't uploading instead of a silent dead-end.
+  final lastSyncError = RxnString();
 
   /// True when there are no local changes waiting to upload.
   bool get isUpToDate => pendingCount.value == 0;
@@ -81,13 +86,16 @@ class SyncController extends GetxController {
     if (pendingCount.value > largeThreshold) {
       _askLargeUpload();
     } else {
-      await syncNow();
+      await syncNow(silent: true);
     }
   }
 
   void _askLargeUpload() {
     if (_askOpen) return;
     _askOpen = true;
+    // P3: reset the latch on ANY dialog close (.then fires on confirm, cancel,
+    // OR system-back). Previously a back-dismissed dialog left _askOpen=true,
+    // which permanently blocked every future auto-sync (the stuck-pending bug).
     Get.defaultDialog(
       title: 'sync'.tr,
       middleText:
@@ -98,20 +106,23 @@ class SyncController extends GetxController {
       buttonColor: const Color(0xFF1565C0),
       onConfirm: () {
         Get.back();
-        _askOpen = false;
         syncNow();
       },
-      onCancel: () => _askOpen = false,
-    );
+      onCancel: () {},
+    ).then((_) => _askOpen = false);
   }
 
-  /// Pushes pending changes now (used by auto-sync and the manual button).
-  Future<void> syncNow() async {
+  /// Pushes pending changes now. [silent] (auto-sync) suppresses the result
+  /// snackbar so the 30s heartbeat doesn't spam; the manual button passes
+  /// silent:false to surface the outcome. Either way the failure REASON is kept
+  /// in [lastSyncError] so the UI can explain stuck pending (P3).
+  Future<void> syncNow({bool silent = false}) async {
     // Offline-only mode: sync is disabled by the active plan — do nothing.
     if (!_canSync) return;
     if (isSyncing.value) return;
     if (!await _net.isOnline()) {
-      Get.snackbar('sync'.tr, 'online_only'.tr);
+      lastSyncError.value = 'network';
+      if (!silent) Get.snackbar('sync'.tr, 'online_only'.tr);
       return;
     }
     isSyncing.value = true;
@@ -122,9 +133,24 @@ class SyncController extends GetxController {
       if (big) SyncProgress.show('sync_uploading'.tr);
       await _sync.push();
       lastSyncAt.value = DateTime.now().toIso8601String();
+      lastSyncError.value = null; // success clears any prior error
+    } on ApiException catch (e) {
+      Log.e('sync failed', e);
+      if (e.isAuthError) {
+        // 401/403 (e.g. FEATURE_DISABLED / plan/subscription) — NOT transient.
+        // Retrying every 30s won't help; tell the user why uploads are stuck.
+        lastSyncError.value = 'plan';
+        if (!silent) Get.snackbar('sync'.tr, 'sync_disabled_plan'.tr);
+      } else {
+        // Network/timeout (statusCode==0) or server hiccup — keep quiet and
+        // retry on the next tick (offline-first); record the reason.
+        lastSyncError.value = 'network';
+        if (!silent) Get.snackbar('sync'.tr, 'sync_failed'.tr);
+      }
     } catch (e) {
       Log.e('sync failed', e);
-      Get.snackbar('sync'.tr, 'sync_failed'.tr);
+      lastSyncError.value = 'network';
+      if (!silent) Get.snackbar('sync'.tr, 'sync_failed'.tr);
     } finally {
       if (big) SyncProgress.hide();
       isSyncing.value = false;
@@ -246,14 +272,18 @@ class SyncController extends GetxController {
 
   /// Clears all local business data (boards/subscribers/receipts/…) and the
   /// pending outbox. The server mirror is untouched, so [pull] restores it.
-  Future<void> deleteLocalData() async {
+  /// [silent] suppresses the snackbar + the app-data reload (used by the
+  /// logout-wipe path, where the session is about to be torn down anyway).
+  Future<void> deleteLocalData({bool silent = false}) async {
     try {
       await _sync.deleteLocalData();
-      await _reloadAppData();
-      Get.snackbar('settings'.tr, 'local_data_deleted'.tr);
+      if (!silent) {
+        await _reloadAppData();
+        Get.snackbar('settings'.tr, 'local_data_deleted'.tr);
+      }
     } catch (e) {
       Log.e('delete local failed', e);
-      Get.snackbar('error'.tr, '$e');
+      if (!silent) Get.snackbar('error'.tr, '$e');
     } finally {
       await refreshPending();
     }

@@ -40,11 +40,15 @@ const num = (value) => {
  * Flutter dashboard for month M. Pricing is category-aware: a per-category
  * price map P = { [category]: price_per_amp } is built from the month's
  * monthly_prices (legacy/missing categories default to 'standard'; absent = 0).
- * A subscriber's due = amps * P[category]; it is PAID when the sum of its
- * month-M receipts' paid_amount is >= that due — so with no price every
+ * A subscriber's due = amps * P[category]; it is PAID when its month-M coverage
+ * (Σ paid_amount + Σ discount_value of its receipts) is >= that due — so a
+ * discounted FULL payment counts as fully paid, and with no price every
  * subscriber counts as paid, exactly like the app. The expected total is
- * Σ amps × P[category] over the in-scope subscribers, and totalDue is kept raw
- * (expected - collected), which may go negative, again matching the app.
+ * Σ amps × P[category] over the in-scope subscribers; totalDue is kept raw
+ * (expected - collected - Σ discount_value), which may go negative, matching the
+ * app. The discount is WAIVED money: it folds into the DUE side only and is
+ * NEVER added to `collected`/revenue/profit. The full per-category map is also
+ * returned as `categoryPrices` so the panel can render all three tariffs.
  *
  * @param {*} userId Mongo id of the caller.
  * @param {object} counts Per-entity counts (reused for boards/circuits).
@@ -117,14 +121,25 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
 
   // paidBySubscriber uses ALL receipts (paid/unpaid is global); `collected` is
   // the selected accountant's own receipts (or all when unfiltered).
+  // A discount is WAIVED money (NOT collected): it never counts toward
+  // `collected`/revenue, but it DOES count toward a subscriber's coverage
+  // (paid_amount + discount_value) for paid/unpaid, and reduces what is still
+  // owed. discountTotal is the in-scope Σ discount_value for the due side.
   let collected = 0;
-  const paidBySubscriber = new Map();
+  let discountTotal = 0;
+  const coverageBySubscriber = new Map();
   for (const r of receipts) {
     const data = r.data || {};
     const paid = num(data.paid_amount);
-    if (inScope(data)) collected += paid;
+    const discount = num(data.discount_value); // legacy receipts -> 0
+    if (inScope(data)) {
+      collected += paid;
+      discountTotal += discount;
+    }
     const sid = data.subscriber_id;
-    if (sid != null) paidBySubscriber.set(sid, (paidBySubscriber.get(sid) || 0) + paid);
+    // Coverage folds the waived discount in so a discounted FULL payment counts
+    // as fully paid (coverage = paid_amount + discount_value >= due).
+    if (sid != null) coverageBySubscriber.set(sid, (coverageBySubscriber.get(sid) || 0) + paid + discount);
   }
 
   let totalAmps = 0;
@@ -137,8 +152,8 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     const catPrice = num(priceMap[data.category || 'standard'] || 0);
     const due = amps * catPrice;
     expected += due;
-    const paid = paidBySubscriber.get(data.id || s.localId) || 0;
-    if (paid >= due) paidCount += 1;
+    const coverage = coverageBySubscriber.get(data.id || s.localId) || 0;
+    if (coverage >= due) paidCount += 1;
   }
 
   // Expenses total scoped to the selected accountant (or all when unfiltered).
@@ -147,20 +162,27 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     if (inScope(e.data)) expensesTotal += num((e.data || {}).amount);
   }
 
-  // Category-aware due: expected (Σ per-category) minus what was collected.
-  const remaining = expected - collected;
+  // Category-aware due: expected (Σ per-category) minus what was collected AND
+  // minus the waived discount (discount reduces what is still owed without ever
+  // counting as collected). Kept raw (no clamp) to match the prior behavior and
+  // the app — it may go negative.
+  const remaining = expected - collected - discountTotal;
 
   return {
     month,
     pricePerAmp,
+    // Per-category ampere price map { gold, standard, commercial, ... } so the
+    // reports view can render all three tariffs (pricePerAmp stays for back-compat).
+    categoryPrices: priceMap,
     totalSubscribers: subscribers.length,
     totalAmps,
     paidCount,
     unpaidCount: subscribers.length - paidCount,
     totalDue: remaining,
     collected,
-    // Explicit aliases for the app/panels: revenue = collected valid receipts,
-    // remaining = expected (category-aware) − collected.
+    // Explicit aliases for the app/panels: revenue = collected valid receipts
+    // (discount NOT included — it is waived), remaining = expected (category-aware)
+    // − collected − waived discount.
     monthlyRevenue: collected,
     monthlyRemaining: remaining,
     expensesTotal,

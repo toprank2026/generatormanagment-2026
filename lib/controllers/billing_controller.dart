@@ -163,23 +163,34 @@ class BillingController extends GetxController {
 
     double totalDue = sub.amps * mp.pricePerAmp;
 
-    // 2. Subtract paid amount (this branch's receipts only)
+    // 2. Subtract COVERAGE (this branch's receipts only). Coverage = cash paid
+    //    PLUS any discount waived (P5), so a discounted FULL payment shows due 0.
+    //    Non-discount receipts have discountValue 0, so this is unchanged.
     List<Receipt> receipts = await _receiptRepo.getBySubscriberAndMonth(
       sub.id,
       month,
       branchId: branchId,
     );
-    double paid = receipts.fold(0.0, (sum, r) => sum + r.paidAmount);
+    double covered =
+        receipts.fold(0.0, (sum, r) => sum + r.paidAmount + r.discountValue);
 
-    return totalDue - paid;
+    return totalDue - covered;
   }
 
-  Future<Receipt?> collectPayment(Subscriber sub, double amount) async {
-    if (amount <= 0) {
-      Get.snackbar('error'.tr, 'enter_valid_amount'.tr);
-      return null;
-    }
-
+  /// Collect a payment. [fullPayment] true = the subscriber settles the whole
+  /// remaining due; only then may a discount be applied (P5). [discountType] is
+  /// 'none'|'ampere'|'value'; for 'ampere' pass [discountAmps] (value =
+  /// amps × pricePerAmp), for 'value' pass [discountValueInput] (IQD). On a full
+  /// payment the cash collected = due − discountValue and remaining = 0, and the
+  /// waived amount is recorded so the subscriber counts as fully paid.
+  Future<Receipt?> collectPayment(
+    Subscriber sub,
+    double amount, {
+    bool fullPayment = false,
+    String discountType = 'none',
+    double discountAmps = 0,
+    double discountValueInput = 0,
+  }) async {
     // The receipt belongs to the SUBSCRIBER's branch (correct even when
     // collecting from the consolidated view, where the active branch is null).
     final String branchId = sub.branchId ?? _branch.writeBranchId;
@@ -188,10 +199,35 @@ class BillingController extends GetxController {
         branchId: branchId, category: sub.category);
     if (mp == null) return null;
 
-    double due = await getDueAmount(sub, selectedMonth.value);
-    // Allow overpayment? PRD says "validate amount <= remaining".
-    // We strictly enforce unless admin allows (flag not implemented).
-    if (amount > due) {
+    final double due = await getDueAmount(sub, selectedMonth.value);
+
+    // Discount applies ONLY on a full payment (enforced here, not just in the
+    // UI — the amount field is user-editable). Partial payment => no discount.
+    double discountValue = 0;
+    double? discountAmpsRec;
+    String discType = 'none';
+    if (fullPayment && discountType != 'none') {
+      if (discountType == 'ampere') {
+        discountAmpsRec = discountAmps;
+        discountValue = discountAmps * mp.pricePerAmp;
+      } else {
+        discountValue = discountValueInput;
+      }
+      if (discountValue < 0) discountValue = 0;
+      if (discountValue > due) discountValue = due; // can't waive more than due
+      discType = discountValue > 0 ? discountType : 'none';
+    }
+
+    // On a full payment the cash collected is the remainder after the discount;
+    // on a partial payment it's the entered amount (no discount).
+    final double cash = fullPayment ? (due - discountValue) : amount;
+
+    if (cash <= 0 && discountValue <= 0) {
+      Get.snackbar('error'.tr, 'enter_valid_amount'.tr);
+      return null;
+    }
+    // Coverage (cash + discount) may not exceed the remaining due.
+    if (cash + discountValue > due + 0.0001) {
       Get.snackbar('error'.tr, 'amount_exceeds_due'.tr);
       return null;
     }
@@ -208,8 +244,8 @@ class BillingController extends GetxController {
       month: selectedMonth.value,
       ampsSnapshot: sub.amps,
       priceSnapshot: mp.pricePerAmp,
-      paidAmount: amount,
-      remainingAfter: due - amount,
+      paidAmount: cash,
+      remainingAfter: due - cash - discountValue,
       performedByUserId: auth.currentUser.value?.id,
       // Subscribers are SHARED, so the invoice belongs to the accountant who
       // COLLECTED it (the acting user) — this drives each accountant's separate
@@ -219,6 +255,10 @@ class BillingController extends GetxController {
       branchId: branchId,
       // Audit: the category (and thus price) in force at collection time (R4).
       categorySnapshot: sub.category,
+      // Discount (P5).
+      discountType: discType,
+      discountValue: discountValue,
+      discountAmps: discountAmpsRec,
       issuedAt: DateTime.now().toIso8601String(),
     );
 

@@ -61,6 +61,12 @@ class Receipt {
   // Subscriber category at collection time (R4 audit) — keeps historical
   // reports correct if the subscriber's category later changes.
   String? categorySnapshot;
+  // Discount (P5) — applied only on a FULL payment. type: 'none'|'ampere'|
+  // 'value'. discountValue = IQD waived; discountAmps = amps waived (ampere
+  // type). paidAmount is the CASH collected (due - discountValue on full pay).
+  String discountType;
+  double discountValue;
+  double? discountAmps;
   String? performedByUserId;
   String issuedAt;
   String status; // valid, refunded
@@ -78,11 +84,17 @@ class Receipt {
     this.accountantId,
     this.branchId,
     this.categorySnapshot,
+    this.discountType = 'none',
+    this.discountValue = 0,
+    this.discountAmps,
     this.performedByUserId,
     required this.issuedAt,
     this.status = 'valid',
     this.qrToken,
   });
+
+  /// True when a discount was applied to this receipt (P5).
+  bool get hasDiscount => discountType != 'none' && discountValue > 0;
 
   Map<String, dynamic> toMap() {
     return {
@@ -97,6 +109,9 @@ class Receipt {
       'accountant_id': accountantId,
       'branch_id': branchId,
       'category_snapshot': categorySnapshot,
+      'discount_type': discountType,
+      'discount_value': discountValue,
+      'discount_amps': discountAmps,
       'performed_by_user_id': performedByUserId,
       'issued_at': issuedAt,
       'status': status,
@@ -117,10 +132,30 @@ class Receipt {
       accountantId: map['accountant_id'],
       branchId: map['branch_id'],
       categorySnapshot: map['category_snapshot'],
+      discountType: (map['discount_type'] ?? 'none').toString(),
+      discountValue: (map['discount_value'] as num?)?.toDouble() ?? 0.0,
+      discountAmps: (map['discount_amps'] as num?)?.toDouble(),
       performedByUserId: map['performed_by_user_id'],
       issuedAt: map['issued_at'],
       status: map['status'],
       qrToken: map['qr_token'],
     );
   }
+}
+
+String _fmtNum(double v) =>
+    v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(0);
+
+/// Arabic discount line for a PRINTED receipt (P5): shows the discount type +
+/// value when one was applied, or "no discount". Shared by the Bluetooth and
+/// PDF receipt renderers (the print path uses hardcoded Arabic, like the rest
+/// of the receipt body).
+String receiptDiscountText(Receipt r) {
+  if (!r.hasDiscount) return 'لا يوجد خصم';
+  if (r.discountType == 'ampere') {
+    final a = r.discountAmps;
+    final amps = a == null ? '' : ' (${_fmtNum(a)} أمبير)';
+    return '${_fmtNum(r.discountValue)} د.ع$amps';
+  }
+  return '${_fmtNum(r.discountValue)} د.ع';
 }

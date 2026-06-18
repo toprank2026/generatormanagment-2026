@@ -12,6 +12,7 @@ import 'package:generatormanagment/data/repositories/accountant_repository.dart'
 import 'package:generatormanagment/controllers/settings_controller.dart';
 import 'package:generatormanagment/views/screens/add_subscriber_screen.dart';
 import 'package:generatormanagment/views/screens/payment_history_screen.dart';
+import 'package:generatormanagment/views/widgets/collect_payment_dialog.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 
 class SubscriberDetailScreen extends StatefulWidget {
@@ -324,89 +325,22 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
     );
   }
 
-  void _showCollectDialog() {
-    _amountCtrl.text = dueAmount.toStringAsFixed(0);
-
-    Get.defaultDialog(
-      title: 'collect_payment'.tr,
-      titlePadding: const EdgeInsets.only(top: 20),
-      radius: 16,
-      contentPadding: const EdgeInsets.all(20),
-      content: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              "${'billing_month'.tr}: ${controller.selectedMonth.value}",
-              style: const TextStyle(
-                color: Colors.blue,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _amountCtrl,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1565C0),
-            ),
-            textAlign: TextAlign.center,
-            decoration: InputDecoration(
-              prefixText: 'iqd'.tr,
-              filled: true,
-              fillColor: Colors.grey[50],
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-            ),
-          ),
-        ],
-      ),
-      confirm: SizedBox(
-        width: double.infinity,
-        child: FilledButton(
-          onPressed: () async {
-            double? val = double.tryParse(
-              _amountCtrl.text.replaceAll(',', ''),
-            ); // Handle commas if any
-            if (val != null) {
-              Get.back(); // Close dialog
-              final receipt = await controller.collectPayment(
-                widget.subscriber,
-                val,
-              );
-              if (receipt != null) {
-                Get.snackbar(
-                  'success'.tr,
-                  'payment_collected'.tr,
-                  backgroundColor: Colors.green,
-                  colorText: Colors.white,
-                );
-                _handlePrint(receipt);
-                _refresh();
-              }
-            }
-          },
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF1565C0),
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          child: Text('confirm_print'.tr),
-        ),
-      ),
-      cancel: TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
+  void _showCollectDialog() async {
+    // P5: shared collect dialog with full/partial + optional discount.
+    final receipt = await showCollectPaymentDialog(
+      subscriber: widget.subscriber,
+      due: dueAmount,
     );
+    if (receipt != null) {
+      Get.snackbar(
+        'success'.tr,
+        'payment_collected'.tr,
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
+      );
+      _handlePrint(receipt);
+      _refresh();
+    }
   }
 
   void _handlePrint(Receipt receipt) async {
