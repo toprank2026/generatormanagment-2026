@@ -240,13 +240,11 @@ class BillingController extends GetxController {
     }
 
     final AuthController auth = Get.find();
-    // Receipt numbering is independent per branch (D-3): MAX+1 within the
-    // subscriber's branch, so each branch keeps its own 1..N sequence.
-    int receiptNo = await _receiptRepo.getNextReceiptNumber(branchId: branchId);
-
     final r = Receipt(
       uuid: const Uuid().v4(),
-      receiptNo: receiptNo,
+      // Allocated atomically with the insert below (per branch, D-3); the 0 here
+      // is a placeholder overwritten by insertWithAllocatedNumber.
+      receiptNo: 0,
       subscriberId: sub.id,
       month: selectedMonth.value,
       ampsSnapshot: sub.amps,
@@ -269,7 +267,8 @@ class BillingController extends GetxController {
       issuedAt: DateTime.now().toIso8601String(),
     );
 
-    await _receiptRepo.insert(r);
+    // Atomic per-branch number allocation + insert (sets r.receiptNo).
+    await _receiptRepo.insertWithAllocatedNumber(r, branchId: branchId);
 
     // Refresh receipt history (page 1) for this subscriber
     await loadReceiptHistory(sub.id);

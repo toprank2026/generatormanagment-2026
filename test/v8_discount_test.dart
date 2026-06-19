@@ -157,6 +157,17 @@ void main() {
     expect(second.compareTo(first) >= 0, isTrue);
   });
 
+  test('receipt number allocation is atomic + per-branch sequential', () async {
+    await subs.insert(sub('A'));
+    final n1 =
+        await receipts.insertWithAllocatedNumber(rec('u1', 'A', paid: 100), branchId: main);
+    final r2 = rec('u2', 'A', paid: 100);
+    final n2 = await receipts.insertWithAllocatedNumber(r2, branchId: main);
+    expect(n1, 1);
+    expect(n2, 2);
+    expect(r2.receiptNo, 2); // the allocated number is set back on the object
+  });
+
   test('v7 schema carries discount columns (round-trip)', () async {
     await subs.insert(sub('A'));
     await receipts

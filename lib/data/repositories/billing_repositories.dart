@@ -69,6 +69,27 @@ class ReceiptRepository {
     );
   }
 
+  /// Allocates the next per-branch receipt_no AND inserts the row in ONE
+  /// transaction, so two near-simultaneous collections on the same device can't
+  /// both read the same MAX and mint a duplicate number (audit: the alloc was a
+  /// separate read-then-insert). Returns the allocated number (also set on
+  /// [item]). NOTE: cross-DEVICE uniqueness is a separate server-side concern
+  /// (intentionally not addressed here).
+  Future<int> insertWithAllocatedNumber(Receipt item, {String? branchId}) async {
+    final db = await _dbHelper.database;
+    return await db.transaction((txn) async {
+      final where = branchId == null ? '' : 'WHERE branch_id = ?';
+      final args = branchId == null ? <Object?>[] : <Object?>[branchId];
+      final res = await txn
+          .rawQuery("SELECT MAX(receipt_no) as max_no FROM receipts $where", args);
+      final next = ((res.first['max_no'] as int?) ?? 0) + 1;
+      item.receiptNo = next;
+      await txn.insert('receipts', item.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace);
+      return next;
+    });
+  }
+
   // Receipt history for a subscriber. Subscribers are shared across accountants,
   // but each accountant's HISTORY shows only the receipts THEY collected, so an
   // optional [accountantId] scopes the list (null = owner/admin = all). The
