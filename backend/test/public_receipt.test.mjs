@@ -19,10 +19,15 @@
  *      -> 200 {
  *           found: boolean,
  *           receipt: { receipt_no, month, amps_snapshot, price_snapshot,
- *                      paid_amount, remaining_after, issued_at, status } | null,
+ *                      category_snapshot, discount_type, discount_value,
+ *                      discount_amps, paid_amount, remaining_after, issued_at,
+ *                      status } | null,
  *           subscriberName: string|null,
+ *           accountantName: string|null,
  *           generatorName: string|null,
  *         }
+ *      (category/discount/accountant added so the QR receipt matches the printed
+ *      paper receipt field-for-field.)
  */
 
 import test from 'node:test';
@@ -229,6 +234,57 @@ test('GET /api/public/receipt/:uuid requires NO token (request carries no auth h
   const data = await res.json();
   assert.equal(data.found, true);
   assert.equal(data.receipt.receipt_no, 1042);
+});
+
+test('public receipt exposes tariff type + discount + accountant name (printed-parity)', async () => {
+  const owner = await registerOwner({ generatorName: 'مولدة الخصم' });
+  const ts = new Date().toISOString();
+  const SUB = 'sub-pub-disc', RC = 'receipt-uuid-disc', ACC = 'acc-local-9';
+  const push = await api('POST', '/api/sync/push', {
+    token: owner.token,
+    body: {
+      records: [
+        { entity: 'accountants', localId: ACC, deleted: false, updatedAt: ts, data: { id: ACC, name: 'كريم' } },
+        { entity: 'subscribers', localId: SUB, deleted: false, updatedAt: ts, data: { id: SUB, name: 'علي', amps: 10, status: 'active', category: 'gold' } },
+        { entity: 'receipts', localId: RC, deleted: false, updatedAt: ts, data: {
+            id: RC, uuid: RC, receipt_no: 7, subscriber_id: SUB, accountant_id: ACC, month: '2026-06',
+            amps_snapshot: 10, price_snapshot: 3000, category_snapshot: 'gold',
+            discount_type: 'ampere', discount_value: 6000, discount_amps: 2,
+            paid_amount: 24000, remaining_after: 0, issued_at: ts, status: 'valid' } },
+      ],
+    },
+  });
+  assert.equal(push.status, 200, `push should 200, got ${push.status} ${JSON.stringify(push.data)}`);
+
+  const r = await api('GET', `/api/public/receipt/${RC}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.data.found, true);
+  assert.equal(r.data.receipt.category_snapshot, 'gold', 'tariff type exposed');
+  assert.equal(r.data.receipt.discount_type, 'ampere');
+  assert.equal(r.data.receipt.discount_value, 6000);
+  assert.equal(r.data.receipt.discount_amps, 2);
+  assert.equal(r.data.accountantName, 'كريم', 'accountant name resolved from the localId-keyed mirror');
+});
+
+test('public receipt category falls back to the subscriber current category when no snapshot', async () => {
+  const owner = await registerOwner({ generatorName: 'مولدة' });
+  const ts = new Date().toISOString();
+  const SUB = 'sub-pub-nocat', RC = 'receipt-uuid-nocat';
+  await api('POST', '/api/sync/push', {
+    token: owner.token,
+    body: {
+      records: [
+        { entity: 'subscribers', localId: SUB, deleted: false, updatedAt: ts, data: { id: SUB, name: 'x', amps: 5, status: 'active', category: 'commercial' } },
+        { entity: 'receipts', localId: RC, deleted: false, updatedAt: ts, data: {
+            id: RC, uuid: RC, receipt_no: 8, subscriber_id: SUB, month: '2026-06',
+            amps_snapshot: 5, price_snapshot: 1000, paid_amount: 5000, remaining_after: 0, issued_at: ts, status: 'valid' } },
+      ],
+    },
+  });
+  const r = await api('GET', `/api/public/receipt/${RC}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.data.receipt.category_snapshot, 'commercial', 'no snapshot -> falls back to the subscriber category');
+  assert.equal(r.data.accountantName, null, 'owner-collected receipt has no accountant');
 });
 
 test('GET /api/public/receipt/:uuid for an unknown uuid -> 200 found:false', async () => {

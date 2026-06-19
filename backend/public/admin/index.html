@@ -469,6 +469,26 @@ function fmtPrice(p){
   var n=Number(p); if(isNaN(n)) return String(p); // raw fallback (see fmtDate)
   try{ return new Intl.NumberFormat().format(n)+" د.ع"; }catch(e){ return n+" د.ع"; }
 }
+// Arabic tariff-type label for a subscriber category — mirrors the Flutter
+// SubscriberCategory.arabicLabel so the QR receipt matches the printed paper.
+function catLabel(v){
+  if(v==="gold") return "ذهبي";
+  if(v==="commercial") return "تجاري";
+  if(v==="standard") return "عادي";
+  return "—";
+}
+// Discount line — mirrors Flutter receiptDiscountText (printed receipt).
+function fmtIntNum(n){ n=Number(n); return isNaN(n)?"0":String(Math.round(n)); }
+function receiptDiscountText(r){
+  var t=r&&r.discount_type, v=Number(r&&r.discount_value)||0;
+  if(!t||t==="none"||v<=0) return "لا يوجد خصم";
+  if(t==="ampere"){
+    var a=r.discount_amps;
+    var amps=(a==null||a==="")?"":(" ("+fmtIntNum(a)+" أمبير)");
+    return fmtIntNum(v)+" د.ع"+amps;
+  }
+  return fmtIntNum(v)+" د.ع";
+}
 function statusBadge(status){
   var map={
     active:["green","نشط"], pending:["orange","قيد الانتظار"],
@@ -2877,13 +2897,18 @@ function viewPublicReceipt(uuid){
         (v&&v.nodeType)?el("span",{class:"v"},[v]):el("span",{class:"v",text:(v==null||v==="")?"—":String(v)})
       ]));
     }
+    // Same fields + order as the printed paper receipt (bluetooth/pdf), so the
+    // QR-scanned invoice is identical to the one handed to the customer.
+    line("التاريخ", r.issued_at?fmtDate(r.issued_at):"—");
     line("المشترك", (res.subscriberName||"—"));
     line("الشهر", r.month);
     line("الأمبيرات", r.amps_snapshot);
     line("سعر الأمبير", r.price_snapshot!=null?fmtPrice(r.price_snapshot):"—");
+    line("نوع التعرفة", catLabel(r.category_snapshot));
     line("المدفوع", r.paid_amount!=null?fmtPrice(r.paid_amount):"—");
+    line("الخصم", receiptDiscountText(r));
     line("المتبقي", r.remaining_after!=null?fmtPrice(r.remaining_after):"—");
-    line("التاريخ", r.issued_at?fmtDate(r.issued_at):"—");
+    if(res.accountantName) line("المحاسب", res.accountantName);
     line("الحالة", stBadge);
     card.appendChild(body);
 

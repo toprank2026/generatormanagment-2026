@@ -13,6 +13,12 @@ const PUBLIC_RECEIPT_FIELDS = [
   'month',
   'amps_snapshot',
   'price_snapshot',
+  // Tariff type the ampere price belongs to + the discount snapshot, so the
+  // public QR receipt can render the SAME fields the printed paper receipt does.
+  'category_snapshot',
+  'discount_type',
+  'discount_value',
+  'discount_amps',
   'paid_amount',
   'remaining_after',
   'issued_at',
@@ -49,7 +55,9 @@ const getPublicReceipt = asyncHandler(async (req, res) => {
     receipt[field] = data[field] ?? null;
   }
 
-  // Subscriber name from the same account's mirror.
+  // Subscriber name (+ current category as a fallback for the tariff type when
+  // the receipt predates category_snapshot — mirrors the printed receipt's
+  // `categorySnapshot ?? sub.category`).
   let subscriberName = null;
   if (data.subscriber_id) {
     const sub = await SyncRecord.findOne({
@@ -57,7 +65,25 @@ const getPublicReceipt = asyncHandler(async (req, res) => {
       entity: 'subscribers',
       localId: data.subscriber_id,
     });
-    subscriberName = sub && sub.data ? sub.data.name ?? null : null;
+    if (sub && sub.data) {
+      subscriberName = sub.data.name ?? null;
+      if (receipt.category_snapshot == null) {
+        receipt.category_snapshot = sub.data.category ?? null;
+      }
+    }
+  }
+
+  // Accountant name (the printed receipt shows "المحاسب" when one collected it;
+  // owner-collected receipts have no accountant_id). accountant_id is the
+  // app-side localId, which keys the synced `accountants` mirror.
+  let accountantName = null;
+  if (data.accountant_id) {
+    const acc = await SyncRecord.findOne({
+      user: rec.user,
+      entity: 'accountants',
+      localId: data.accountant_id,
+    });
+    accountantName = acc && acc.data ? acc.data.name ?? null : null;
   }
 
   // Generator name from the owning account.
@@ -65,7 +91,9 @@ const getPublicReceipt = asyncHandler(async (req, res) => {
   const owner = await User.findById(rec.user);
   if (owner) generatorName = owner.generatorName ?? null;
 
-  res.status(200).json({ found: true, receipt, subscriberName, generatorName });
+  res
+    .status(200)
+    .json({ found: true, receipt, subscriberName, accountantName, generatorName });
 });
 
 /**

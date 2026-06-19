@@ -32,6 +32,11 @@ class PdfService {
       ['الشهر', receipt.month],
       ['الأمبيرات', '${receipt.ampsSnapshot}'],
       ['سعر الأمبير', '${receipt.priceSnapshot}'],
+      // The tariff type the ampere price belongs to (gold / standard / commercial).
+      [
+        'نوع التعرفة',
+        SubscriberCategory.arabicLabel(receipt.categorySnapshot ?? sub.category)
+      ],
       ['المدفوع', '${receipt.paidAmount} د.ع'],
       // P5: Discount section — type + value, or "no discount".
       ['الخصم', receiptDiscountText(receipt)],

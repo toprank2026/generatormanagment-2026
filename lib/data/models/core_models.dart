@@ -98,6 +98,20 @@ class SubscriberCategory {
   /// Normalize an arbitrary/legacy value to a valid category (default standard).
   static String normalize(String? v) =>
       all.contains(v) ? v! : standard;
+
+  /// Arabic tariff-type label for a category. Used on PRINTED receipts (which
+  /// are hardcoded Arabic, like the rest of the receipt body) so it must NOT
+  /// depend on the app locale. Mirrored by the QR/public web receipt.
+  static String arabicLabel(String? v) {
+    switch (normalize(v)) {
+      case gold:
+        return 'ذهبي';
+      case commercial:
+        return 'تجاري';
+      default:
+        return 'عادي';
+    }
+  }
 }
 
 class Subscriber {
