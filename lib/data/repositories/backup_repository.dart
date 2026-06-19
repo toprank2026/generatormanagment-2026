@@ -52,5 +52,12 @@ class BackupRepository {
     final path = await _db.getDbPath();
     await _db.close();
     await File(path).writeAsBytes(bytes, flush: true);
+    // Clear the restored snapshot's PENDING outbox so its stale rows aren't
+    // re-pushed (and resurrect old data) on the next login's push-before-pull
+    // (audit fix). Reopening also migrates the restored file to the current
+    // schema; close again so the post-logout reopen is clean.
+    final db = await _db.database;
+    await db.delete('sync_outbox');
+    await _db.close();
   }
 }

@@ -364,6 +364,13 @@ class SettingsController extends GetxController {
       // Overwrite file
       await sourceFile.copy(dbPath);
 
+      // Clear the restored snapshot's PENDING outbox so its stale rows aren't
+      // re-pushed (and resurrect old data) on the next login's push-before-pull
+      // (audit fix). Opening here also runs any migrations on the restored file.
+      final db = await _dbHelper.database;
+      await db.delete('sync_outbox');
+      await _dbHelper.close();
+
       Get.defaultDialog(
         title: 'success'.tr,
         middleText: 'import_success_restart'.tr,
