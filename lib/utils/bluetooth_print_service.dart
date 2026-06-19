@@ -81,7 +81,7 @@ class BluetoothPrintService {
       ["سعر الأمبير", receipt.priceSnapshot.toString()],
       // The tariff type the ampere price belongs to (gold / standard / commercial).
       [
-        "نوع التعرفة",
+        "نوع الاشتراك",
         SubscriberCategory.arabicLabel(receipt.categorySnapshot ?? sub.category)
       ],
       ["المدفوع", "${receipt.paidAmount} د.ع"],

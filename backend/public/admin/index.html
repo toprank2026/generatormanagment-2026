@@ -2904,7 +2904,7 @@ function viewPublicReceipt(uuid){
     line("الشهر", r.month);
     line("الأمبيرات", r.amps_snapshot);
     line("سعر الأمبير", r.price_snapshot!=null?fmtPrice(r.price_snapshot):"—");
-    line("نوع التعرفة", catLabel(r.category_snapshot));
+    line("نوع الاشتراك", catLabel(r.category_snapshot));
     line("المدفوع", r.paid_amount!=null?fmtPrice(r.paid_amount):"—");
     line("الخصم", receiptDiscountText(r));
     line("المتبقي", r.remaining_after!=null?fmtPrice(r.remaining_after):"—");
