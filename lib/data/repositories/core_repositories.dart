@@ -470,7 +470,10 @@ class SubscriberRepository {
   /// Subscribers whose paid total for [month] is >= (paid) or < (unpaid) their
   /// expected due. Due is **category-aware** (R4): each subscriber's expected =
   /// amps × the price for ITS category that month/branch, via a join to
-  /// monthly_prices (a category with no price set yields due 0 → counts paid).
+  /// monthly_prices. A (month,branch,category) with NO price row is NOT yet
+  /// billable, so its subscribers are counted UNPAID (not paid) — matching the
+  /// v7 spec "all subscribers start unpaid for the new month" (audit fix). An
+  /// explicit price of 0 still counts as paid (owes nothing).
   /// Shared FROM/JOIN/WHERE (+ positional args) for the paid/unpaid query, so the
   /// row fetch and the COUNT use identical logic. The returned [sql] begins at
   /// `FROM subscribers s ...`. Arg order follows the `?` placeholders:
@@ -484,7 +487,6 @@ class SubscriberRepository {
     String? category,
   }) {
     const main = DbHelper.kMainBranchId;
-    final String operator = isPaid ? '>=' : '<';
     final args = <dynamic>[month];
     // Receipts sub-query is branch-scoped (a shared subscriber id can carry
     // receipts in >1 branch — count only this branch's). null = all branches.
@@ -521,7 +523,7 @@ class SubscriberRepository {
         ON mp.month = ?
         AND mp.category = IFNULL(s.category, 'standard')
         AND IFNULL(mp.branch_id, '$main') = IFNULL(s.branch_id, '$main')
-      WHERE (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0)) $operator (s.amps * COALESCE(mp.price_per_amp, 0)) ${outerScopes.join(' ')}
+      WHERE ${isPaid ? "mp.price_per_amp IS NOT NULL AND (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0)) >= (s.amps * mp.price_per_amp)" : "(mp.price_per_amp IS NULL OR (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0)) < (s.amps * mp.price_per_amp))"} ${outerScopes.join(' ')}
     """;
     return (sql: sql, args: args);
   }

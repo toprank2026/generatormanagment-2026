@@ -113,14 +113,22 @@ void main() {
       await subs.insert(sub('a', 'A', 'c1', SubscriberCategory.standard));
       await subs.insert(sub('b', 'B', 'c2', SubscriberCategory.standard));
 
-      // Before any price: due 0 → everyone counts as paid.
+      // Before any price: NO price row → not yet billable → everyone UNPAID
+      // (audit fix: a missing price is no longer silently counted as "paid").
       expect(
           (await subs.getByPaymentStatus(
                   month: month, isPaid: false, branchId: main))
+              .map((s) => s.id)
+              .toSet(),
+          {'a', 'b'});
+      // ...and none are "paid" while unpriced.
+      expect(
+          (await subs.getByPaymentStatus(
+                  month: month, isPaid: true, branchId: main))
               .length,
           0);
 
-      // Add a non-zero standard price → due > 0, no receipts → all unpaid.
+      // Add a non-zero standard price → due > 0, no receipts → still all unpaid.
       await prices.insert(MonthlyPrice(
           month: month,
           pricePerAmp: 1500,
@@ -130,12 +138,13 @@ void main() {
       final unpaid = await subs.getByPaymentStatus(
           month: month, isPaid: false, branchId: main);
       expect(unpaid.map((s) => s.id).toSet(), {'a', 'b'});
-      // And the price is scoped to THIS month only (a different month stays $0).
+      // A different month is also unpriced → its subscribers are unpaid too.
       expect(
           (await subs.getByPaymentStatus(
                   month: '2026-08', isPaid: false, branchId: main))
-              .length,
-          0);
+              .map((s) => s.id)
+              .toSet(),
+          {'a', 'b'});
     });
   });
 }

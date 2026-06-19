@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show Colors;
 import 'package:get/get.dart';
 import 'package:uuid/uuid.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
@@ -197,7 +198,13 @@ class BillingController extends GetxController {
 
     MonthlyPrice? mp = await _priceRepo.getByMonth(selectedMonth.value,
         branchId: branchId, category: sub.category);
-    if (mp == null) return null;
+    if (mp == null) {
+      // No tariff set for this (month, branch, category) — can't bill. Tell the
+      // operator instead of silently doing nothing (audit fix).
+      Get.snackbar('error'.tr, 'no_price_set'.tr,
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      return null;
+    }
 
     final double due = await getDueAmount(sub, selectedMonth.value);
 

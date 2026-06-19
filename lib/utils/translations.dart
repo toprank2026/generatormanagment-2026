@@ -89,6 +89,7 @@ class Messages extends Translations {
       'amps_to_discount': 'Amps to discount',
       'discount_amount': 'Discount amount',
       'amount_to_pay': 'Amount to pay',
+      'no_price_set': 'No price set for this tariff this month — set it first',
       // P3 — sync upload error reason
       'sync_disabled_plan': 'Sync is not available on your current plan',
       'paid_subscribers': 'Paid Subscribers',
@@ -486,6 +487,7 @@ class Messages extends Translations {
       'amps_to_discount': 'عدد الأمبيرات المخصومة',
       'discount_amount': 'مبلغ الخصم',
       'amount_to_pay': 'المبلغ المطلوب',
+      'no_price_set': 'لا يوجد سعر محدد لهذه الفئة هذا الشهر — حدّده أولاً',
       // P3 — سبب فشل رفع المزامنة
       'sync_disabled_plan': 'المزامنة غير متاحة في خطتك الحالية',
       'paid_subscribers': 'المشتركين المسددين',
