@@ -135,6 +135,25 @@ class BoardRepository {
         0;
     return n > 0;
   }
+
+  /// COUNT of boards in scope (no row hydration) — for the dashboard.
+  Future<int> countByBranch({String? accountantId, String? branchId}) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>[];
+    final args = <dynamic>[];
+    if (accountantId != null) {
+      clauses.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
+    final where = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
+    return Sqflite.firstIntValue(
+            await db.rawQuery('SELECT COUNT(*) FROM boards $where', args)) ??
+        0;
+  }
 }
 
 class CircuitRepository {
@@ -215,6 +234,26 @@ class CircuitRepository {
       offset: limit < 0 ? null : offset,
     );
     return List.generate(maps.length, (i) => Circuit.fromMap(maps[i]));
+  }
+
+  /// COUNT of circuits in the active branch (no row hydration, no N+1 over
+  /// boards) — for the dashboard.
+  Future<int> countByBranch({String? accountantId, String? branchId}) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>[];
+    final args = <dynamic>[];
+    if (accountantId != null) {
+      clauses.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
+    final where = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
+    return Sqflite.firstIntValue(
+            await db.rawQuery('SELECT COUNT(*) FROM circuits $where', args)) ??
+        0;
   }
 
   /// R1: does another circuit (other than [exceptId]) under the SAME board
@@ -432,19 +471,20 @@ class SubscriberRepository {
   /// expected due. Due is **category-aware** (R4): each subscriber's expected =
   /// amps × the price for ITS category that month/branch, via a join to
   /// monthly_prices (a category with no price set yields due 0 → counts paid).
-  Future<List<Subscriber>> getByPaymentStatus({
+  /// Shared FROM/JOIN/WHERE (+ positional args) for the paid/unpaid query, so the
+  /// row fetch and the COUNT use identical logic. The returned [sql] begins at
+  /// `FROM subscribers s ...`. Arg order follows the `?` placeholders:
+  ///   inner receipts: month [, branch]   mp join: month
+  ///   outer: [accountant] [branch] [category]
+  ({String sql, List<dynamic> args}) _paymentStatusFrom({
     required String month,
     required bool isPaid,
     String? accountantId,
     String? branchId,
     String? category,
-  }) async {
-    final db = await _dbHelper.database;
+  }) {
     const main = DbHelper.kMainBranchId;
     final String operator = isPaid ? '>=' : '<';
-    // Arg order follows the `?` placeholders below:
-    //   inner receipts: month [, branch]   mp join: month
-    //   outer: [accountant] [branch] [category]
     final args = <dynamic>[month];
     // Receipts sub-query is branch-scoped (a shared subscriber id can carry
     // receipts in >1 branch — count only this branch's). null = all branches.
@@ -466,10 +506,9 @@ class SubscriberRepository {
       outerScopes.add("AND IFNULL(s.category, 'standard') = ?");
       args.add(category);
     }
-
     final String sql =
         """
-      SELECT s.* FROM subscribers s
+      FROM subscribers s
       LEFT JOIN (
         SELECT subscriber_id,
                SUM(paid_amount) as total_paid,
@@ -484,11 +523,42 @@ class SubscriberRepository {
         AND IFNULL(mp.branch_id, '$main') = IFNULL(s.branch_id, '$main')
       WHERE (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0)) $operator (s.amps * COALESCE(mp.price_per_amp, 0)) ${outerScopes.join(' ')}
     """;
+    return (sql: sql, args: args);
+  }
 
-    final List<Map<String, dynamic>> maps = await db.rawQuery(sql, args);
+  Future<List<Subscriber>> getByPaymentStatus({
+    required String month,
+    required bool isPaid,
+    String? accountantId,
+    String? branchId,
+    String? category,
+    int? limit,
+    int? offset,
+  }) async {
+    final db = await _dbHelper.database;
+    final q = _paymentStatusFrom(
+      month: month,
+      isPaid: isPaid,
+      accountantId: accountantId,
+      branchId: branchId,
+      category: category,
+    );
+    final args = [...q.args];
+    String tail = '';
+    if (limit != null) {
+      tail = ' LIMIT ?';
+      args.add(limit);
+      if (offset != null) {
+        tail += ' OFFSET ?';
+        args.add(offset);
+      }
+    }
+    final maps = await db.rawQuery('SELECT s.* ${q.sql}$tail', args);
     return List.generate(maps.length, (i) => Subscriber.fromMap(maps[i]));
   }
 
+  /// COUNT of paid/unpaid subscribers WITHOUT hydrating rows (was building and
+  /// discarding the full List just for .length — twice per dashboard refresh).
   Future<int> countByPaymentStatus({
     required String month,
     required bool isPaid,
@@ -496,14 +566,64 @@ class SubscriberRepository {
     String? branchId,
     String? category,
   }) async {
-    final list = await getByPaymentStatus(
+    final db = await _dbHelper.database;
+    final q = _paymentStatusFrom(
       month: month,
       isPaid: isPaid,
       accountantId: accountantId,
       branchId: branchId,
       category: category,
     );
-    return list.length;
+    final r = await db.rawQuery('SELECT COUNT(*) as c ${q.sql}', q.args);
+    return (r.isNotEmpty ? r.first['c'] as int? : 0) ?? 0;
+  }
+
+  /// COUNT of subscribers in scope (no row hydration) — for the dashboard.
+  /// Scopes with plain `branch_id = ?` to match [getAll]/[getByPaymentStatus].
+  Future<int> countByBranch({String? accountantId, String? branchId}) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>[];
+    final args = <dynamic>[];
+    if (accountantId != null) {
+      clauses.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
+    final where = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
+    final r =
+        await db.rawQuery('SELECT COUNT(*) as c FROM subscribers $where', args);
+    return (r.isNotEmpty ? r.first['c'] as int? : 0) ?? 0;
+  }
+
+  /// Σ amps grouped by category (normalized) in scope — lets the dashboard
+  /// compute expected = Σ ampsByCategory[c] × price[c] WITHOUT loading every row.
+  Future<Map<String, double>> ampsByCategory(
+      {String? accountantId, String? branchId}) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>[];
+    final args = <dynamic>[];
+    if (accountantId != null) {
+      clauses.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
+    final where = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
+    final rows = await db.rawQuery(
+      "SELECT IFNULL(category,'standard') as cat, SUM(amps) as amps "
+      "FROM subscribers $where GROUP BY IFNULL(category,'standard')",
+      args,
+    );
+    final map = <String, double>{};
+    for (final row in rows) {
+      map[row['cat'] as String] = ((row['amps'] as num?) ?? 0).toDouble();
+    }
+    return map;
   }
 
   Future<int> countByBoard(String boardId,

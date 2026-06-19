@@ -107,6 +107,38 @@ void main() {
     expect(20000 - collected - discount, 4000); // == B's true remaining
   });
 
+  test('scale aggregates: COUNT matches list length, + pagination + amps', () async {
+    await prices.insert(MonthlyPrice(
+        month: month,
+        pricePerAmp: 1000,
+        branchId: main,
+        category: SubscriberCategory.standard));
+    for (var i = 0; i < 5; i++) {
+      await subs.insert(sub('S$i')); // amps 10, unpaid (no receipt)
+    }
+    // countByPaymentStatus (COUNT(*)) == getByPaymentStatus(...).length
+    final unpaidCount = await subs.countByPaymentStatus(
+        month: month, isPaid: false, branchId: main);
+    final unpaidList = await subs.getByPaymentStatus(
+        month: month, isPaid: false, branchId: main);
+    expect(unpaidCount, unpaidList.length);
+    expect(unpaidCount, 5);
+    // pagination: two non-overlapping pages of 2.
+    final p1 = await subs.getByPaymentStatus(
+        month: month, isPaid: false, branchId: main, limit: 2, offset: 0);
+    final p2 = await subs.getByPaymentStatus(
+        month: month, isPaid: false, branchId: main, limit: 2, offset: 2);
+    expect(p1.length, 2);
+    expect(p2.length, 2);
+    expect(
+        p1.map((s) => s.id).toSet().intersection(p2.map((s) => s.id).toSet()),
+        isEmpty);
+    // count + Σ amps by category (no row hydration).
+    expect(await subs.countByBranch(branchId: main), 5);
+    final amps = await subs.ampsByCategory(branchId: main);
+    expect(amps[SubscriberCategory.standard], 50.0); // 5 × 10
+  });
+
   test('v7 schema carries discount columns (round-trip)', () async {
     await subs.insert(sub('A'));
     await receipts

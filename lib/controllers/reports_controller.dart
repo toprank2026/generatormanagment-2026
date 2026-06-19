@@ -95,10 +95,11 @@ class ReportsController extends GetxController {
       final scope = _scope;
       final branch = _branchScope;
 
-      // 1. Subscribers & Amps (branch-scoped)
-      final subs = await _subRepo.getAll(limit: 10000, branchId: branch);
-      totalSubscribers.value = subs.length;
-      totalAmps.value = subs.fold(0.0, (sum, s) => sum + s.amps);
+      // 1. Subscribers & Amps (branch-scoped) — SQL aggregates, NOT a full
+      //    materialization of every subscriber row (audit: scale).
+      totalSubscribers.value = await _subRepo.countByBranch(branchId: branch);
+      final ampsByCat = await _subRepo.ampsByCategory(branchId: branch);
+      totalAmps.value = ampsByCat.values.fold(0.0, (sum, a) => sum + a);
 
       // 2. Per-category prices for the month (R4). The single "price per amp"
       //    figure shown on the report uses the standard category as representative.
@@ -108,11 +109,12 @@ class ReportsController extends GetxController {
       goldPrice.value = prices[SubscriberCategory.gold] ?? 0.0;
       commercialPrice.value = prices[SubscriberCategory.commercial] ?? 0.0;
 
-      // 3. Financials. Expected is CATEGORY-AWARE: Σ amps × price[category] (R4).
+      // 3. Financials. Expected is CATEGORY-AWARE: Σ amps × price[category] (R4),
+      //    from the per-category amp sums above.
       double expected = 0.0;
-      for (final s in subs) {
-        expected += s.amps * (prices[s.category] ?? 0.0);
-      }
+      ampsByCat.forEach((cat, amps) {
+        expected += amps * (prices[cat] ?? 0.0);
+      });
       expectedTotal.value = expected;
       collectedTotal.value = await _receiptRepo.getCollectedSum(m,
           accountantId: scope, branchId: branch);

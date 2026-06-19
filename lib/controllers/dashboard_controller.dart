@@ -1,7 +1,6 @@
 import 'package:get/get.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
-import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/month_controller.dart';
@@ -69,22 +68,24 @@ class DashboardController extends GetxController {
       // branch. Only the money (collected) is additionally per-accountant.
       final scope = _scope; // accountant id (null = owner/all) — money only
       final branch = _branchScope; // active branch (null = consolidated/all)
-      // 1. Subscribers & Amps (branch-scoped)
-      final subs = await _subRepo.getAll(limit: 10000, branchId: branch);
-      totalSubscribers.value = subs.length;
-      totalAmps.value = subs.fold(0.0, (sum, s) => sum + s.amps);
+      // 1. Subscribers & Amps (branch-scoped) — SQL aggregates, NOT a full
+      //    materialization of every subscriber row (audit: scale).
+      totalSubscribers.value = await _subRepo.countByBranch(branchId: branch);
+      final ampsByCat = await _subRepo.ampsByCategory(branchId: branch);
+      totalAmps.value = ampsByCat.values.fold(0.0, (sum, a) => sum + a);
 
       // 2. Financials for the SELECTED month. Expected is CATEGORY-AWARE (R4):
       //    each subscriber's due = amps × the price for ITS category this
-      //    month/branch (a category with no price set contributes 0).
+      //    month/branch (a category with no price set contributes 0). Computed
+      //    from the per-category amp sums above.
       final month = currentMonth.value;
       final prices = await _priceRepo.pricesForMonth(month, branchId: branch);
       // Month pricing check: has the owner set any price for this month/branch?
       hasPriceForMonth.value = prices.isNotEmpty;
       double expected = 0.0;
-      for (final s in subs) {
-        expected += s.amps * (prices[s.category] ?? 0.0);
-      }
+      ampsByCat.forEach((cat, amps) {
+        expected += amps * (prices[cat] ?? 0.0);
+      });
 
       // 3. Monthly Revenue = collected valid receipts this month (active branch +
       //    this accountant; owner = all) (R6/R9).
@@ -111,17 +112,12 @@ class DashboardController extends GetxController {
         branchId: branch,
       );
 
-      // 5. Boards Count (branch-scoped)
-      final boardsList = await _boardRepo.getAll(branchId: branch);
-      boardsCount.value = boardsList.length;
+      // 5. Boards Count (branch-scoped) — COUNT, not a full getAll.
+      boardsCount.value = await _boardRepo.countByBranch(branchId: branch);
 
-      // 6. Circuits Count (branch-scoped)
-      final List<Circuit> allCircuits = [];
-      for (var b in boardsList) {
-        final circs = await _circuitRepo.getByBoardId(b.id, branchId: branch);
-        allCircuits.addAll(circs);
-      }
-      circuitsCount.value = allCircuits.length;
+      // 6. Circuits Count (branch-scoped) — single COUNT, not an N+1 loop that
+      //    fetched and concatenated every circuit row per board (audit: scale).
+      circuitsCount.value = await _circuitRepo.countByBranch(branchId: branch);
     } catch (e) {
       print("Error loading dashboard stats: $e");
     } finally {
