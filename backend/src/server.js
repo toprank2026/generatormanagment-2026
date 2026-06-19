@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const morgan = require('morgan');
 
 const env = require('./config/env');
@@ -24,6 +25,10 @@ const publicRoutes = require('./routes/public');
 function buildApp() {
   const app = express();
 
+  // Security headers. CSP is disabled because the admin SPA (served from this
+  // same app at /admin) relies on inline scripts/styles; the rest of helmet's
+  // hardening (HSTS, noSniff, frameguard, etc.) still applies.
+  app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors());
   app.use(express.json({ limit: '2mb' }));
   app.use(express.urlencoded({ extended: true }));
@@ -69,6 +74,10 @@ function buildApp() {
 }
 
 async function start() {
+  // Fail fast in production on insecure secrets (placeholder JWT_SECRET /
+  // default ADMIN_PASSWORD); warns-only outside production.
+  env.validateSecrets();
+
   // Ensure the backup directory exists before serving uploads.
   fs.mkdirSync(env.BACKUP_DIR, { recursive: true });
 

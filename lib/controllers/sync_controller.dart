@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
@@ -78,7 +79,10 @@ class SyncController extends GetxController {
   Future<void> maybeAutoSync() async {
     // Offline-only mode: the active plan disables sync — never auto-push.
     if (!_canSync) return;
-    if (isSyncing.value || _askOpen) return;
+    // Never push while a pull / branch-switch holds isPulling (audit: a
+    // heartbeat push concurrent with a pull can resurrect a remotely-deleted
+    // row or race the branch-switch clear).
+    if (isSyncing.value || isPulling.value || _askOpen) return;
     await refreshPending();
     if (!_loggedIn || pendingCount.value == 0) return;
     if (!await _net.isOnline()) return;
@@ -119,7 +123,8 @@ class SyncController extends GetxController {
   Future<void> syncNow({bool silent = false}) async {
     // Offline-only mode: sync is disabled by the active plan — do nothing.
     if (!_canSync) return;
-    if (isSyncing.value) return;
+    // Don't push while a pull / branch-switch is in flight (see maybeAutoSync).
+    if (isSyncing.value || isPulling.value) return;
     if (!await _net.isOnline()) {
       lastSyncError.value = 'network';
       if (!silent) Get.snackbar('sync'.tr, 'online_only'.tr);
@@ -300,6 +305,12 @@ class SyncController extends GetxController {
         final core = Get.find<CoreController>();
         await core.loadBoards();
         await core.loadSubscribers();
+      }
+      // Refresh the billing price cache too, else the Monthly Pricing card and
+      // the collect-payment discount preview stay stale after a pull (audit).
+      if (Get.isRegistered<BillingController>()) {
+        final b = Get.find<BillingController>();
+        await b.loadMonthPrice(b.selectedMonth.value);
       }
     } catch (_) {}
   }

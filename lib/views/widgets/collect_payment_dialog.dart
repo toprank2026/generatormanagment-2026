@@ -192,17 +192,26 @@ Future<Receipt?> showCollectPaymentDialog({
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: _kBlue),
               onPressed: () async {
-                final receipt = await controller.collectPayment(
-                  subscriber,
-                  double.tryParse(amountCtrl.text.trim()) ?? 0,
-                  fullPayment: full,
-                  discountType: full ? discountType : 'none',
-                  discountAmps:
-                      double.tryParse(discAmpsCtrl.text.trim()) ?? 0,
-                  discountValueInput:
-                      double.tryParse(discValCtrl.text.trim()) ?? 0,
-                );
-                Get.back(result: receipt);
+                // Audit: a throw in collectPayment must not leave the dialog
+                // stuck open with no feedback — surface it and close.
+                try {
+                  final receipt = await controller.collectPayment(
+                    subscriber,
+                    double.tryParse(amountCtrl.text.trim()) ?? 0,
+                    fullPayment: full,
+                    discountType: full ? discountType : 'none',
+                    discountAmps:
+                        double.tryParse(discAmpsCtrl.text.trim()) ?? 0,
+                    discountValueInput:
+                        double.tryParse(discValCtrl.text.trim()) ?? 0,
+                  );
+                  Get.back(result: receipt);
+                } catch (e) {
+                  Get.back(result: null);
+                  Get.snackbar('error'.tr, '$e',
+                      backgroundColor: Colors.redAccent,
+                      colorText: Colors.white);
+                }
               },
               child: Text('confirm_print'.tr),
             ),

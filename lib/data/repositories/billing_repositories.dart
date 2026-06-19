@@ -195,4 +195,32 @@ class ReceiptRepository {
     }
     return 0.0;
   }
+
+  /// Σ of WAIVED discount (discount_value) for the month (same scope as
+  /// [getCollectedSum]). The discount is NOT cash, so it is excluded from
+  /// collected/revenue — but it DOES reduce what is still owed, so the
+  /// "remaining" figure must subtract it (audit: discount lockstep). Coverage
+  /// for paid/unpaid already counts paid_amount + discount_value.
+  Future<double> getDiscountSum(String month,
+      {String? accountantId, String? branchId}) async {
+    final db = await _dbHelper.database;
+    final scopes = <String>[];
+    final args = <dynamic>[month];
+    if (accountantId != null) {
+      scopes.add('AND accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      scopes.add('AND branch_id = ?');
+      args.add(branchId);
+    }
+    final result = await db.rawQuery(
+      "SELECT SUM(IFNULL(discount_value,0)) as total FROM receipts WHERE month = ? AND status = 'valid' ${scopes.join(' ')}",
+      args,
+    );
+    if (result.isNotEmpty && result.first['total'] != null) {
+      return (result.first['total'] as num).toDouble();
+    }
+    return 0.0;
+  }
 }

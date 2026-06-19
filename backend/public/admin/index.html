@@ -454,17 +454,19 @@ function newAccountPopup(name,username){
    ============================================================ */
 function fmtDate(iso){
   if(!iso) return "—";
-  var d=new Date(iso); if(isNaN(d)) return esc(iso);
+  // Fallback returns the RAW value (callers render via textContent / el({text}),
+  // which escapes for us — esc() here would double-encode, e.g. "&lt;b&gt;x").
+  var d=new Date(iso); if(isNaN(d)) return String(iso);
   return d.toLocaleString(undefined,{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
 }
 function fmtDateShort(iso){
   if(!iso) return "—";
-  var d=new Date(iso); if(isNaN(d)) return esc(iso);
+  var d=new Date(iso); if(isNaN(d)) return String(iso); // raw fallback (see fmtDate)
   return d.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"});
 }
 function fmtPrice(p){
   if(p==null||p==="") return "—";
-  var n=Number(p); if(isNaN(n)) return esc(p);
+  var n=Number(p); if(isNaN(n)) return String(p); // raw fallback (see fmtDate)
   try{ return new Intl.NumberFormat().format(n)+" د.ع"; }catch(e){ return n+" د.ع"; }
 }
 function statusBadge(status){

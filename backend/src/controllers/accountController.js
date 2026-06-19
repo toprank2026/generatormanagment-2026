@@ -103,18 +103,37 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     SyncRecord.countDocuments({ user: userId, entity: 'circuits', deleted: false, ...branchMatch }),
   ]);
 
-  // Category-aware price map for the month/branch: { [category]: price_per_amp }.
-  // Each subscriber's due uses the price for its own category (default 'standard'
-  // for legacy rows), so the expected total is Σ amps × priceMap[category].
-  const priceMap = {};
+  // Per-branch, per-category price map keyed by "<branchKey>|<category>" where
+  // branchKey = data.branch_id || 'main' (the app's IFNULL(branch_id,'main')
+  // convention). This preserves each branch's OWN tariffs in the CONSOLIDATED
+  // (branchId=null) view — previously all branches collapsed into one category
+  // map and the last row won, so per-branch pricing was lost. In single-branch
+  // mode (branchId set) every row shares one branchKey, so behavior is unchanged.
+  const priceByBranchCat = {};
+  // A flat per-category map for the REPORTED branch (single-branch view) or, when
+  // consolidated, the merged category prices — used only for the back-compat
+  // pricePerAmp / categoryPrices payload fields, NOT for per-subscriber math.
+  const reportedPriceMap = {};
   for (const row of priceRows) {
     const pd = row.data || {};
     const cat = pd.category || 'standard';
-    priceMap[cat] = num(pd.price_per_amp ?? pd.price ?? 0);
+    const bkey = pd.branch_id || 'main';
+    const price = num(pd.price_per_amp ?? pd.price ?? 0);
+    priceByBranchCat[`${bkey}|${cat}`] = price;
+    // For the reported map, prefer the explicitly-requested branch; when
+    // consolidated, the last seen price per category (display only).
+    if (!branchId || bkey === branchId) reportedPriceMap[cat] = price;
   }
+  const priceFor = (bid, cat) =>
+    num(priceByBranchCat[`${bid || 'main'}|${cat || 'standard'}`] || 0);
+
   // Back-compat single price reported in the payload: prefer 'standard', else the
-  // first category present (or 0). Per-subscriber math below uses priceMap.
-  const pricePerAmp = priceMap.standard != null ? priceMap.standard : num(Object.values(priceMap)[0] ?? 0);
+  // first category present (or 0). Per-subscriber math below uses priceByBranchCat.
+  const pricePerAmp =
+    reportedPriceMap.standard != null
+      ? reportedPriceMap.standard
+      : num(Object.values(reportedPriceMap)[0] ?? 0);
+  const priceMap = reportedPriceMap;
 
   // True when a row belongs to the selected accountant (or no filter set).
   const inScope = (data) => !accountantId || (data || {}).accountant_id === accountantId;
@@ -149,7 +168,10 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     const data = s.data || {};
     const amps = num(data.amps);
     totalAmps += amps;
-    const catPrice = num(priceMap[data.category || 'standard'] || 0);
+    // Price from the subscriber's OWN branch + category (consolidated view keeps
+    // per-branch tariffs distinct). In single-branch mode all rows share one
+    // branchKey so this is identical to the old per-category lookup.
+    const catPrice = priceFor(data.branch_id, data.category);
     const due = amps * catPrice;
     expected += due;
     const coverage = coverageBySubscriber.get(data.id || s.localId) || 0;
@@ -203,6 +225,10 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
  * dashboard and monthly reports. Entities with no rows are reported as 0.
  */
 const getMyStats = asyncHandler(async (req, res) => {
+  // The caller's explicit ?month=YYYY-MM is honored as-is; only an absent or
+  // malformed value falls back to the current month (server UTC). The UTC
+  // fallback can differ from the device's local month near a month boundary, so
+  // the app always passes its own selected month explicitly.
   const requested = String(req.query.month || '');
   const month = /^\d{4}-\d{2}$/.test(requested)
     ? requested

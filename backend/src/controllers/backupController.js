@@ -6,6 +6,7 @@ const Backup = require('../models/Backup');
 const env = require('../config/env');
 const asyncHandler = require('../utils/asyncHandler');
 const { serializeBackup } = require('../utils/serialize');
+const { effectiveOwnerId } = require('../utils/effectiveOwner');
 const { HttpError } = require('../middleware/error');
 
 /** Absolute directory holding a user's backups. */
@@ -49,33 +50,39 @@ const upload = asyncHandler(async (req, res) => {
     throw new HttpError(400, 'No file uploaded (expected field "file")', 'NO_FILE');
   }
 
+  // Scope to the effective owner so an accountant operates on the OWNER's backup
+  // namespace (matching sync/account effective-owner scoping); owners/admins use
+  // their own id. NOTE: multer writes the file into env.BACKUP_DIR/<owner> via
+  // the storage destination (also effectiveOwner-keyed — see routes/backup.js).
+  const ownerId = effectiveOwnerId(req.user);
   const backup = await Backup.create({
-    user: req.user._id,
+    user: ownerId,
     filename: req.file.filename,
     size: req.file.size,
     note: req.body.note || null,
     appVersion: req.body.appVersion || null,
   });
 
-  await pruneOldBackups(req.user._id);
+  await pruneOldBackups(ownerId);
 
   res.status(201).json({ backup: serializeBackup(backup) });
 });
 
 /** GET /api/backup (auth) */
 const list = asyncHandler(async (req, res) => {
-  const backups = await Backup.find({ user: req.user._id }).sort({ createdAt: -1 });
+  const backups = await Backup.find({ user: effectiveOwnerId(req.user) }).sort({ createdAt: -1 });
   res.status(200).json({ backups: backups.map(serializeBackup) });
 });
 
 /** GET /api/backup/:id/download (auth) — streams raw bytes. */
 const download = asyncHandler(async (req, res) => {
-  const backup = await Backup.findOne({ _id: req.params.id, user: req.user._id });
+  const ownerId = effectiveOwnerId(req.user);
+  const backup = await Backup.findOne({ _id: req.params.id, user: ownerId });
   if (!backup) {
     throw new HttpError(404, 'Backup not found', 'BACKUP_NOT_FOUND');
   }
 
-  const fp = backupFilePath(req.user._id, backup.filename);
+  const fp = backupFilePath(ownerId, backup.filename);
   if (!fs.existsSync(fp)) {
     throw new HttpError(404, 'Backup file missing on server', 'BACKUP_FILE_MISSING');
   }
@@ -96,12 +103,13 @@ const download = asyncHandler(async (req, res) => {
 
 /** DELETE /api/backup/:id (auth) */
 const remove = asyncHandler(async (req, res) => {
-  const backup = await Backup.findOne({ _id: req.params.id, user: req.user._id });
+  const ownerId = effectiveOwnerId(req.user);
+  const backup = await Backup.findOne({ _id: req.params.id, user: ownerId });
   if (!backup) {
     throw new HttpError(404, 'Backup not found', 'BACKUP_NOT_FOUND');
   }
 
-  const fp = backupFilePath(req.user._id, backup.filename);
+  const fp = backupFilePath(ownerId, backup.filename);
   try {
     if (fs.existsSync(fp)) fs.unlinkSync(fp);
   } catch (e) {

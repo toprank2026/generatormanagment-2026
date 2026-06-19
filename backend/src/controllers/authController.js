@@ -97,10 +97,19 @@ const login = asyncHandler(async (req, res) => {
     return;
   }
 
-  // Bind / validate device. Throws 403 DEVICE_LIMIT when a NEW device exceeds
-  // the active plan's maxDevices.
-  if (device) await upsertDevice(user, device);
-  await user.save();
+  // Bind / validate the device WHEN PRESENT. The mobile app always sends one
+  // (so maxDevices is enforced for every real app login); the browser admin /
+  // owner panel logs in through this same endpoint WITHOUT a device, so we must
+  // not hard-require it or the web panel is locked out. Throws 403 DEVICE_LIMIT
+  // when a NEW device exceeds the active plan's maxDevices.
+  // NOTE: omitting the device still yields a usable token — closing that
+  // monetization bypass robustly requires per-device membership checks on the
+  // DATA routes (sync/backup), tracked as a Phase-2 item, since it can't be
+  // distinguished from a legit web-panel login here.
+  if (device && typeof device === 'object') {
+    await upsertDevice(user, device);
+    await user.save();
+  }
 
   const token = signToken(user);
   const account = serializeAccount(user, device && device.deviceId);

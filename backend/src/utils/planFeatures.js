@@ -1,6 +1,7 @@
 'use strict';
 
 const Plan = require('../models/Plan');
+const { isSubscriptionActive } = require('./serialize');
 
 /**
  * Resolve the capability flags for a plan by its code. Each flag is enabled
@@ -34,7 +35,11 @@ async function planFeaturesByCode(code) {
  */
 async function featuresForUser(user) {
   const sub = user && user.subscription;
-  if (sub && sub.status === 'active' && sub.planCode) {
+  // An EXPIRED plan (status 'active' but past expiresAt) must stop being treated
+  // as active — isSubscriptionActive enforces the expiry. Without an active plan
+  // (none/pending/expired/rejected) every flag defaults to true, exactly as
+  // before (the contract: no active plan => no capability is restricted).
+  if (sub && isSubscriptionActive(sub) && sub.planCode) {
     return planFeaturesByCode(sub.planCode);
   }
   return { sync: true, backup: true, ownerPanel: true, multiBranch: false };

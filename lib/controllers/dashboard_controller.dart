@@ -91,8 +91,13 @@ class DashboardController extends GetxController {
       totalCollected.value = await _receiptRepo.getCollectedSum(month,
           accountantId: scope, branchId: branch);
 
-      // Monthly Remaining Fees = expected − collected (R6/R9).
-      totalDue.value = expected - totalCollected.value;
+      // Monthly Remaining Fees = expected − collected − waived discount. The
+      // discount reduces what is owed (coverage = paid + discount), so it must
+      // be subtracted here too, matching the backend dashboard and the
+      // paid/unpaid counts (audit: discount lockstep). Collected stays cash-only.
+      final discount = await _receiptRepo.getDiscountSum(month,
+          accountantId: scope, branchId: branch);
+      totalDue.value = expected - totalCollected.value - discount;
 
       // 4. Paid / Unpaid Counts — category-aware, branch-scoped (R4).
       paidCount.value = await _subRepo.countByPaymentStatus(

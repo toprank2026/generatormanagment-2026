@@ -308,7 +308,10 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                           ),
                         ),
                         onTap: () {
-                          Get.to(() => SubscriberDetailScreen(subscriber: sub));
+                          // Audit: reload on return so a payment collected in
+                          // the detail screen updates this (esp. Paid/Unpaid) list.
+                          Get.to(() => SubscriberDetailScreen(subscriber: sub))
+                              ?.then((_) => _reload());
                         },
                       ),
                     );

@@ -474,8 +474,22 @@ class AuthController extends GetxController {
     if (wipeLocal && Get.isRegistered<SyncController>()) {
       try {
         final sync = Get.find<SyncController>();
-        await sync.syncNow(silent: true); // best-effort: preserve unsynced edits
-        await sync.deleteLocalData(silent: true);
+        // Only wipe when there is a RECOVERABLE server copy (online + the plan
+        // enables sync) AND the pre-wipe push fully drained the outbox. If we're
+        // offline, sync is disabled, or any change is still pending, KEEP the
+        // local data — wiping it would be permanent loss with no way to re-pull
+        // (audit: 3 logout-wipe data-loss findings).
+        if (canSync && await _net.isOnline()) {
+          await sync.syncNow(silent: true);
+          await sync.refreshPending();
+          if (sync.pendingCount.value == 0) {
+            await sync.deleteLocalData(silent: true);
+          } else {
+            Log.w('logout wipe skipped: ${sync.pendingCount.value} pending');
+          }
+        } else {
+          Log.w('logout wipe skipped: offline or sync disabled');
+        }
       } catch (e) {
         Log.w('logout local wipe skipped: $e');
       }

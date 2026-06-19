@@ -116,7 +116,12 @@ class ReportsController extends GetxController {
       expectedTotal.value = expected;
       collectedTotal.value = await _receiptRepo.getCollectedSum(m,
           accountantId: scope, branchId: branch);
-      remainingTotal.value = expectedTotal.value - collectedTotal.value;
+      // Remaining = expected − collected − waived discount (audit: discount
+      // lockstep with the dashboard, backend, and paid/unpaid counts).
+      final discountTotal = await _receiptRepo.getDiscountSum(m,
+          accountantId: scope, branchId: branch);
+      remainingTotal.value =
+          expectedTotal.value - collectedTotal.value - discountTotal;
       expensesTotal.value = await _expenseRepo.getTotalExpenses(m,
           accountantId: scope, branchId: branch);
       netProfit.value = collectedTotal.value - expensesTotal.value;

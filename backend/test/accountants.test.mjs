@@ -396,9 +396,12 @@ test('accountant sync push lands in the OWNER mirror; pull + stats resolve to it
   assert.equal(ownerPush.status, 200);
 
   const uname = uniqueUsername('acct');
+  // Grant the permissions this test's accountant exercises (subscribers + prices;
+  // receipts are always allowed). No branchId -> not branch-confined, so branch
+  // stamping is a no-op and the pushed rows land verbatim in the owner mirror.
   const created = await api('POST', '/api/account/accountants', {
     token: owner.token,
-    body: { name: 'Acct', username: uname, password: 'secret1' },
+    body: { name: 'Acct', username: uname, password: 'secret1', permissions: ['subscribers', 'prices'] },
   });
   assert.equal(created.status, 201);
   const acctLogin = await api('POST', '/api/auth/login', {

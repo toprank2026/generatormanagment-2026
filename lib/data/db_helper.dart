@@ -34,7 +34,7 @@ class DbHelper {
     final String path = testPath ?? await _defaultPath();
     return await openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -255,6 +255,10 @@ class DbHelper {
       await _addColumn(db, 'receipts', 'discount_value', 'REAL DEFAULT 0');
       await _addColumn(db, 'receipts', 'discount_amps', 'REAL');
     }
+    if (oldVersion < 8) {
+      // v8 (audit/scale): add indexes on the hot scope/join columns.
+      await _createV8Indexes(db);
+    }
   }
 
   Future<String> _defaultPath() async {
@@ -431,8 +435,31 @@ class DbHelper {
       'CREATE INDEX idx_receipts_subscriber ON receipts(subscriber_id)',
     );
 
-    // Sync change-capture (outbox + triggers).
+    // Sync change-capture (outbox + triggers) — MUST run before the v8 indexes,
+    // one of which is on sync_outbox.
     await _createSyncInfra(db);
+
+    await _createV8Indexes(db);
+  }
+
+  /// v8 (audit/scale): indexes for the hot scope/join columns that previously
+  /// caused full table scans on every dashboard/report/paid-unpaid load. All
+  /// `IF NOT EXISTS` so they're safe to (re)run from _onCreate AND _onUpgrade.
+  Future<void> _createV8Indexes(Database db) async {
+    const stmts = [
+      'CREATE INDEX IF NOT EXISTS idx_mp_lookup ON monthly_prices(month, branch_id, category)',
+      'CREATE INDEX IF NOT EXISTS idx_receipts_branch_month ON receipts(branch_id, month, status)',
+      'CREATE INDEX IF NOT EXISTS idx_receipts_sub_month ON receipts(subscriber_id, month, status)',
+      'CREATE INDEX IF NOT EXISTS idx_subscribers_branch_cat ON subscribers(branch_id, category)',
+      'CREATE INDEX IF NOT EXISTS idx_subscribers_branch_status ON subscribers(branch_id, status, circuit_id)',
+      'CREATE INDEX IF NOT EXISTS idx_circuits_board ON circuits(board_id, branch_id)',
+      'CREATE INDEX IF NOT EXISTS idx_boards_branch ON boards(branch_id)',
+      'CREATE INDEX IF NOT EXISTS idx_expenses_branch_date ON expenses(branch_id, date)',
+      'CREATE INDEX IF NOT EXISTS idx_outbox_entity_local ON sync_outbox(entity, local_id, seq)',
+    ];
+    for (final s in stmts) {
+      await db.execute(s);
+    }
   }
 
   Future<void> close() async {

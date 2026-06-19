@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
@@ -109,8 +110,11 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
               () => PaymentHistoryScreen(subscriber: widget.subscriber),
             ),
           ),
+          // Audit: gate on the fine-grained subscribers permission (matches the
+          // Add FAB + the boards/expenses screens), not the coarse isAdmin —
+          // an accountant GRANTED 'subscribers' could add but not edit/delete.
           Obx(
-            () => auth.isAdmin
+            () => auth.can(Perm.subscribers)
                 ? IconButton(
                     icon: const Icon(Icons.edit),
                     onPressed: () => Get.to(
@@ -120,7 +124,7 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
                 : const SizedBox.shrink(),
           ),
           Obx(
-            () => auth.isAdmin
+            () => auth.can(Perm.subscribers)
                 ? IconButton(
                     icon: const Icon(Icons.delete),
                     onPressed: () => _showDeleteConfirm(),

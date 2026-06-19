@@ -91,6 +91,22 @@ void main() {
     expect(collected, 6000); // the 4000 was waived, never received
   });
 
+  test('getDiscountSum returns waived discount only (lockstep: remaining)',
+      () async {
+    await subs.insert(sub('A'));
+    await receipts
+        .insert(rec('rA', 'A', paid: 6000, discount: 4000, type: 'value'));
+    await subs.insert(sub('B'));
+    await receipts.insert(rec('rB', 'B', paid: 6000)); // no discount
+    final discount = await receipts.getDiscountSum(month, branchId: main);
+    expect(discount, 4000);
+    // The aggregate "remaining" must be expected − collected − discount so it
+    // stays in lockstep with paid/unpaid coverage and the backend dashboard.
+    // expected = (10+10)*1000 = 20000; collected = 12000; discount = 4000.
+    final collected = await receipts.getCollectedSum(month, branchId: main);
+    expect(20000 - collected - discount, 4000); // == B's true remaining
+  });
+
   test('v7 schema carries discount columns (round-trip)', () async {
     await subs.insert(sub('A'));
     await receipts

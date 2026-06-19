@@ -50,6 +50,11 @@ async function ensurePlans() {
 
 /** Ensure a bootstrap admin from ADMIN_* env vars exists. */
 async function ensureAdmin() {
+  // Defense-in-depth: never seed/refresh the bootstrap admin in production with
+  // a missing/default ADMIN_PASSWORD. (server start() already fails fast via
+  // env.validateSecrets(); this also guards a seed invoked outside start().)
+  if (env.NODE_ENV === 'production') env.validateSecrets();
+
   const username = String(env.ADMIN_USERNAME).toLowerCase();
   const existing = await User.findOne({ username });
   if (existing) {

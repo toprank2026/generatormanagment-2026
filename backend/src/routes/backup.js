@@ -7,6 +7,7 @@ const multer = require('multer');
 const env = require('../config/env');
 const { requireAuth } = require('../middleware/auth');
 const { requireFeature } = require('../middleware/requireFeature');
+const { effectiveOwnerId } = require('../utils/effectiveOwner');
 const { upload, list, download, remove } = require('../controllers/backupController');
 
 const router = express.Router();
@@ -15,10 +16,12 @@ router.use(requireAuth);
 // Cloud backup is a per-plan capability; reject every backup endpoint when off.
 router.use(requireFeature('backup'));
 
-// Disk storage: BACKUP_DIR/<userId>/<timestamp>-moldati.db
+// Disk storage: BACKUP_DIR/<ownerId>/<timestamp>-moldati.db. Keyed by the
+// EFFECTIVE owner so an accountant writes into the owner's namespace (matching
+// the controller's list/download/delete/prune scoping).
 const storage = multer.diskStorage({
   destination(req, file, cb) {
-    const dir = path.join(env.BACKUP_DIR, String(req.user._id));
+    const dir = path.join(env.BACKUP_DIR, String(effectiveOwnerId(req.user)));
     fs.mkdir(dir, { recursive: true }, (err) => cb(err, dir));
   },
   filename(req, file, cb) {

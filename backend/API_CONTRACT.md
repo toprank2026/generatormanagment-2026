@@ -51,13 +51,19 @@ Authenticates, binds/validates the device, returns a JWT.
 { "token": "<jwt>", "account": { /* Account */ } }
 ```
 Errors: `401` bad credentials, `403` account blocked, `403 code=DEVICE_LIMIT`
-when the plan's `maxDevices` is exceeded by a new device.
+when the plan's `maxDevices` is exceeded by a new device. The `device` field is
+**optional** — the browser admin/owner web panel logs in without one, so a
+missing device does NOT fail; when a device IS sent (the mobile app always sends
+it) it is bound and `maxDevices` is enforced. (Closing the "omit device to skip
+the limit" bypass robustly requires per-device checks on the data routes — a
+Phase-2 item.) `429 code=RATE_LIMITED` when too many login/register attempts
+come from one IP (see **Rate limiting**).
 
 **Accountant logins.** When the matched user has `role:"accountant"` (a
 sub-account created via `POST /api/account/accountants`):
-- the password is verified normally, but device binding / `maxDevices` is **not**
-  enforced or mutated (accountants are device-exempt — `DEVICE_LIMIT` never fires
-  and no device is added);
+- the password is verified normally, and `device` is **optional** — device
+  binding / `maxDevices` is **not** enforced or mutated (accountants are
+  device-exempt — `DEVICE_LIMIT` never fires and no device is added);
 - the returned `subscription` (incl. `features`) is **inherited from the OWNER
   account** (`ownerId`), so an accountant is never `subscriptionBlocked` on its
   own (empty) subscription;
@@ -65,6 +71,10 @@ sub-account created via `POST /api/account/accountants`):
   `permissions`, `localId` (see the **Account** object).
 
 `GET /api/auth/me` applies the same inheritance for an accountant token.
+
+**Rate limiting.** `POST /api/auth/login` and `POST /api/auth/register` are
+IP-rate-limited (~10 requests / minute / IP). Exceeding the limit returns
+`429 { "code": "RATE_LIMITED", "message": "..." }`. (Disabled under the test env.)
 
 ### GET `/api/auth/me`  (auth)
 Returns the current account (used for offline-first re-validation on launch /
@@ -123,7 +133,60 @@ field `file` = the `.db` file; optional fields `note`, `appVersion`.
 ### GET `/api/backup/:id/download` → raw bytes, `Content-Type: application/octet-stream`
 ### DELETE `/api/backup/:id`       → `{ "ok": true }`
 
-Backups are stored per-account (quota: keep last N, default 10).
+Backups are stored per-account (quota: keep last N, default 10). Backups are
+scoped by the **effective owner**, so an accountant uploads/lists/downloads/
+deletes within the **owner's** backup namespace (matching `/api/sync` and
+`/api/account/*`).
+
+---
+
+## Sync — `/api/sync`  (all auth; gated by the `sync` feature)
+
+Device → server mirror (push-only) + server → device restore (pull). The device
+stays the source of truth; the per-account mirror is keyed by
+`(effectiveOwner, entity, localId)`.
+
+### POST `/api/sync/push`
+```jsonc
+// request
+{ "records": [ { "entity": "subscribers", "localId": "uuid", "deleted": false,
+                 "updatedAt": "ISO", "data": { /* raw SQLite row */ } } ] }
+// 200 response
+{ "ok": true, "count": 2, "serverTime": "ISO" }
+```
+**Authorization (new in Phase-1 hardening):**
+- `entity` is whitelisted against the synced tables (`subscribers`, `boards`,
+  `circuits`, `receipts`, `refunds`, `expenses`, `monthly_prices`, `branches`,
+  `accountants`); any other value → `400 code=BAD_ENTITY`.
+- For an **accountant** caller the entity is permission-gated, mirroring the app
+  (`lib/core/permissions.dart`): `subscribers→subscribers`, `boards`/`circuits→
+  boards`, `monthly_prices→prices`, `expenses→expenses`; `receipts`/`refunds`
+  are **always allowed**; `branches`/`accountants` are **owner-only**. A missing
+  permission → `403 code=PERMISSION_DENIED`; an owner-only entity →
+  `403 code=ENTITY_FORBIDDEN`.
+- A **branch-confined** accountant (has a `branchId`) may only write rows in its
+  own branch: a record whose `data.branch_id` is another branch →
+  `403 code=BRANCH_FORBIDDEN`; otherwise the server **stamps** `data.branch_id =
+  accountant.branchId` and `data.accountant_id = accountant.localId` (the
+  app-side accountant UUID used for on-device attribution — falls back to the
+  Mongo `_id` only when no `localId` exists; client-supplied branch/accountant
+  values are not trusted).
+- Owners/admins are unrestricted (whole account, all branches).
+
+Other errors: `400 code=BAD_RECORDS` (records not an array),
+`400 code=BAD_RECORD` (missing `entity`/`localId`), `403 code=FEATURE_DISABLED`
+(plan has no sync).
+
+### GET `/api/sync/pull?since=ISO`
+```jsonc
+// 200 response
+{ "records": [ { "entity", "localId", "deleted", "updatedAt", "data" } ] }
+```
+Returns the account's mirror rows updated after `since` (omit for a full
+restore). A **branch-confined accountant** receives only its own branch's rows
+plus the branch-agnostic identity tables (`branches`, `accountants`) and any
+legacy rows that carry no `branch_id`; owners/admins receive everything.
+Errors: `400 code=BAD_SINCE` (invalid timestamp).
 
 ---
 
@@ -176,6 +239,15 @@ WAIVED money: it folds into the DUE side (coverage + `totalDue`) but is **never*
 added to `collected`/`monthlyRevenue`/`netProfit`. With `P = 0` every subscriber
 counts as paid. `totalDue` is kept raw (`expected - collected - Σ discount_value`)
 and may go negative, like the app.
+
+Pricing is keyed by **`(branch, category)`**: each subscriber's due uses the
+price of its **own** branch (`IFNULL(branch_id,'main')`) and category. In the
+**consolidated** view (no `branchId`) branches with different per-branch tariffs
+are no longer collapsed into one category map — each branch keeps its own price
+(fixes a bug where consolidated `expected`/`paidCount`/`totalDue` used whichever
+`monthly_prices` row was seen last). With an explicit `branchId` the behavior is
+unchanged. The caller's explicit `month` is honored as-is; only an absent/malformed
+month falls back to the current server-UTC month.
 ```jsonc
 // 200 response
 {
@@ -447,12 +519,22 @@ values only for `role:"accountant"` sub-accounts (see **Accountant logins** and
   }
 }
 ```
+**Expiry enforcement.** A subscription is *effectively active* only when its
+stored `status` is `active` **and** it has not passed `expiresAt` (a null
+`expiresAt` means no expiry). Once the expiry passes, the served `status` is
+**downgraded to `"expired"`** (clients key off the status string) and the plan
+stops being treated as active: `features` then fall back to the all-`true`
+no-active-plan defaults, so an expired restricted plan no longer blocks
+sync/backup/ownerPanel. This is applied uniformly by `serializeSubscription` and
+`planFeatures.featuresForUser`.
+
 `features` is attached on the **Account** returned by
 `/api/auth/register`, `/api/auth/login`, and `/api/auth/me`. It mirrors the
 **active** plan's capability flags (each `= plan.<x>Enabled !== false`). With no
-active subscription (or no plan), every flag defaults to `true`. The backend
-enforces these via `requireFeature(name)` (403 `code=FEATURE_DISABLED`,
-`message:'هذه الميزة غير متوفرة في خطتك'`, `feature:name`).
+active subscription (or no plan / an **expired** plan), every flag defaults to
+`true`. The backend enforces these via `requireFeature(name)` (403
+`code=FEATURE_DISABLED`, `message:'هذه الميزة غير متوفرة في خطتك'`,
+`feature:name`).
 
 ### Plan
 ```jsonc

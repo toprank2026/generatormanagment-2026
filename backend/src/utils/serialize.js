@@ -11,11 +11,37 @@ function toIso(d) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+/**
+ * A subscription is *effectively active* only when its stored status is 'active'
+ * AND it has not passed its expiry. `expiresAt` being null/absent means "no
+ * expiry set" (treated as not-yet-expired). This is the single source of truth
+ * for "is this plan still in force" — used by both serializeSubscription (which
+ * downgrades the reported status to 'expired' once past expiry) and
+ * planFeatures.featuresForUser (which stops granting plan features once expired).
+ *
+ * @param {object} sub  the subscription subdoc / plain object
+ * @param {Date}   [now=new Date()]  override the clock (tests)
+ * @returns {boolean}
+ */
+function isSubscriptionActive(sub, now = new Date()) {
+  const s = sub || {};
+  if (s.status !== 'active') return false;
+  if (!s.expiresAt) return true;
+  const exp = s.expiresAt instanceof Date ? s.expiresAt : new Date(s.expiresAt);
+  if (Number.isNaN(exp.getTime())) return true; // unparseable -> treat as no expiry
+  return exp.getTime() > now.getTime();
+}
+
 function serializeSubscription(sub) {
   const s = sub || {};
+  // Report 'expired' when the stored status is 'active' but the plan has passed
+  // its expiry, so clients (which key off the status string) stop treating it as
+  // active. Other statuses pass through unchanged.
+  const status =
+    s.status === 'active' && !isSubscriptionActive(s) ? 'expired' : s.status || 'none';
   return {
     planCode: s.planCode || null,
-    status: s.status || 'none',
+    status,
     startedAt: toIso(s.startedAt),
     expiresAt: toIso(s.expiresAt),
   };
@@ -99,6 +125,7 @@ function serializeBackup(backup) {
 
 module.exports = {
   toIso,
+  isSubscriptionActive,
   serializeSubscription,
   serializeDevice,
   serializeAccount,
