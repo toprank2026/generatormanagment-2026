@@ -139,6 +139,24 @@ void main() {
     expect(amps[SubscriberCategory.standard], 50.0); // 5 × 10
   });
 
+  test('conflict: every write stamps updated_at (sent as data.updated_at)',
+      () async {
+    await subs.insert(sub('A'));
+    final db = await DbHelper().database;
+    var rows =
+        await db.query('subscribers', where: 'id = ?', whereArgs: ['A']);
+    final first = rows.first['updated_at'] as String?;
+    expect(first, isNotNull);
+    expect(DateTime.tryParse(first!), isNotNull);
+    // An UPDATE must RE-stamp (a later edit has to look newer to the server's
+    // last-EDIT-wins guard, else it would be rejected as stale).
+    await Future.delayed(const Duration(milliseconds: 5));
+    await subs.update(sub('A'));
+    rows = await db.query('subscribers', where: 'id = ?', whereArgs: ['A']);
+    final second = rows.first['updated_at'] as String;
+    expect(second.compareTo(first) >= 0, isTrue);
+  });
+
   test('v7 schema carries discount columns (round-trip)', () async {
     await subs.insert(sub('A'));
     await receipts

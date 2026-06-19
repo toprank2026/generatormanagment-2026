@@ -35,6 +35,7 @@ class Expense {
       'accountant_id': accountantId,
       'branch_id': branchId,
       'created_at': createdAt,
+      'updated_at': DateTime.now().toUtc().toIso8601String(), // conflict resolution
     };
   }
 

@@ -34,7 +34,7 @@ class DbHelper {
     final String path = testPath ?? await _defaultPath();
     return await openDatabase(
       path,
-      version: 8,
+      version: 9,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -259,6 +259,10 @@ class DbHelper {
       // v8 (audit/scale): add indexes on the hot scope/join columns.
       await _createV8Indexes(db);
     }
+    if (oldVersion < 9) {
+      // v9 (audit/conflict-resolution): per-row updated_at edit timestamp.
+      await _addUpdatedAtColumns(db);
+    }
   }
 
   Future<String> _defaultPath() async {
@@ -440,6 +444,29 @@ class DbHelper {
     await _createSyncInfra(db);
 
     await _createV8Indexes(db);
+    await _addUpdatedAtColumns(db);
+  }
+
+  /// v9 (audit/conflict-resolution): a per-row edit timestamp on each business
+  /// table. The model toMap() stamps it on every insert/update (= the edit
+  /// time), and SyncService.push sends it as `data.updated_at`; the server then
+  /// applies last-EDIT-wins + sticky tombstones. Idempotent (`_addColumn`
+  /// swallows "duplicate column"), so it's safe from both _onCreate and
+  /// _onUpgrade. Refunds have no in-app write path, but the column is added for
+  /// schema consistency.
+  Future<void> _addUpdatedAtColumns(Database db) async {
+    const tables = [
+      'subscribers',
+      'boards',
+      'circuits',
+      'receipts',
+      'refunds',
+      'expenses',
+      'monthly_prices',
+    ];
+    for (final t in tables) {
+      await _addColumn(db, t, 'updated_at', 'TEXT');
+    }
   }
 
   /// v8 (audit/scale): indexes for the hot scope/join columns that previously

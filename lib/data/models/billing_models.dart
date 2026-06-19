@@ -32,6 +32,7 @@ class MonthlyPrice {
       'branch_id': branchId,
       'category': category,
       'created_at': createdAt,
+      'updated_at': DateTime.now().toUtc().toIso8601String(), // conflict resolution
     };
   }
 
@@ -116,6 +117,7 @@ class Receipt {
       'issued_at': issuedAt,
       'status': status,
       'qr_token': qrToken,
+      'updated_at': DateTime.now().toUtc().toIso8601String(), // conflict resolution
     };
   }
 

@@ -26,6 +26,9 @@ class Board {
       'accountant_id': accountantId,
       'branch_id': branchId,
       'created_at': createdAt,
+      // Per-row edit time for conflict resolution — every write (insert/update)
+      // stamps "now" (= the edit time); the server applies last-EDIT-wins.
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
   }
 
@@ -70,6 +73,7 @@ class Circuit {
       'accountant_id': accountantId,
       'branch_id': branchId,
       'created_at': createdAt,
+      'updated_at': DateTime.now().toUtc().toIso8601String(), // conflict resolution
     };
   }
 
@@ -156,6 +160,7 @@ class Subscriber {
       'accountant_id': accountantId,
       'branch_id': branchId,
       'created_at': createdAt,
+      'updated_at': DateTime.now().toUtc().toIso8601String(), // conflict resolution
     };
   }
 
