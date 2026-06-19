@@ -19,14 +19,14 @@
 - [x] WS-PERMS-UI: subscriber-detail edit/delete gate on `can(Perm.subscribers)`; subscribers list reload-on-return; collect dialog try/catch.
 
 ## Phase 2 — TODO (architectural / decision required)
-- [ ] Conflict resolution: per-row `updated_at` + server compare-on-apply; sticky tombstones; pull skips locally-pending rows. (Critical/High: lost-update, edit-vs-delete, pull-overwrite, push-time-LWW.)
-- [ ] Receipt numbering: server-assigned or device-namespaced + post-pull dedup. (Critical/High duplicate `receipt_no`.) + local atomic alloc-in-txn.
-- [ ] no-price ≠ paid (require `mp.price_per_amp IS NOT NULL` for paid; collect snackbar) — flips established tests, needs care.
-- [ ] Pricing immutability/snapshot: block `setPrices` after receipts (wire the dead `locked`); historical due from `price_snapshot`/`category_snapshot`; warn on category change.
-- [ ] Scale tail: count via `COUNT(*)` (no hydration); paid/unpaid pagination; incremental `since`; periodic pull for multi-accountant.
-- [ ] Restore flows clear `sync_outbox` (cloud + file import) to stop stale re-push.
-- [ ] Branch-delete orphan cleanup on pull; NULL-branch read uniformity (`IFNULL(branch_id,'main')`); consolidated-create branch inheritance/block.
-- [ ] maxDevices self-service recovery; token-version on accountant password change; accountant device-exemption cap.
+- [x] Conflict resolution: per-row `updated_at` (v9, stamped in every toMap) + **server** last-EDIT-wins compare + sticky tombstones. _Residual:_ edit-vs-delete relies on edit-time vs delete push-time (clock-skew edge); pull doesn't yet skip locally-pending rows (push→pull window) — both need sync-engine changes (CLAUDE.md off-limits).
+- [~] Receipt numbering: **local atomic alloc-in-txn DONE** (`insertWithAllocatedNumber`). Server-assigned / device-namespaced + post-pull dedup = HELD (per user) / cross-device still open.
+- [x] no-price ≠ paid (a missing price → UNPAID, not "paid"; collect `no_price_set` snackbar).
+- [ ] Pricing immutability/snapshot: block `setPrices` after receipts / historical due from snapshots / warn on category change. **Needs a product decision** (block edits vs snapshot-based due).
+- [~] Scale tail: **COUNT(*)/Σamps aggregates DONE** (no full-table loads, no N+1). Paid/unpaid screen pagination + incremental `since` + periodic multi-accountant pull = still open (incremental-`since` deferred: risks silently missing rows if the cursor is wrong).
+- [x] Restore flows clear `sync_outbox` (cloud + file import).
+- [ ] Branch-delete orphan cleanup on pull; NULL-branch read uniformity; consolidated-create branch inheritance/block. (Risky — touches many reads.)
+- [x] **token-version** on password change (TOKEN_STALE) + **maxDevices self-service recovery** (`/api/auth/recover-device`). Open: accountant device-exemption cap; device-limit enforcement on data routes (would break the app without a coordinated client change).
 
 ## Verification
 - [x] `flutter analyze` clean; `flutter test` 87 pass.
