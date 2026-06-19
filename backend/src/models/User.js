@@ -47,6 +47,10 @@ const UserSchema = new Schema(
       lowercase: true,
     },
     passwordHash: { type: String, required: true },
+    // Bumped on every password change; embedded in the JWT (tv claim) and
+    // compared in requireAuth so all tokens issued before a password change are
+    // invalidated (401 TOKEN_STALE). See utils/token.js + middleware/auth.js.
+    tokenVersion: { type: Number, default: 0 },
     role: { type: String, enum: ['owner', 'admin', 'accountant'], default: 'owner' },
     blocked: { type: Boolean, default: false },
     subscription: { type: SubscriptionSchema, default: () => ({}) },

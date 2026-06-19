@@ -2,7 +2,7 @@
 
 const express = require('express');
 const { body } = require('express-validator');
-const { register, login, me } = require('../controllers/authController');
+const { register, login, me, recoverDevice } = require('../controllers/authController');
 const { validate } = require('../middleware/validate');
 const { requireAuth } = require('../middleware/auth');
 const { authLimiter } = require('../middleware/rateLimit');
@@ -33,6 +33,21 @@ router.post(
   ],
   validate,
   login
+);
+
+// Password-authenticated self-service recovery for a maxDevices-locked owner:
+// evicts the least-recently-seen device and binds the calling one. Rate-limited
+// like login/register (public, credential-checking endpoint).
+router.post(
+  '/recover-device',
+  authLimiter,
+  [
+    body('username').isString().trim().notEmpty().withMessage('username is required'),
+    body('password').isString().notEmpty().withMessage('password is required'),
+    body('device').isObject().withMessage('device is required'),
+  ],
+  validate,
+  recoverDevice
 );
 
 router.get('/me', requireAuth, me);

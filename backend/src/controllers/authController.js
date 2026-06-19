@@ -6,7 +6,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { signToken } = require('../utils/token');
 const { serializeAccount, serializeSubscription } = require('../utils/serialize');
 const { featuresForUser } = require('../utils/planFeatures');
-const { upsertDevice } = require('../utils/devices');
+const { upsertDevice, sameDevice } = require('../utils/devices');
 const { adminEvents } = require('../utils/events');
 const { HttpError } = require('../middleware/error');
 
@@ -117,6 +117,72 @@ const login = asyncHandler(async (req, res) => {
   res.status(200).json({ token, account });
 });
 
+/**
+ * POST /api/auth/recover-device (public, rate-limited like login)
+ * Body: { username, password, device }
+ *
+ * Password-authenticated self-service for a user who lost / replaced their only
+ * device and is locked out by maxDevices. Validates credentials (401 on bad),
+ * then — to make room for the new device — EVICTS the owner's least-recently-seen
+ * device (by lastSeen) before binding `device`, and returns a normal
+ * { token, account } just like login. Owner role only: accountants are
+ * device-exempt and admins are unrestricted, so neither needs recovery.
+ */
+const recoverDevice = asyncHandler(async (req, res) => {
+  const { username, password, device } = req.body;
+
+  if (!device || typeof device !== 'object' || !device.deviceId) {
+    throw new HttpError(400, 'device.deviceId is required', 'VALIDATION');
+  }
+
+  const user = await User.findOne({ username: String(username).toLowerCase() });
+  if (!user) {
+    throw new HttpError(401, 'Invalid username or password');
+  }
+
+  const ok = await bcrypt.compare(password, user.passwordHash);
+  if (!ok) {
+    throw new HttpError(401, 'Invalid username or password');
+  }
+
+  if (user.blocked) {
+    throw new HttpError(403, 'Account blocked', 'BLOCKED');
+  }
+
+  // Only owners are device-limited; accountants are exempt and admins
+  // unrestricted, so device recovery is meaningless (and disallowed) for them.
+  if (user.role !== 'owner') {
+    throw new HttpError(403, 'Device recovery is only for owner accounts', 'RECOVERY_NOT_ALLOWED');
+  }
+
+  // If this physical device is already bound, upsertDevice will just refresh it
+  // (no eviction needed). Otherwise free a slot first: evict the LEAST-recently
+  // -seen device so a brand-new device always fits under maxDevices.
+  const known = user.devices.some((d) => sameDevice(d, device));
+  if (!known && user.devices.length > 0) {
+    let lruIndex = 0;
+    let lruTime = Infinity;
+    user.devices.forEach((d, i) => {
+      const t = d.lastSeen ? new Date(d.lastSeen).getTime() : 0;
+      if (t < lruTime) {
+        lruTime = t;
+        lruIndex = i;
+      }
+    });
+    user.devices.splice(lruIndex, 1);
+  }
+
+  // Bind the new device (room was made above, so this won't trip DEVICE_LIMIT)
+  // and persist.
+  await upsertDevice(user, device);
+  await user.save();
+
+  const token = signToken(user);
+  const account = serializeAccount(user, device.deviceId);
+  account.subscription.features = await featuresForUser(user);
+  res.status(200).json({ token, account });
+});
+
 /** GET /api/auth/me (auth) */
 const me = asyncHandler(async (req, res) => {
   const account = serializeAccount(req.user);
@@ -140,4 +206,4 @@ const me = asyncHandler(async (req, res) => {
   res.status(200).json({ account });
 });
 
-module.exports = { register, login, me };
+module.exports = { register, login, me, recoverDevice };

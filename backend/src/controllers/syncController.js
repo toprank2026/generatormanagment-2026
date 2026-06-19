@@ -86,6 +86,21 @@ function authorizeRecord(user, rec) {
 }
 
 /**
+ * Per-row edit time used for conflict resolution. The client stamps each
+ * business row's REAL modification time into `data.updated_at` (ISO string).
+ * The envelope `updatedAt` is the upload time (used only for the pull `since`
+ * cursor), so it is NOT a reliable causality signal — prefer `data.updated_at`.
+ * Returns a comparable epoch-ms number, or null when absent/unparseable.
+ */
+function editTimeMs(data) {
+  if (!data || typeof data !== 'object') return null;
+  const raw = data.updated_at;
+  if (raw == null) return null;
+  const t = new Date(raw).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+/**
  * POST /api/sync/push (auth)
  * Body: { records: [ { entity, localId, deleted, updatedAt, data? } ] }
  *
@@ -93,6 +108,12 @@ function authorizeRecord(user, rec) {
  * localId), setting data/deleted/updatedAt. Rejects unknown entities (400) and
  * enforces per-accountant entity/branch authorization (403). Returns
  * { ok, count, serverTime }.
+ *
+ * Conflict resolution (last-EDIT-wins + sticky tombstones), per-row, server
+ * side. BACKWARD-COMPATIBLE: when the per-row edit time (`data.updated_at`) is
+ * absent on EITHER side, the old apply-always behavior is kept so nothing today
+ * breaks. A SKIPPED record is still counted as accepted so the device drains its
+ * outbox and does not loop re-pushing the same stale row.
  */
 const push = asyncHandler(async (req, res) => {
   const { records } = req.body || {};
@@ -120,6 +141,46 @@ const push = asyncHandler(async (req, res) => {
     const updatedAt = rec.updatedAt ? new Date(rec.updatedAt) : new Date();
     // Store the raw SQLite row as-is; tombstones may omit `data`.
     const data = rec.data ?? null;
+
+    // Read the current mirror doc first so we can compare edit times and protect
+    // tombstones. (Per-record read; the records array is small in practice.)
+    // eslint-disable-next-line no-await-in-loop
+    const existing = await SyncRecord.findOne({
+      user: userId,
+      entity: rec.entity,
+      localId: rec.localId,
+    });
+
+    if (existing) {
+      const incomingMs = editTimeMs(data);
+      // For the stale-upsert guard we compare ONLY per-row edit times
+      // (data.updated_at) — back-comp: if EITHER side lacks one we apply.
+      const storedEditMs = editTimeMs(existing.data);
+
+      if (deleted) {
+        // A DELETE always tombstones — never un-delete-protected. (Deletes carry
+        // no data; we still bump the envelope updatedAt for the pull cursor.)
+        // Falls through to the apply below.
+      } else if (existing.deleted === true) {
+        // STICKY TOMBSTONE: only revive a deleted row when the incoming edit is
+        // strictly NEWER than the recorded delete. The delete carried no data, so
+        // fall back to the envelope updatedAt for the stored delete time. Absent
+        // an incoming edit time -> SKIP so a stale (or untimestamped) edit can
+        // never resurrect a deleted row.
+        const storedDeleteMs =
+          storedEditMs ?? (existing.updatedAt ? existing.updatedAt.getTime() : null);
+        if (incomingMs == null || storedDeleteMs == null || !(incomingMs > storedDeleteMs)) {
+          count += 1; // accepted/no-op so the device clears its outbox
+          continue;
+        }
+      } else if (incomingMs != null && storedEditMs != null && incomingMs < storedEditMs) {
+        // LAST-EDIT-WINS: a STALE upsert (older edit time) must not clobber a
+        // newer stored row. Back-comp: if EITHER side lacks a per-row edit time
+        // we fall through and apply (old apply-always behavior).
+        count += 1; // accepted/no-op so the device clears its outbox
+        continue;
+      }
+    }
 
     // eslint-disable-next-line no-await-in-loop
     await SyncRecord.findOneAndUpdate(

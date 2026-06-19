@@ -72,9 +72,27 @@ sub-account created via `POST /api/account/accountants`):
 
 `GET /api/auth/me` applies the same inheritance for an accountant token.
 
-**Rate limiting.** `POST /api/auth/login` and `POST /api/auth/register` are
-IP-rate-limited (~10 requests / minute / IP). Exceeding the limit returns
-`429 { "code": "RATE_LIMITED", "message": "..." }`. (Disabled under the test env.)
+**Rate limiting.** `POST /api/auth/login`, `POST /api/auth/register`, and
+`POST /api/auth/recover-device` are IP-rate-limited (~10 requests / minute / IP).
+Exceeding the limit returns `429 { "code": "RATE_LIMITED", "message": "..." }`.
+(Disabled under the test env.)
+
+### POST `/api/auth/recover-device`  (public, rate-limited) — new in Phase-2
+Password-authenticated self-service for an **owner** locked out by `maxDevices`
+(lost / replaced their device). Validates the credentials, then **evicts the
+least-recently-seen device** (by `lastSeen`) to free a slot, binds the supplied
+`device`, and returns a normal login response.
+```jsonc
+// request
+{ "username": "owner1", "password": "secret", "device": { /* Device */ } }
+// 200 response
+{ "token": "<jwt>", "account": { /* Account */ } }   // new device bound, current:true
+```
+Errors: `400 code=VALIDATION` (`device.deviceId` missing), `401` bad
+credentials, `403 code=BLOCKED` account blocked, `403 code=RECOVERY_NOT_ALLOWED`
+(role is not `owner` — accountants are device-exempt and admins unrestricted,
+so neither needs recovery), `429 code=RATE_LIMITED`. Re-binding an
+already-known device just refreshes it (no eviction).
 
 ### GET `/api/auth/me`  (auth)
 Returns the current account (used for offline-first re-validation on launch /
@@ -83,6 +101,12 @@ reconnect). A `401`/`403` here is the **only** thing that ends the local session
 // 200 response
 { "account": { /* Account */ } }
 ```
+**Token invalidation on password change (new in Phase-2).** The JWT embeds the
+account's `tokenVersion` (`tv` claim). Any password change (e.g. an owner
+resetting an accountant's password via `PUT /api/account/accountants/:id`) bumps
+`tokenVersion`, so every token minted before the change is rejected by ALL
+authenticated routes with `401 code=TOKEN_STALE` (the client must sign in again).
+A legacy token with no `tv` claim is treated as `tv=0`.
 
 ---
 
@@ -172,6 +196,24 @@ stays the source of truth; the per-account mirror is keyed by
   Mongo `_id` only when no `localId` exists; client-supplied branch/accountant
   values are not trusted).
 - Owners/admins are unrestricted (whole account, all branches).
+
+**Conflict resolution (new in Phase-2 hardening): last-EDIT-wins + sticky
+tombstones.** Each business row may carry its REAL modification time in
+`data.updated_at` (ISO string); the envelope `updatedAt` is the upload time
+(pull cursor only). The server reads the existing mirror doc first, then:
+- **Upsert (`deleted:false`)** — if BOTH the incoming `data.updated_at` and the
+  stored row's `data.updated_at` are present and the incoming one is OLDER, the
+  write is **SKIPPED** (a stale device cannot clobber a newer edit).
+- **Sticky tombstone** — when the stored row is a tombstone (`deleted:true`), an
+  upsert only revives it when the incoming edit time is present AND strictly
+  newer than the recorded delete time (`stored data.updated_at`, else the
+  tombstone's envelope `updatedAt`); otherwise it is **SKIPPED** (a stale edit
+  never resurrects a deleted row).
+- **Delete (`deleted:true`)** — always tombstones (never un-delete-protected).
+- **Backward compatible** — if the per-row edit time is absent on either side,
+  the old apply-always behavior is kept, so today's clients are unaffected.
+- A SKIPPED record is still **counted** in the `count` response (treated as
+  accepted) so the device drains its outbox and does not loop re-pushing it.
 
 Other errors: `400 code=BAD_RECORDS` (records not an array),
 `400 code=BAD_RECORD` (missing `entity`/`localId`), `403 code=FEATURE_DISABLED`
@@ -327,8 +369,10 @@ or password < 4 chars).
 
 #### PUT `/api/account/accountants/:id`  (owner|admin)
 Updates any of `{ name, permissions, branchId, active, password }` of one of the
-caller's accountants (ownership guarded). A provided `password` is re-hashed;
-`active:false` blocks the accountant (cannot log in).
+caller's accountants (ownership guarded). A provided `password` is re-hashed and
+**bumps the accountant's `tokenVersion`**, so its previously-issued tokens become
+`401 code=TOKEN_STALE` (see `GET /api/auth/me`); `active:false` blocks the
+accountant (cannot log in).
 ```jsonc
 // request (any subset)
 { "name": "...", "permissions": ["..."], "branchId": "...", "active": false, "password": "newpass" }

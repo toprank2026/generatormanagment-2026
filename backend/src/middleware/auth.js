@@ -28,6 +28,13 @@ const requireAuth = asyncHandler(async (req, res, next) => {
   if (!user) {
     return res.status(401).json({ message: 'Account not found' });
   }
+  // Token invalidation on password change: a token carries the tokenVersion
+  // (tv) it was issued with. A password change bumps user.tokenVersion, so any
+  // token minted before it no longer matches and is rejected (must re-login).
+  // Back-comp: a legacy token with no tv claim is treated as tv=0.
+  if ((payload.tv || 0) !== (user.tokenVersion || 0)) {
+    return res.status(401).json({ message: 'Token invalidated, please sign in again', code: 'TOKEN_STALE' });
+  }
   if (user.blocked) {
     return res.status(403).json({ message: 'Account blocked', code: 'BLOCKED' });
   }

@@ -107,6 +107,9 @@ const updateAccountant = asyncHandler(async (req, res) => {
   if (active !== undefined) accountant.blocked = !active;
   if (password !== undefined && password) {
     accountant.passwordHash = await bcrypt.hash(String(password), 10);
+    // Invalidate all tokens the accountant was previously issued (the owner just
+    // reset its password) — bump tokenVersion so old JWTs are TOKEN_STALE.
+    accountant.tokenVersion = (accountant.tokenVersion || 0) + 1;
   }
 
   await accountant.save();
