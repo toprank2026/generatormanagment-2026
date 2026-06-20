@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="color-scheme" content="light" />
-<title>لوحة تحكم مولدتي</title>
+<title>Flash</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,300..600,0..1,0">
 <style>
   /* Material Symbols icon helper (FILL 1 → matches the app's filled Icons.*) */
@@ -784,7 +784,7 @@ function shell(activeRoute,content){
   ]);
   var who=el("span",{class:"who",text:(me.name||me.username||"المدير")});
   var side=el("div",{class:"sidebar"},[
-    el("div",{class:"brand"},[el("span",{class:"logo",text:"M"}),"إدارة مولدتي"]),
+    el("div",{class:"brand"},[el("span",{class:"logo",text:"F"}),"Flash"]),
     nav,
     el("div",{class:"foot"},[
       who,
@@ -821,7 +821,7 @@ function ownerShell(activeRoute,content){
   ensureOwnerBranches();   // load branches once; reveals the switcher when >1
   var app=$("#app"); clear(app);
   var top=el("div",{class:"app-topbar"},[
-    el("span",{class:"brand"},[el("span",{class:"logo",text:"M"}),"مولدتي"]),
+    el("span",{class:"brand"},[el("span",{class:"logo",text:"F"}),"Flash Owner Panel"]),
     el("button",{class:"logout",text:"تسجيل الخروج",onclick:function(){
       confirmModal({title:"تسجيل الخروج",message:"هل تريد تسجيل الخروج من حسابك؟",confirmText:"تسجيل الخروج",onConfirm:function(){ doLogout(); return true; }});
     }})
@@ -971,8 +971,8 @@ function viewLogin(){
   }
 
   var form=el("form",{onsubmit:submit},[
-    el("div",{class:"logo-big",text:"M"}),
-    el("h2",{text:"إدارة مولدتي"}),
+    el("div",{class:"logo-big",text:"F"}),
+    el("h2",{text:"Flash"}),
     el("p",{class:"tag",text:"سجّل الدخول بحساب المدير أو حساب التطبيق"}),
     errBox,
     el("div",{class:"field"},[el("label",{text:"اسم المستخدم"}),uIn]),
@@ -2063,7 +2063,7 @@ function viewMyDashboard(){
 
     // App-style gradient banner: generator name + phone + plan time remaining.
     content.appendChild(el("div",{class:"app-banner"},[
-      bannerRow("bolt",me.generatorName||me.name||"مولدتي",true),
+      bannerRow("bolt",me.generatorName||me.name||"Flash",true),
       bannerRow("phone_android",me.username||me.phone||"—",false),
       bannerRow("workspace_premium",planRemainingText(sub),false),
       bannerRow("cloud_done","آخر رفع: "+((dash&&dash.lastUploadAt)?fmtDate(dash.lastUploadAt):"—"),false)
