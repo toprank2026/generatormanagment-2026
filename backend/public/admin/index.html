@@ -568,6 +568,14 @@ var API={
   },
   myData:function(entity,opts){ return api("GET","/api/account/data"+syncDataQuery(entity,opts)); },
   myRecent:function(limit,page){ return api("GET","/api/account/recent?limit="+(limit||10)+"&page="+(page||1)); },
+  // Flash item 7/8: the owner's BRANCH sub-accounts (own login, isolated mirror).
+  branchAccounts:function(){ return api("GET","/api/account/branches"); },
+  branchStats:function(branchId,month){
+    return api("GET","/api/account/branches/"+encodeURIComponent(branchId)+"/stats"+(month?("?month="+encodeURIComponent(month)):""));
+  },
+  branchData:function(branchId,entity,opts){
+    return api("GET","/api/account/branches/"+encodeURIComponent(branchId)+"/data"+syncDataQuery(entity,opts));
+  },
   users:function(){ return api("GET","/api/admin/users"); },
   user:function(id){ return api("GET","/api/admin/users/"+encodeURIComponent(id)); },
   userData:function(id,entity,opts){
@@ -639,6 +647,50 @@ function ownerBranchBar(){
   return el("div",{class:"app-branchbar"},[
     el("span",{class:"bb-ic"},[mi("account_tree")]),
     el("span",{class:"bb-lbl",text:"الفرع الحالي"}),
+    sel
+  ]);
+}
+
+/* ============================================================
+   Flash item 7: owner-panel BRANCH-ACCOUNT switcher. Branches are now separate
+   sub-accounts (own login, isolated mirror). The owner picks "My account" or one
+   of its branch accounts; the whole owner panel (home stats, every entity list,
+   reports) then re-fetches from that branch ACCOUNT's mirror via the
+   /api/account/branches/:id/* endpoints. id==="" -> the owner's own account.
+   ============================================================ */
+var acctBranch = { id:"", list:null, loading:false };
+function ensureBranchAccounts(){
+  if(acctBranch.list!==null || acctBranch.loading) return;
+  acctBranch.loading=true;
+  API.branchAccounts().then(function(res){
+    var arr=(res&&res.branches)||[];
+    acctBranch.list=arr.map(function(b){ return {id:String(b.id),name:b.generatorName||b.name||b.phone||String(b.id)}; });
+    acctBranch.loading=false;
+    if(acctBranch.id && !acctBranch.list.some(function(b){ return b.id===acctBranch.id; })) acctBranch.id="";
+    if(acctBranch.list.length>=1) render();   // reveal the switcher
+  }).catch(function(){ acctBranch.list=[]; acctBranch.loading=false; });
+}
+function setAcctBranch(id){ acctBranch.id=id||""; render(); }
+// Account-aware fetchers: route to the selected branch ACCOUNT's mirror, else
+// the owner's own (preserving the legacy local-branch filter for own data).
+function acctStats(month,accountantId){
+  return acctBranch.id ? API.branchStats(acctBranch.id,month)
+                       : API.myStats(month,accountantId,ownerBranchParam());
+}
+function acctData(entity,opts){
+  return acctBranch.id ? API.branchData(acctBranch.id,entity,opts)
+                       : API.myData(entity,opts);
+}
+function acctBranchBar(){
+  if(!acctBranch.list || acctBranch.list.length<1) return null;
+  var opts=[el("option",{value:"",selected:(acctBranch.id==="")?"":false,text:"حسابي (المالك)"})];
+  acctBranch.list.forEach(function(b){
+    opts.push(el("option",{value:b.id,selected:(b.id===acctBranch.id)?"":false,text:b.name}));
+  });
+  var sel=el("select",{class:"app-branch-select",onchange:function(){ setAcctBranch(this.value); }},opts);
+  return el("div",{class:"app-branchbar"},[
+    el("span",{class:"bb-ic"},[mi("account_tree")]),
+    el("span",{class:"bb-lbl",text:"الفرع"}),
     sel
   ]);
 }
@@ -818,7 +870,8 @@ var OWNER_MORE=[
 function ownerShell(activeRoute,content){
   setOwnerMode(true);
   closeOwnerSheet();
-  ensureOwnerBranches();   // load branches once; reveals the switcher when >1
+  ensureOwnerBranches();   // legacy local-branch switcher (reveals when >1)
+  ensureBranchAccounts();  // Flash item 7: branch-ACCOUNT switcher
   var app=$("#app"); clear(app);
   var top=el("div",{class:"app-topbar"},[
     el("span",{class:"brand"},[el("span",{class:"logo",text:"F"}),"Flash Owner Panel"]),
@@ -827,7 +880,11 @@ function ownerShell(activeRoute,content){
     }})
   ]);
   var wrap=el("div",{class:"app-wrap"});
-  var bb=ownerBranchBar();      // persistent active-branch switcher (app-like)
+  // Flash item 7: branch-ACCOUNT switcher (separate mirrors) takes precedence;
+  // fall back to the legacy local-branch filter when there are no branch accounts.
+  var abb=acctBranchBar();
+  if(abb) wrap.appendChild(abb);
+  var bb=ownerBranchBar();      // legacy active-branch switcher (app-like)
   if(bb) wrap.appendChild(bb);
   wrap.appendChild(content);
   app.appendChild(top);
@@ -2052,8 +2109,8 @@ function ownerFeatureBlock(){
 
 function viewMyDashboard(){
   shell("#/my",loadingBlock("جارٍ تحميل لوحتك…"));
-  // Scope the home stats to the active branch (full isolation, app-like).
-  API.myStats(null,null,ownerBranchParam()).then(function(res){
+  // Scope the home stats to the selected branch account (item 7), else own.
+  acctStats(null,null).then(function(res){
     var counts=(res&&(res.stats||res.counts))||res||{};
     var dash=(res&&res.dashboard)||null;   // paid/unpaid app stats (newer backend)
     var me=state.me||{};
@@ -2246,7 +2303,7 @@ function viewMyReports(){
   // filter as "all" only (the report itself still loads).
   function ensureAccountants(){
     if(accountants!==null) return Promise.resolve(accountants);
-    return API.myData("accountants",{page:1,limit:200}).then(function(res){
+    return acctData("accountants",{page:1,limit:200}).then(function(res){
       accountants=normalizeList(res,"records").map(function(r){
         var d=(r&&r.data)||{};
         return {id:d.id,name:(r&&r.label)||d.name||d.username||String(d.id||"")};
@@ -2255,14 +2312,14 @@ function viewMyReports(){
     }).catch(function(){ accountants=[]; return accountants; });
   }
   function load(){
-    var reqMonth=month, reqAcc=accountantId, reqBranch=ownerBranch.id;
+    var reqMonth=month, reqAcc=accountantId, reqBranch=ownerBranch.id+"|"+acctBranch.id;
     paint(loadingBlock("جارٍ تحميل تقرير "+reqMonth+"…"));
-    Promise.all([API.myStats(reqMonth,reqAcc,ownerBranchParam()),ensureAccountants()]).then(function(both){
-      if(reqMonth!==month||reqAcc!==accountantId||reqBranch!==ownerBranch.id) return;   // stale after a switch
+    Promise.all([acctStats(reqMonth,reqAcc),ensureAccountants()]).then(function(both){
+      if(reqMonth!==month||reqAcc!==accountantId||reqBranch!==(ownerBranch.id+"|"+acctBranch.id)) return;   // stale after a switch
       paint(reportBody(both[0]));
     }).catch(function(err){
       if(err.status===401) return;
-      if(reqMonth!==month||reqAcc!==accountantId||reqBranch!==ownerBranch.id) return;
+      if(reqMonth!==month||reqAcc!==accountantId||reqBranch!==(ownerBranch.id+"|"+acctBranch.id)) return;
       if(isFeatureDisabled(err)){ shell("#/my/reports",ownerFeatureBlock()); return; }
       paint(errorBlock(err,load));
     });
@@ -2363,7 +2420,7 @@ function viewMyEntity(entity,relField,relValue){
   function ensureRelMaps(){
     if(entity!=="circuits") return Promise.resolve(null);
     if(relNameMaps) return Promise.resolve(relNameMaps);
-    return loadNameMaps(function(en,opts){ return API.myData(en,opts); },["boards"]).then(function(maps){
+    return loadNameMaps(function(en,opts){ return acctData(en,opts); },["boards"]).then(function(maps){
       relNameMaps=maps; return maps;
     });
   }
@@ -2418,7 +2475,7 @@ function viewMyEntity(entity,relField,relValue){
     clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
     clear(pagerWrap);
     Promise.all([
-      API.myData(entity,{q:query,page:page,limit:SYNC_PAGE_LIMIT,relField:relField,relValue:relValue,
+      acctData(entity,{q:query,page:page,limit:SYNC_PAGE_LIMIT,relField:relField,relValue:relValue,
         branchId:isBranchScopedEntity(entity)?ownerBranchParam():undefined}),
       ensureRelMaps()
     ]).then(function(both){
@@ -2526,7 +2583,7 @@ function viewMyStatement(subId){
   function loadReceipts(){
     clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
     clear(pagerWrap);
-    API.myData("receipts",{page:page,limit:SYNC_PAGE_LIMIT,relField:"subscriber_id",relValue:subId}).then(function(res){
+    acctData("receipts",{page:page,limit:SYNC_PAGE_LIMIT,relField:"subscriber_id",relValue:subId}).then(function(res){
       var records=normalizeList(res,"records");
       var total=(res&&typeof res.total==="number")?res.total:records.length;
       if(res&&res.page) page=res.page;
@@ -2546,8 +2603,8 @@ function viewMyStatement(subId){
   buildShell();
   clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
   Promise.all([
-    API.myData("subscribers",{localId:subId}),
-    loadNameMaps(function(en,opts){ return API.myData(en,opts); },["boards","circuits"])
+    acctData("subscribers",{localId:subId}),
+    loadNameMaps(function(en,opts){ return acctData(en,opts); },["boards","circuits"])
   ]).then(function(res){
     var sr=normalizeList(res[0],"records")[0];
     sub=sr?(sr.data||{}):{};
@@ -2566,7 +2623,7 @@ function viewMyStatement(subId){
 /* Owner receipt details (#/my/data/receipts/detail/:localId). */
 function viewMyReceiptDetail(localId){
   shell("#/my/data/receipts",loadingBlock("جارٍ التحميل…"));
-  API.myData("receipts",{localId:localId}).then(function(res){
+  acctData("receipts",{localId:localId}).then(function(res){
     var rec=normalizeList(res,"records")[0];
     if(!rec){
       var nf=el("div");
@@ -2583,7 +2640,7 @@ function viewMyReceiptDetail(localId){
     }
     var d=rec.data||{};
     // Resolve the subscriber name (best-effort) then render.
-    var pSub=d.subscriber_id?API.myData("subscribers",{localId:d.subscriber_id}):Promise.resolve(null);
+    var pSub=d.subscriber_id?acctData("subscribers",{localId:d.subscriber_id}):Promise.resolve(null);
     pSub.then(function(sres){
       var sr=normalizeList(sres,"records")[0];
       renderMyReceiptDetail(rec,d,sr?(sr.data||{}).name:null);

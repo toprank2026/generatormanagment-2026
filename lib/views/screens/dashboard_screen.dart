@@ -5,7 +5,6 @@ import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/views/widgets/shimmer_loading.dart';
-import 'package:generatormanagment/views/widgets/branch_selector.dart';
 import 'package:generatormanagment/views/screens/subscribers_screen.dart';
 import 'package:generatormanagment/views/screens/boards_screen.dart';
 
@@ -125,15 +124,13 @@ class DashboardScreen extends StatelessWidget {
                                       : ((g == null || g.isEmpty)
                                           ? 'generator_name'.tr
                                           : g);
-                                  // R8: accountants are confined to their
-                                  // assigned branch — never offer switching.
-                                  final canSwitch =
-                                      authController.canMultiBranch &&
-                                          !authController.isAccountant;
+                                  // Flash: NO in-app branch switching — a branch
+                                  // is a separate account (log in from the login
+                                  // screen to use it); switching between branches
+                                  // to view is in the Owner Panel. So this banner
+                                  // is display-only.
                                   return InkWell(
-                                    onTap: canSwitch
-                                        ? () => openBranchSheet(context)
-                                        : null,
+                                    onTap: null,
                                     borderRadius: BorderRadius.circular(8),
                                     child: Row(
                                       children: [
@@ -150,9 +147,6 @@ class DashboardScreen extends StatelessWidget {
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
-                                        if (canSwitch)
-                                          const Icon(Icons.unfold_more,
-                                              color: Colors.white, size: 20),
                                       ],
                                     ),
                                   );
