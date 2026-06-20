@@ -95,6 +95,18 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
       for (final cat in SubscriberCategory.all)
         cat: double.parse(_priceCtrls[cat]!.text.trim()),
     };
+    // item 10: confirm before changing pricing (guards against accidental taps).
+    final confirmed = await Get.defaultDialog<bool>(
+      title: 'confirm_pricing_title'.tr,
+      middleText: 'confirm_pricing_msg'.tr,
+      textConfirm: 'confirm'.tr,
+      textCancel: 'cancel'.tr,
+      confirmTextColor: Colors.white,
+      buttonColor: const Color(0xFF1565C0),
+      onConfirm: () => Get.back(result: true),
+      onCancel: () {},
+    );
+    if (confirmed != true) return;
     await controller.setPrices(prices);
     Get.snackbar(
       'success'.tr,
