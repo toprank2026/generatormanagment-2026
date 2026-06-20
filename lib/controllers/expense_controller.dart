@@ -4,6 +4,7 @@ import 'package:generatormanagment/data/repositories/expense_repository.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/month_controller.dart';
+import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:uuid/uuid.dart';
 
 class ExpenseController extends GetxController {
@@ -122,12 +123,14 @@ class ExpenseController extends GetxController {
       branchId: _branch.writeBranchId,
     );
     await _repo.addExpense(newExpense);
+    SyncController.poke(); // item 9
     loadExpenses();
     update();
   }
 
   Future<void> deleteExpense(String id) async {
     await _repo.deleteExpense(id, accountantId: _scope);
+    SyncController.poke(); // item 9
     loadExpenses();
     update();
   }

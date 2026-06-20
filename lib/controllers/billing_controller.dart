@@ -8,6 +8,7 @@ import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/month_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
+import 'package:generatormanagment/controllers/sync_controller.dart';
 
 class BillingController extends GetxController {
   final MonthlyPriceRepository _priceRepo = MonthlyPriceRepository();
@@ -72,6 +73,7 @@ class BillingController extends GetxController {
       category: category,
     );
     await _priceRepo.insert(mp); // Insert or replace
+    SyncController.poke(); // item 9
     await loadMonthPrice(selectedMonth.value);
     // R10: pricing changed → recompute the dashboard's Collected/Remaining now.
     if (Get.isRegistered<DashboardController>()) {
@@ -94,6 +96,7 @@ class BillingController extends GetxController {
         startDate: startDate, // Flash item 5 (metadata)
       ));
     }
+    SyncController.poke(); // item 9
     await loadMonthPrice(selectedMonth.value);
     if (Get.isRegistered<DashboardController>()) {
       Get.find<DashboardController>().loadStats();
@@ -271,6 +274,7 @@ class BillingController extends GetxController {
 
     // Atomic per-branch number allocation + insert (sets r.receiptNo).
     await _receiptRepo.insertWithAllocatedNumber(r, branchId: branchId);
+    SyncController.poke(); // item 9: auto-sync after the write (online)
 
     // Refresh receipt history (page 1) for this subscriber
     await loadReceiptHistory(sub.id);

@@ -39,7 +39,23 @@ class SyncController extends GetxController {
 
   StreamSubscription<bool>? _netSub;
   Timer? _timer;
+  Timer? _nudgeTimer;
   bool _askOpen = false;
+
+  /// Flash item 9: fire a sync shortly after a local write (debounced ~1.2s to
+  /// coalesce bursts of writes into one push). Online + logged-in + sync-enabled
+  /// → pushes promptly instead of waiting for the 30s heartbeat; offline it's a
+  /// no-op (maybeAutoSync bails) so the AppBar keeps showing offline and the
+  /// outbox holds the change until connectivity returns.
+  void nudge() {
+    _nudgeTimer?.cancel();
+    _nudgeTimer = Timer(const Duration(milliseconds: 1200), maybeAutoSync);
+  }
+
+  /// Convenience: nudge the sync controller after a write, if it's registered.
+  static void poke() {
+    if (Get.isRegistered<SyncController>()) Get.find<SyncController>().nudge();
+  }
 
   bool get _loggedIn =>
       Get.isRegistered<AuthController>() &&
@@ -68,6 +84,7 @@ class SyncController extends GetxController {
   void onClose() {
     _netSub?.cancel();
     _timer?.cancel();
+    _nudgeTimer?.cancel();
     super.onClose();
   }
 

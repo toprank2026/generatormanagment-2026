@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
+import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/month_controller.dart';
@@ -80,6 +81,9 @@ class CoreController extends GetxController {
     if (Get.isRegistered<DashboardController>()) {
       Get.find<DashboardController>().loadStats();
     }
+    // item 9: every board/circuit/subscriber write funnels through here (loads
+    // don't), so this is the choke point to auto-sync after a write (online).
+    SyncController.poke();
   }
 
   // --- Boards ---
