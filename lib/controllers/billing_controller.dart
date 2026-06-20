@@ -83,13 +83,15 @@ class BillingController extends GetxController {
   /// Atomically set ALL category prices for the selected month/branch (R4). Used
   /// by the Monthly Pricing screen where Gold/Regular/Commercial are all
   /// required — writes each row then reloads + refreshes the dashboard ONCE.
-  Future<void> setPrices(Map<String, double> pricesByCategory) async {
+  Future<void> setPrices(Map<String, double> pricesByCategory,
+      {String? startDate}) async {
     for (final entry in pricesByCategory.entries) {
       await _priceRepo.insert(MonthlyPrice(
         month: selectedMonth.value,
         pricePerAmp: entry.value,
         branchId: _branch.writeBranchId,
         category: entry.key,
+        startDate: startDate, // Flash item 5 (metadata)
       ));
     }
     await loadMonthPrice(selectedMonth.value);

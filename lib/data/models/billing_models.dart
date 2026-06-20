@@ -7,6 +7,9 @@ class MonthlyPrice {
   String? branchId;
   String category;
   String? createdAt;
+  // Flash item 5: owner-chosen start DAY within the month (ISO yyyy-MM-dd).
+  // Metadata only — billing stays month-based (no proration).
+  String? startDate;
 
   MonthlyPrice({
     required this.month,
@@ -15,6 +18,7 @@ class MonthlyPrice {
     this.branchId,
     this.category = 'standard',
     this.createdAt,
+    this.startDate,
   });
 
   /// Synthetic per-branch, per-category primary key (table PK + sync localId).
@@ -32,6 +36,7 @@ class MonthlyPrice {
       'branch_id': branchId,
       'category': category,
       'created_at': createdAt,
+      'start_date': startDate,
       'updated_at': DateTime.now().toUtc().toIso8601String(), // conflict resolution
     };
   }
@@ -44,6 +49,7 @@ class MonthlyPrice {
       branchId: map['branch_id'],
       category: (map['category'] as String?) ?? 'standard',
       createdAt: map['created_at'],
+      startDate: map['start_date'],
     );
   }
 }

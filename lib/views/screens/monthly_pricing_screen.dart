@@ -5,6 +5,7 @@ import 'package:generatormanagment/controllers/month_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:intl/intl.dart';
 
 class MonthlyPricingScreen extends StatefulWidget {
@@ -30,14 +31,28 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
   // disposed with the State, else it fires after the controllers are disposed
   // (writing to a disposed TextEditingController throws and wedges loadMonthPrice).
   Worker? _pricesWorker;
+  Worker? _startDateWorker;
+
+  // Flash item 5: owner-chosen pricing start DAY within the selected month
+  // (metadata; billing stays month-based). Seeded from the saved value.
+  DateTime? _startDate;
 
   @override
   void initState() {
     super.initState();
     _seedFields(controller.currentPrices);
+    _seedStartDate(controller.currentPrice.value);
     // Re-seed the three fields whenever the selected month's prices change
     // (e.g. after picking a different month or saving).
     _pricesWorker = ever(controller.currentPrices, _seedFields);
+    _startDateWorker = ever(controller.currentPrice, _seedStartDate);
+  }
+
+  /// Seed the start-date from the saved pricing row (or null when unset).
+  void _seedStartDate(MonthlyPrice? mp) {
+    if (!mounted) return;
+    final s = mp?.startDate;
+    setState(() => _startDate = (s != null) ? DateTime.tryParse(s) : null);
   }
 
   /// Pre-fill each category field from [prices] (blank when no price is set).
@@ -107,7 +122,9 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
       onCancel: () {},
     );
     if (confirmed != true) return;
-    await controller.setPrices(prices);
+    final String? startDateStr =
+        _startDate != null ? DateFormat('yyyy-MM-dd').format(_startDate!) : null;
+    await controller.setPrices(prices, startDate: startDateStr);
     Get.snackbar(
       'success'.tr,
       'price_updated'.tr,
@@ -119,10 +136,33 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
   @override
   void dispose() {
     _pricesWorker?.dispose();
+    _startDateWorker?.dispose();
     for (final c in _priceCtrls.values) {
       c.dispose();
     }
     super.dispose();
+  }
+
+  /// Flash item 5: pick the pricing's start DAY, constrained to the selected
+  /// month (first..last day). Metadata only — billing stays month-based.
+  Future<void> _pickStartDate() async {
+    final parts = controller.selectedMonth.value.split('-');
+    final int y = int.parse(parts[0]);
+    final int mo = int.parse(parts[1]);
+    final DateTime first = DateTime(y, mo, 1);
+    final DateTime last = DateTime(y, mo + 1, 0); // last day of the month
+    final DateTime initial = (_startDate != null &&
+            _startDate!.year == y &&
+            _startDate!.month == mo)
+        ? _startDate!
+        : first;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: first,
+      lastDate: last,
+    );
+    if (picked != null) setState(() => _startDate = picked);
   }
 
   @override
@@ -202,6 +242,44 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
                             month.setMonth(DateFormat('yyyy-MM').format(picked));
                           }
                         },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Flash item 5: owner-chosen pricing start DAY within the month
+            // (metadata only — billing stays month-based).
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'pricing_start_date'.tr,
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                  Row(
+                    children: [
+                      Text(
+                        _startDate != null
+                            ? DateFormat('yyyy-MM-dd').format(_startDate!)
+                            : '${controller.selectedMonth.value}-01',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1565C0),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.event, color: Color(0xFF1565C0)),
+                        onPressed: _pickStartDate,
                       ),
                     ],
                   ),

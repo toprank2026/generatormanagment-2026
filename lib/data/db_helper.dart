@@ -34,7 +34,7 @@ class DbHelper {
     final String path = testPath ?? await _defaultPath();
     return await openDatabase(
       path,
-      version: 9,
+      version: 10,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -263,6 +263,11 @@ class DbHelper {
       // v9 (audit/conflict-resolution): per-row updated_at edit timestamp.
       await _addUpdatedAtColumns(db);
     }
+    if (oldVersion < 10) {
+      // v10 (Flash item 5): owner-chosen pricing start DAY within the month
+      // (metadata only — billing stays month-based, no proration).
+      await _addColumn(db, 'monthly_prices', 'start_date', 'TEXT');
+    }
   }
 
   Future<String> _defaultPath() async {
@@ -445,6 +450,8 @@ class DbHelper {
 
     await _createV8Indexes(db);
     await _addUpdatedAtColumns(db);
+    // v10 (Flash item 5): pricing start-day metadata.
+    await _addColumn(db, 'monthly_prices', 'start_date', 'TEXT');
   }
 
   /// v9 (audit/conflict-resolution): a per-row edit timestamp on each business
