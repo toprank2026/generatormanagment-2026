@@ -472,26 +472,33 @@ class AuthController extends GetxController {
     // logout specifically to reload freshly-restored data). The next login
     // auto-pulls the account's data fresh from the backend.
     if (wipeLocal && Get.isRegistered<SyncController>()) {
+      final sync = Get.find<SyncController>();
+      // Flash item 2: ONLINE + sync-enabled → push pending (best effort) then
+      // ALWAYS wipe local data, so the next account on this device can't see
+      // this one's data (synced rows are safe on the server mirror, re-pulled on
+      // next login). OFFLINE or sync-disabled → wiping is UNRECOVERABLE, so ASK:
+      // confirm deletes + logs out; cancel ABORTS the logout (stay signed in) so
+      // the user neither loses data nor exposes it.
       try {
-        final sync = Get.find<SyncController>();
-        // Only wipe when there is a RECOVERABLE server copy (online + the plan
-        // enables sync) AND the pre-wipe push fully drained the outbox. If we're
-        // offline, sync is disabled, or any change is still pending, KEEP the
-        // local data — wiping it would be permanent loss with no way to re-pull
-        // (audit: 3 logout-wipe data-loss findings).
         if (canSync && await _net.isOnline()) {
-          await sync.syncNow(silent: true);
-          await sync.refreshPending();
-          if (sync.pendingCount.value == 0) {
-            await sync.deleteLocalData(silent: true);
-          } else {
-            Log.w('logout wipe skipped: ${sync.pendingCount.value} pending');
-          }
+          try {
+            await sync.syncNow(silent: true);
+          } catch (_) {}
+          await sync.deleteLocalData(silent: true);
         } else {
-          Log.w('logout wipe skipped: offline or sync disabled');
+          final wipe = await Get.defaultDialog<bool>(
+            title: 'logout'.tr,
+            middleText: 'logout_offline_wipe_msg'.tr,
+            textConfirm: 'delete_local_data'.tr,
+            textCancel: 'cancel'.tr,
+            onConfirm: () => Get.back(result: true),
+            onCancel: () {},
+          );
+          if (wipe != true) return; // cancel → abort the logout entirely
+          await sync.deleteLocalData(silent: true);
         }
       } catch (e) {
-        Log.w('logout local wipe skipped: $e');
+        Log.w('logout local wipe failed: $e');
       }
     }
     await _auth.logout();

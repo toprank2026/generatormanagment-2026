@@ -346,6 +346,8 @@ class Messages extends Translations {
       'branch_switch_offline':
           'Offline — switched locally; connect to load the latest data',
       'delete_local_data': 'Delete local data',
+      'logout_offline_wipe_msg':
+          "You're offline — local data can't be re-downloaded. Delete it anyway, or cancel logout?",
       'delete_local_data_subtitle': "Clear this device's data (server copy kept)",
       'delete_local_data_confirm':
           'This clears all data on THIS device. The server copy is kept — use Update to restore it. Continue?',
@@ -745,6 +747,8 @@ class Messages extends Translations {
       'branch_switch_offline':
           'غير متصل — تم التبديل محليًا؛ اتصل بالإنترنت لتحميل أحدث البيانات',
       'delete_local_data': 'حذف البيانات المحلية',
+      'logout_offline_wipe_msg':
+          'أنت غير متصل — لا يمكن إعادة تنزيل البيانات المحلية. هل تريد حذفها على أي حال أم إلغاء تسجيل الخروج؟',
       'delete_local_data_subtitle': 'مسح بيانات هذا الجهاز (تبقى نسخة الخادم)',
       'delete_local_data_confirm':
           'سيؤدي هذا إلى مسح كل البيانات على هذا الجهاز. تبقى نسخة الخادم — استخدم «تحديث» لاستعادتها. هل تريد المتابعة؟',
