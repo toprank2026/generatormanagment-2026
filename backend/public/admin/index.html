@@ -89,6 +89,7 @@
   .sidebar .brand .logo{
     width:30px;height:30px;border-radius:8px;background:#fff;color:var(--primary);
     display:grid;place-items:center;font-weight:900;font-size:16px;
+    object-fit:contain;padding:3px;
   }
   .sidebar nav{display:flex;flex-direction:column;gap:4px;padding:14px 12px;flex:1;overflow-y:auto}
   .sidebar nav a{
@@ -177,7 +178,7 @@
   .login-screen{min-height:100vh;display:grid;place-items:center;padding:24px;
     background:linear-gradient(135deg,#1565C0 0%,#0d47a1 100%);}
   .login-card{width:100%;max-width:380px;background:#fff;border-radius:16px;box-shadow:var(--shadow-lg);padding:32px 30px}
-  .login-card .logo-big{width:56px;height:56px;border-radius:14px;background:var(--primary);color:#fff;display:grid;place-items:center;font-weight:900;font-size:26px;margin:0 auto 16px}
+  .login-card .logo-big{width:64px;height:64px;border-radius:14px;background:transparent;object-fit:contain;display:block;margin:0 auto 16px}
   .login-card h2{text-align:center;margin:0 0 4px;font-size:22px}
   .login-card .tag{text-align:center;color:var(--muted);margin:0 0 24px;font-size:13px}
   .login-card .btn{width:100%;padding:12px;font-size:15px}
@@ -255,6 +256,7 @@
   .app-topbar .brand .logo{
     width:26px;height:26px;border-radius:7px;background:#fff;color:var(--primary);
     display:grid;place-items:center;font-weight:900;font-size:14px;
+    object-fit:contain;padding:3px;
   }
   .app-topbar .logout{
     background:rgba(255,255,255,.16);border:none;color:#fff;padding:7px 12px;border-radius:8px;font-weight:600;font-size:13px;
@@ -836,7 +838,7 @@ function shell(activeRoute,content){
   ]);
   var who=el("span",{class:"who",text:(me.name||me.username||"المدير")});
   var side=el("div",{class:"sidebar"},[
-    el("div",{class:"brand"},[el("span",{class:"logo",text:"F"}),"Flash"]),
+    el("div",{class:"brand"},[el("img",{class:"logo",src:"blue.png",alt:"Flash"}),"Flash"]),
     nav,
     el("div",{class:"foot"},[
       who,
@@ -870,11 +872,10 @@ var OWNER_MORE=[
 function ownerShell(activeRoute,content){
   setOwnerMode(true);
   closeOwnerSheet();
-  ensureOwnerBranches();   // legacy local-branch switcher (reveals when >1)
-  ensureBranchAccounts();  // Flash item 7: branch-ACCOUNT switcher
+  ensureBranchAccounts();  // Flash item 7: branch-ACCOUNT switcher (the only one)
   var app=$("#app"); clear(app);
   var top=el("div",{class:"app-topbar"},[
-    el("span",{class:"brand"},[el("span",{class:"logo",text:"F"}),"Flash Owner Panel"]),
+    el("span",{class:"brand"},[el("img",{class:"logo",src:"blue.png",alt:"Flash"}),"Flash Owner Panel"]),
     el("button",{class:"logout",text:"تسجيل الخروج",onclick:function(){
       confirmModal({title:"تسجيل الخروج",message:"هل تريد تسجيل الخروج من حسابك؟",confirmText:"تسجيل الخروج",onConfirm:function(){ doLogout(); return true; }});
     }})
@@ -882,10 +883,10 @@ function ownerShell(activeRoute,content){
   var wrap=el("div",{class:"app-wrap"});
   // Flash item 7: branch-ACCOUNT switcher (separate mirrors) takes precedence;
   // fall back to the legacy local-branch filter when there are no branch accounts.
+  // Flash item 3: a SINGLE branch switcher — the branch-ACCOUNT one. The legacy
+  // local-branch switcher (ownerBranchBar) is removed.
   var abb=acctBranchBar();
   if(abb) wrap.appendChild(abb);
-  var bb=ownerBranchBar();      // legacy active-branch switcher (app-like)
-  if(bb) wrap.appendChild(bb);
   wrap.appendChild(content);
   app.appendChild(top);
   app.appendChild(wrap);
@@ -1028,7 +1029,7 @@ function viewLogin(){
   }
 
   var form=el("form",{onsubmit:submit},[
-    el("div",{class:"logo-big",text:"F"}),
+    el("img",{class:"logo-big",src:"blue.png",alt:"Flash"}),
     el("h2",{text:"Flash"}),
     el("p",{class:"tag",text:"سجّل الدخول بحساب المدير أو حساب التطبيق"}),
     errBox,

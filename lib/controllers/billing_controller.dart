@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart' show Colors;
 import 'package:get/get.dart';
 import 'package:uuid/uuid.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
@@ -203,13 +202,11 @@ class BillingController extends GetxController {
 
     MonthlyPrice? mp = await _priceRepo.getByMonth(selectedMonth.value,
         branchId: branchId, category: sub.category);
-    if (mp == null) {
-      // No tariff set for this (month, branch, category) — can't bill. Tell the
-      // operator instead of silently doing nothing (audit fix).
-      Get.snackbar('error'.tr, 'no_price_set'.tr,
-          backgroundColor: Colors.redAccent, colorText: Colors.white);
-      return null;
-    }
+    // No tariff set for this (month, branch, category) — can't bill. Return null
+    // WITHOUT a snackbar: a snackbar here makes Get.isDialogOpen read false and
+    // BLOCKS the collect dialog's Get.back(), leaving it stuck (item 2). The
+    // caller pre-checks the price and messages the operator instead.
+    if (mp == null) return null;
 
     final double due = await getDueAmount(sub, selectedMonth.value);
 
@@ -232,17 +229,14 @@ class BillingController extends GetxController {
 
     // On a full payment the cash collected is the remainder after the discount;
     // on a partial payment it's the entered amount (no discount).
-    final double cash = fullPayment ? (due - discountValue) : amount;
-
-    if (cash <= 0 && discountValue <= 0) {
-      Get.snackbar('error'.tr, 'enter_valid_amount'.tr);
-      return null;
-    }
-    // Coverage (cash + discount) may not exceed the remaining due.
-    if (cash + discountValue > due + 0.0001) {
-      Get.snackbar('error'.tr, 'amount_exceeds_due'.tr);
-      return null;
-    }
+    double cash = fullPayment ? (due - discountValue) : amount;
+    // CLAMP coverage (cash + discount) to the remaining due — a partial overpay
+    // just settles the remainder. Never REJECT: rejecting (with a snackbar) was
+    // what stranded the dialog open + skipped printing (item 2). Returning null
+    // only for a genuinely empty collection (nothing to record).
+    if (cash + discountValue > due) cash = due - discountValue;
+    if (cash < 0) cash = 0;
+    if (cash <= 0 && discountValue <= 0) return null;
 
     final AuthController auth = Get.find();
     final r = Receipt(

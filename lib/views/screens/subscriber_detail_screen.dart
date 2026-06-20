@@ -330,6 +330,14 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
   }
 
   void _showCollectDialog() async {
+    // Item 2 pre-check: no tariff for this category this month → can't bill.
+    // Message clearly instead of opening a dialog that can't complete (and which
+    // previously got stuck because the controller snackbar blocked its close).
+    if (controller.currentPrices[widget.subscriber.category] == null) {
+      Get.snackbar('error'.tr, 'no_price_set'.tr,
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      return;
+    }
     // P5: shared collect dialog with full/partial + optional discount.
     final receipt = await showCollectPaymentDialog(
       subscriber: widget.subscriber,
@@ -342,13 +350,16 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
         backgroundColor: Colors.green,
         colorText: Colors.white,
       );
-      _handlePrint(receipt);
+      // Item 2: AWAIT the print so the receipt/print window reliably appears
+      // (and a print failure surfaces) BEFORE refreshing the screen.
+      await _handlePrint(receipt);
       _refresh();
     }
   }
 
-  void _handlePrint(Receipt receipt) async {
+  Future<void> _handlePrint(Receipt receipt) async {
     final settings = Get.find<SettingsController>();
+    try {
 
     // The accountant this invoice BELONGS to (owning accountant), resolved from
     // the synced identity so the name prints on any device. Empty for
@@ -377,6 +388,12 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
       // Fallback to standard PDF printing
       await PdfService()
           .printReceipt(receipt, widget.subscriber, accountantName: accountantName);
+    }
+    } catch (e) {
+      // A print failure must not be silent (or swallow the collected payment) —
+      // the receipt is already saved; just report the print problem.
+      Get.snackbar('error'.tr, '${'print_failed'.tr}: $e',
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
     }
   }
 

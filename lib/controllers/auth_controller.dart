@@ -481,6 +481,17 @@ class AuthController extends GetxController {
       // the user neither loses data nor exposes it.
       try {
         if (canSync && await _net.isOnline()) {
+          // Flash item 5: ONLINE logout also confirms first ("do you want to log
+          // out?"). Cancel aborts (stay signed in). Then push + wipe (unchanged).
+          final ok = await Get.defaultDialog<bool>(
+            title: 'logout'.tr,
+            middleText: 'logout_confirm'.tr,
+            textConfirm: 'logout'.tr,
+            textCancel: 'cancel'.tr,
+            onConfirm: () => Get.back(result: true),
+            onCancel: () {},
+          );
+          if (ok != true) return; // cancel → abort the logout entirely
           try {
             await sync.syncNow(silent: true);
           } catch (_) {}
