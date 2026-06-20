@@ -98,6 +98,39 @@ class AuthRepository {
     return (acc as Map).cast<String, dynamic>();
   }
 
+  /// Flash item 8: owner creates a BRANCH login account (generator name + phone
+  /// + password). The branch is a backend owner-role account linked to this
+  /// owner (parentOwner) with its own isolated mirror; it logs in via the normal
+  /// login screen. Returns the created branch map. Throws [ApiException]
+  /// (409 PHONE_TAKEN, 403 SUB_BRANCH_FORBIDDEN/FORBIDDEN, 400 VALIDATION).
+  Future<Map<String, dynamic>> createBranch({
+    required String generatorName,
+    required String phone,
+    required String password,
+  }) async {
+    final res = await _api.post(
+      ApiConfig.branches,
+      body: {
+        'generatorName': generatorName,
+        'phone': phone,
+        'password': password,
+      },
+    );
+    final map = (res as Map).cast<String, dynamic>();
+    final b = map['branch'] ?? map;
+    return (b as Map).cast<String, dynamic>();
+  }
+
+  /// Flash item 8: list this owner's branch accounts.
+  Future<List<Map<String, dynamic>>> listBranches() async {
+    final res = await _api.get(ApiConfig.branches);
+    final map = (res as Map).cast<String, dynamic>();
+    final list = (map['branches'] as List?) ?? const [];
+    return list
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList(growable: false);
+  }
+
   /// R8: update a backend accountant sub-account (by the app-side [localId]).
   /// Used to disable (active:false), rename, re-scope branch/permissions, or
   /// reset the password ON THE SERVER so a revoke/disable actually takes effect

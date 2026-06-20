@@ -27,6 +27,9 @@ class ApiConfig {
   static const String accountants = '/api/account/accountants';
   static String accountantById(String id) => '/api/account/accountants/$id';
 
+  // --- Branch sub-accounts (Flash item 8: owner creates a branch login) ---
+  static const String branches = '/api/account/branches';
+
   // --- Subscription ---
   static const String plans = '/api/subscription/plans';
   static const String subscription = '/api/subscription';

@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
+import 'package:generatormanagment/core/api_client.dart';
+import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/data/models/branch_model.dart';
+import 'package:generatormanagment/data/repositories/auth_repository.dart';
 import 'package:generatormanagment/views/widgets/app_form_field.dart';
 
 /// Owner-only screen for managing branches (create / edit / delete + activate).
@@ -32,6 +35,17 @@ class BranchesScreen extends StatelessWidget {
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
         centerTitle: true,
+        actions: [
+          // Flash item 8: owner creates a BRANCH login account (own generator
+          // name + phone + password); it then logs in from the login screen.
+          Obx(() => (auth.isAdmin && auth.canMultiBranch)
+              ? IconButton(
+                  icon: const Icon(Icons.person_add_alt_1, color: Colors.white),
+                  tooltip: 'add_branch_account'.tr,
+                  onPressed: _showAddBranchAccountDialog,
+                )
+              : const SizedBox.shrink()),
+        ],
       ),
       body: Obx(() {
         // Owner-only AND plan-gated.
@@ -189,6 +203,96 @@ class BranchesScreen extends StatelessWidget {
             },
             child: Text('add'.tr),
           ),
+        ],
+      ),
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  // ADD BRANCH ACCOUNT (Flash item 8) — a backend login account for a branch
+  // (generator name + phone + password). It logs in from the normal login
+  // screen; its data is isolated and aggregated under the owner's panel.
+  // --------------------------------------------------------------------------
+  void _showAddBranchAccountDialog() {
+    final genCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    final busy = false.obs;
+
+    Get.dialog(
+      AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('add_branch_account'.tr),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppTextField(
+                  controller: genCtrl,
+                  label: 'generator_name'.tr,
+                  icon: Icons.bolt),
+              const SizedBox(height: 12),
+              AppTextField(
+                  controller: phoneCtrl,
+                  label: 'phone'.tr,
+                  icon: Icons.phone,
+                  keyboardType: TextInputType.phone),
+              const SizedBox(height: 12),
+              AppTextField(
+                  controller: passCtrl,
+                  label: 'password'.tr,
+                  icon: Icons.lock,
+                  obscureText: true),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
+          Obx(() => ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kAppBlue,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: busy.value
+                    ? null
+                    : () async {
+                        final gen = genCtrl.text.trim();
+                        final phone = phoneCtrl.text.trim();
+                        final pass = passCtrl.text;
+                        if (gen.isEmpty || phone.isEmpty || pass.length < 4) {
+                          Get.snackbar('error'.tr, 'fill_all_fields'.tr);
+                          return;
+                        }
+                        if (!await ConnectivityService().isOnline()) {
+                          Get.snackbar('error'.tr, 'online_only'.tr);
+                          return;
+                        }
+                        busy.value = true;
+                        try {
+                          await AuthRepository().createBranch(
+                              generatorName: gen,
+                              phone: phone,
+                              password: pass);
+                          Get.back();
+                          Get.snackbar('branches'.tr, 'branch_account_created'.tr,
+                              backgroundColor: Colors.green,
+                              colorText: Colors.white);
+                        } on ApiException catch (e) {
+                          Get.snackbar('error'.tr, e.message);
+                        } catch (e) {
+                          Get.snackbar('error'.tr, '$e');
+                        } finally {
+                          busy.value = false;
+                        }
+                      },
+                child: busy.value
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : Text('create'.tr),
+              )),
         ],
       ),
     );
