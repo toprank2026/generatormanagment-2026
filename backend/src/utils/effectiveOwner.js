@@ -17,4 +17,27 @@ function effectiveOwnerId(user) {
   return user && (user._id || user.id);
 }
 
-module.exports = { effectiveOwnerId };
+/**
+ * The account whose subscription/feature flags gate a request.
+ *
+ * Both kinds of sub-account INHERIT their parent's plan for gating:
+ *  - an accountant inherits its `owner`'s plan;
+ *  - a BRANCH (role:'owner' with parentOwner set) inherits its `parentOwner`'s
+ *    plan — so a branch is never gated on its own empty subscription (which would
+ *    default every feature to true and bypass a restricted parent's plan).
+ *
+ * requireAuth pre-loads these parents (req.ownerAccount for accountants,
+ * req.parentAccount for branches); pass them in to avoid an extra DB read.
+ *
+ * @param {object} user the authenticated User (req.user)
+ * @param {object} [loaded] { ownerAccount, parentAccount } pre-loaded parents
+ * @returns {object|null} the User whose plan to gate against (self for top-level)
+ */
+function featureSubject(user, loaded = {}) {
+  if (!user) return null;
+  if (user.role === 'accountant') return loaded.ownerAccount || null;
+  if (user.parentOwner) return loaded.parentAccount || null;
+  return user;
+}
+
+module.exports = { effectiveOwnerId, featureSubject };

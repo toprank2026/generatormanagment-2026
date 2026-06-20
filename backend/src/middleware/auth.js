@@ -51,6 +51,18 @@ const requireAuth = asyncHandler(async (req, res, next) => {
     req.ownerAccount = owner;
   }
 
+  // A BRANCH (role:'owner' with parentOwner set) is cascade-blocked by its parent
+  // top-level owner: a blocked/missing parent cuts the branch off too. Load the
+  // parent once and expose it for feature-gating (branches inherit the parent's
+  // plan via featureSubject/requireFeature).
+  if (user.parentOwner) {
+    const parent = await User.findById(user.parentOwner);
+    if (!parent || parent.blocked) {
+      return res.status(403).json({ message: 'Account blocked', code: 'BLOCKED' });
+    }
+    req.parentAccount = parent;
+  }
+
   req.user = user;
   return next();
 });

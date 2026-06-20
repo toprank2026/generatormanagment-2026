@@ -97,6 +97,18 @@ const login = asyncHandler(async (req, res) => {
     return;
   }
 
+  // A BRANCH sub-account (role:'owner' with parentOwner set) is cascade-blocked
+  // by its parent top-level owner and INHERITS the parent's subscription/features
+  // for gating (so a branch is never gated on its own empty subscription). It is
+  // still a full owner for its OWN data mirror, so device binding below applies.
+  let parent = null;
+  if (user.parentOwner) {
+    parent = await User.findById(user.parentOwner);
+    if (!parent || parent.blocked) {
+      throw new HttpError(403, 'Account blocked', 'BLOCKED');
+    }
+  }
+
   // Bind / validate the device WHEN PRESENT. The mobile app always sends one
   // (so maxDevices is enforced for every real app login); the browser admin /
   // owner panel logs in through this same endpoint WITHOUT a device, so we must
@@ -113,7 +125,14 @@ const login = asyncHandler(async (req, res) => {
 
   const token = signToken(user);
   const account = serializeAccount(user, device && device.deviceId);
-  account.subscription.features = await featuresForUser(user);
+  // Branches report the PARENT's subscription/features (inherited); top-level
+  // owners report their own.
+  if (parent) {
+    account.subscription = serializeSubscription(parent.subscription);
+    account.subscription.features = await featuresForUser(parent);
+  } else {
+    account.subscription.features = await featuresForUser(user);
+  }
   res.status(200).json({ token, account });
 });
 
@@ -198,6 +217,21 @@ const me = asyncHandler(async (req, res) => {
     }
     account.subscription = serializeSubscription(owner.subscription);
     account.subscription.features = await featuresForUser(owner);
+    res.status(200).json({ account });
+    return;
+  }
+
+  // A BRANCH inherits the parent owner's subscription/features (requireAuth has
+  // already rejected a blocked/missing parent and attached req.parentAccount).
+  if (req.user.parentOwner) {
+    const parent =
+      req.parentAccount ||
+      (req.user.parentOwner ? await User.findById(req.user.parentOwner) : null);
+    if (!parent || parent.blocked) {
+      throw new HttpError(403, 'Account blocked', 'BLOCKED');
+    }
+    account.subscription = serializeSubscription(parent.subscription);
+    account.subscription.features = await featuresForUser(parent);
     res.status(200).json({ account });
     return;
   }

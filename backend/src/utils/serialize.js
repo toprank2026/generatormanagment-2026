@@ -86,6 +86,8 @@ function serializeAccount(user, currentDeviceId) {
     role: user.role || 'owner',
     // Accountant sub-account fields (null/[] for owners/admins).
     ownerId: user.owner ? String(user.owner) : null,
+    // Branch sub-account: the parent top-level owner (null for a top-level owner).
+    parentOwnerId: user.parentOwner ? String(user.parentOwner) : null,
     branchId: user.branchId || null,
     permissions: Array.isArray(user.permissions) ? user.permissions : [],
     localId: user.localId || null,
@@ -93,6 +95,26 @@ function serializeAccount(user, currentDeviceId) {
     createdAt: toIso(user.createdAt),
     subscription: serializeSubscription(user.subscription),
     devices,
+  };
+}
+
+/**
+ * Compact view of a BRANCH sub-account, as returned by the branch management
+ * endpoints (POST/GET /api/account/branches). A branch is itself a
+ * `role:'owner'` User whose parentOwner is the caller — this is the panel-facing
+ * shape (no secrets), not a full Account / login response.
+ */
+function serializeBranch(user) {
+  const u = user || {};
+  return {
+    id: String(u._id || u.id),
+    generatorName: u.generatorName || u.name || null,
+    name: u.name || null,
+    phone: u.phone || null,
+    username: u.username,
+    parentOwnerId: u.parentOwner ? String(u.parentOwner) : null,
+    blocked: Boolean(u.blocked),
+    createdAt: toIso(u.createdAt),
   };
 }
 
@@ -129,6 +151,7 @@ module.exports = {
   serializeSubscription,
   serializeDevice,
   serializeAccount,
+  serializeBranch,
   serializePlan,
   serializeBackup,
 };

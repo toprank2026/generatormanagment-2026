@@ -62,6 +62,14 @@ const UserSchema = new Schema(
     branchId: { type: String, default: null },
     permissions: { type: [String], default: [] },
     localId: { type: String, default: null, index: true },
+    // Branch sub-accounts: a BRANCH is itself a `role:'owner'` User that is a
+    // CHILD of the creating top-level owner. parentOwner = null for a top-level
+    // owner; parentOwner = the creating owner's _id for a branch. A branch keeps
+    // role:'owner' so all owner-scoped sync/backup/account logic applies to its
+    // OWN data mirror unchanged (its effectiveOwner is itself), but it INHERITS
+    // the parent's subscription/features and is cascade-blocked by the parent.
+    // A branch may NOT create sub-branches (parentOwner-set callers are rejected).
+    parentOwner: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
   },
   { timestamps: true }
 );

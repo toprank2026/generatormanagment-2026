@@ -72,6 +72,20 @@ sub-account created via `POST /api/account/accountants`):
 
 `GET /api/auth/me` applies the same inheritance for an accountant token.
 
+**Branch logins.** When the matched user has `role:"owner"` but `parentOwner`
+set (a branch sub-account created via `POST /api/account/branches`):
+- the password is verified normally and the `device` is bound / `maxDevices`
+  enforced **like a normal owner** (a branch is a real owner of its own mirror —
+  NOT device-exempt, unlike accountants);
+- the returned `subscription` (incl. `features`) is **inherited from the parent
+  top-level owner** (`parentOwnerId`), so a branch is never `subscriptionBlocked`
+  on its own (empty) subscription;
+- a **blocked/missing parent** → `403 code=BLOCKED` (cascade), at login and on
+  every authed request (`requireAuth`);
+- the returned account carries `parentOwnerId` (see the **Account** object).
+
+`GET /api/auth/me` applies the same parent inheritance for a branch token.
+
 **Rate limiting.** `POST /api/auth/login`, `POST /api/auth/register`, and
 `POST /api/auth/recover-device` are IP-rate-limited (~10 requests / minute / IP).
 Exceeding the limit returns `429 { "code": "RATE_LIMITED", "message": "..." }`.
@@ -389,6 +403,70 @@ Deletes one of the caller's accountants (ownership guarded).
 ```
 Errors: `404 code=ACCOUNTANT_NOT_FOUND`.
 
+### Branches — `/api/account/branches`  (auth; role **owner only**)
+
+Manage **branch sub-accounts** of the caller ("branch = owner-created
+sub-account"). A BRANCH is itself a `User` with `role:"owner"` whose
+`parentOwner` is the caller; it behaves owner-like for its **OWN** data mirror
+(its effective owner is itself, so its `/api/sync` push/pull and
+`/api/account/stats|data|recent` all resolve to its **own** mirror — fully
+isolated from the parent's and from sibling branches). A branch **logs in through
+the normal `/api/auth/login`** (its `phone` as `username`, its own password), and:
+- **INHERITS** the parent owner's subscription/features for gating (its own
+  subscription stays `none` and is never used — resolved via `parentOwner`, just
+  like an accountant resolves via `owner`). The login / `me` response reports the
+  **parent's** `subscription` (incl. `features`);
+- is **cascade-blocked** by the parent: a blocked/missing parent top-level owner
+  → `403 code=BLOCKED` on the branch's login and on any authed request
+  (`requireAuth`), mirroring the accountant rule;
+- is a real owner of its own mirror, so its login **does** bind a device /
+  enforce `maxDevices` (unlike accountants, which are device-exempt);
+- **cannot create sub-branches** — a branch caller (its own `parentOwner` set)
+  hitting `POST /api/account/branches` → `403 code=SUB_BRANCH_FORBIDDEN`.
+
+A non-owner caller (accountant, admin) hitting any of these → `403 code=FORBIDDEN`.
+
+The Branch object returned here (compact, no secrets):
+```jsonc
+{ "id": "mongoid", "generatorName": "...", "name": "...", "phone": "...",
+  "username": "...", "parentOwnerId": "owner-mongoid", "blocked": false,
+  "createdAt": "ISO" }
+```
+
+#### POST `/api/account/branches`  (owner only)
+Creates a branch owned by the caller. `username` = `phone.toLowerCase()` and must
+be unique; `phone` must be unique (same checks as register).
+```jsonc
+// request
+{ "generatorName": "North Gen", "phone": "07710000000", "password": "secret" }
+// 201 response
+{ "branch": { /* Branch */ } }
+```
+Errors: `400 code=VALIDATION` (missing generatorName/phone or password < 4
+chars), `409 code=PHONE_TAKEN` (phone/username already in use),
+`403 code=SUB_BRANCH_FORBIDDEN` (caller is itself a branch),
+`403 code=FORBIDDEN` (caller is not an owner).
+
+#### GET `/api/account/branches`  (owner only)
+```jsonc
+{ "branches": [ { /* Branch */ } ] }   // the caller's branches only (newest first)
+```
+
+#### GET `/api/account/branches/:branchId/stats[?month=YYYY-MM]`  (owner only)
+The parent panel views ONE of its branches' dashboards, scoped to that branch
+user's **own** mirror. Same `counts` + `dashboard` shape as
+`GET /api/account/stats` (the dashboard covers the whole branch account — no
+inner accountant/branch filter). Ownership-checked: the `:branchId` User must
+have `parentOwner === caller`.
+Errors: `404 code=BRANCH_NOT_FOUND` (not the caller's branch),
+`403 code=FORBIDDEN` (caller is not an owner).
+
+#### GET `/api/account/branches/:branchId/data?entity=&...`  (owner only)
+The parent panel reads ONE of its branches' synced mirror — same query params +
+response shape as `GET /api/account/data`, scoped to that branch user's **own**
+mirror. Ownership-checked like the stats endpoint.
+Errors: `400` missing `entity`, `404 code=BRANCH_NOT_FOUND`, `403 code=FORBIDDEN`.
+
 ---
 
 ## Admin — `/api/admin`  (auth + role=admin)
@@ -537,6 +615,7 @@ The Flutter receipt QR encodes `${API_BASE_URL}/admin/#/r/<uuid>`; the admin SPA
   "username": "owner1",
   "role": "owner|admin|accountant",
   "ownerId": null,          // accountant only: the parent owner/admin account id (string); null for owner/admin
+  "parentOwnerId": null,    // BRANCH only: the parent top-level owner id (string); null for a top-level owner/admin/accountant
   "branchId": null,         // accountant only: the branch the accountant is scoped to; null otherwise
   "permissions": [],        // accountant only: granted permission keys; [] for owner/admin
   "localId": null,          // accountant only: the app-side accountant UUID (attribution round-trip); null otherwise
@@ -549,6 +628,9 @@ The Flutter receipt QR encodes `${API_BASE_URL}/admin/#/r/<uuid>`; the admin SPA
 `ownerId`/`branchId`/`permissions`/`localId` are always present; they carry
 values only for `role:"accountant"` sub-accounts (see **Accountant logins** and
 **Account → Accountants** below) and are `null`/`[]` for owners and admins.
+`parentOwnerId` is set only for a **branch** sub-account (a `role:"owner"` User
+that is a child of the creating owner — see **Account → Branches**); it is `null`
+for top-level owners, admins, and accountants.
 ### Subscription
 ```jsonc
 {

@@ -292,4 +292,8 @@ module.exports = {
   getMyData,
   getMyStats,
   getMyRecent,
+  // Exported so the per-branch owner-panel endpoints can reuse the exact same
+  // dashboard math + stat-entity list, scoped to a branch user's mirror.
+  buildDashboard,
+  STAT_ENTITIES,
 };
