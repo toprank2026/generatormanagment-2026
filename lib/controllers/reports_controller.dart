@@ -48,9 +48,11 @@ class ReportsController extends GetxController {
 
   var totalAmps = 0.0.obs;
   var pricePerAmp = 0.0.obs; // standard (back-compat; banner + expected math)
-  // P2: per-tariff ampere prices for the selected month/branch.
-  var goldPrice = 0.0.obs;
-  var commercialPrice = 0.0.obs;
+  // (item 1) per-tariff PAID subscriber counts for the selected month/branch
+  // (replaces the old per-tariff price cards).
+  var paidGold = 0.obs;
+  var paidStandard = 0.obs;
+  var paidCommercial = 0.obs;
   var expectedTotal = 0.0.obs;
   var collectedTotal = 0.0.obs;
   var remainingTotal = 0.0.obs;
@@ -105,9 +107,6 @@ class ReportsController extends GetxController {
       //    figure shown on the report uses the standard category as representative.
       final prices = await _priceRepo.pricesForMonth(m, branchId: branch);
       pricePerAmp.value = prices[SubscriberCategory.standard] ?? 0.0;
-      // P2: surface all three tariff prices on the report.
-      goldPrice.value = prices[SubscriberCategory.gold] ?? 0.0;
-      commercialPrice.value = prices[SubscriberCategory.commercial] ?? 0.0;
 
       // 3. Financials. Expected is CATEGORY-AWARE: Σ amps × price[category] (R4),
       //    from the per-category amp sums above.
@@ -139,6 +138,23 @@ class ReportsController extends GetxController {
         isPaid: false,
         branchId: branch,
       );
+
+      // (item 1) per-tariff PAID counts (gold / standard / commercial).
+      paidGold.value = await _subRepo.countByPaymentStatus(
+          month: m,
+          isPaid: true,
+          branchId: branch,
+          category: SubscriberCategory.gold);
+      paidStandard.value = await _subRepo.countByPaymentStatus(
+          month: m,
+          isPaid: true,
+          branchId: branch,
+          category: SubscriberCategory.standard);
+      paidCommercial.value = await _subRepo.countByPaymentStatus(
+          month: m,
+          isPaid: true,
+          branchId: branch,
+          category: SubscriberCategory.commercial);
 
       // 5. The month's payments list (newest first), page 1.
       _receiptsPage = 1;

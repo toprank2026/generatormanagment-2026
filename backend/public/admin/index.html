@@ -2286,8 +2286,11 @@ function viewMyReports(){
     var hasNet=dash.netProfit!=null||hasExpenses;
     var net=dash.netProfit!=null?repNum(dash.netProfit):(collected-expenses);
 
-    // collection rate: collected / expected, clamped 0..1, divide-by-zero -> 0
-    var rate=((remaining+collected)>0&&expected>0)?Math.min(1,Math.max(0,collected/expected)):0;
+    // collection rate = COVERAGE / expected (item 4 fix), where coverage =
+    // collected cash + waived discount = expected − remaining (discount-aware,
+    // matches the app). Bare collected/expected understated it when discounts
+    // were given. Clamped 0..1; divide-by-zero -> 0.
+    var rate=expected>0?Math.min(1,Math.max(0,(expected-remaining)/expected)):0;
 
     wrap.appendChild(repChartCard("نسبة التحصيل",repGauge(rate,"نسبة التحصيل لشهر "+month)));
     wrap.appendChild(repChartCard("المسددون وغير المسددين",repDonut(paid,unpaid,totalSubs)));

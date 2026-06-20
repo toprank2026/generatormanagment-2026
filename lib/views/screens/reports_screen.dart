@@ -83,8 +83,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 final money = NumberFormat.decimalPattern();
                 final double expected = controller.expectedTotal.value;
                 final double collected = controller.collectedTotal.value;
+                // item 4 fix: collection rate is COVERAGE / expected, where
+                // coverage = collected cash + waived discount = expected −
+                // remaining (discount-aware, matches the dashboard). Using bare
+                // collected/expected understated the rate whenever a discount
+                // was given (a fully-paid-with-discount month never hit 100%).
                 final double rate = expected > 0
-                    ? (collected / expected).clamp(0.0, 1.0).toDouble()
+                    ? ((expected - controller.remainingTotal.value) / expected)
+                        .clamp(0.0, 1.0)
+                        .toDouble()
                     : 0.0;
                 final double net = controller.netProfit.value;
                 final Color netColor =
@@ -222,29 +229,28 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             value: money.format(net),
                             valueColor: netColor,
                           ),
-                          // P2: ampere price for ALL THREE tariffs (not just
-                          // the normal/standard one).
+                          // item 1: COUNT of PAID subscribers per tariff (gold /
+                          // standard / commercial) — not their prices.
                           _buildStatCard(
-                            icon: Icons.electric_bolt,
+                            icon: Icons.people,
                             color: const Color(0xFFFFB300), // gold
                             label:
-                                '${'cat_gold'.tr} — ${'receipt_price_per_amp'.tr}',
-                            value: money.format(controller.goldPrice.value),
+                                '${'cat_gold'.tr} — ${'paid_subscribers'.tr}',
+                            value: controller.paidGold.value.toString(),
                           ),
                           _buildStatCard(
-                            icon: Icons.electric_bolt,
+                            icon: Icons.people,
                             color: Colors.cyan,
                             label:
-                                '${'cat_standard'.tr} — ${'receipt_price_per_amp'.tr}',
-                            value: money.format(controller.pricePerAmp.value),
+                                '${'cat_standard'.tr} — ${'paid_subscribers'.tr}',
+                            value: controller.paidStandard.value.toString(),
                           ),
                           _buildStatCard(
-                            icon: Icons.electric_bolt,
+                            icon: Icons.people,
                             color: const Color(0xFF00897B), // commercial (teal)
                             label:
-                                '${'cat_commercial'.tr} — ${'receipt_price_per_amp'.tr}',
-                            value:
-                                money.format(controller.commercialPrice.value),
+                                '${'cat_commercial'.tr} — ${'paid_subscribers'.tr}',
+                            value: controller.paidCommercial.value.toString(),
                           ),
                         ],
                       ),
