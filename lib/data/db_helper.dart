@@ -574,8 +574,16 @@ class DbHelper {
     );
     await db.transaction((txn) async {
       for (final r in rows) {
-        await txn.delete(r['name'] as String);
+        final name = r['name'] as String;
+        if (name == 'sync_outbox') continue; // cleared LAST (below)
+        await txn.delete(name);
       }
+      // Clear the outbox LAST: deleting the business tables fires their AFTER
+      // DELETE triggers, which enqueue tombstones. Emptying the outbox after all
+      // of them drops those tombstones so the next login's push can't replay
+      // them as deletes against the server mirror (data loss on upgraded
+      // installs where sync_outbox predates accountants/branches/settlements).
+      await txn.delete('sync_outbox');
     });
   }
 

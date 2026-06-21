@@ -23,6 +23,9 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
   @override
   void initState() {
     super.initState();
+    // Normally ReportsController is already populated (Reports tab loads it on
+    // launch), but if it isn't (cold open / empty), load it here.
+    if (controller.receipts.isEmpty) controller.loadReport();
     _scroll.addListener(() {
       if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 200) {
         controller.loadMoreReceipts();
@@ -56,26 +59,35 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
         ),
       ),
       body: Obx(() {
-        if (controller.receipts.isEmpty) {
-          return Center(
-            child: Text('no_data_month'.tr,
-                style: TextStyle(color: Colors.grey[500], fontSize: 16)),
-          );
-        }
-        return ListView.builder(
-          controller: _scroll,
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-          itemCount: controller.receipts.length +
-              (controller.isReceiptsLoadingMore.value ? 1 : 0),
-          itemBuilder: (context, i) {
-            if (i == controller.receipts.length) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Center(child: CircularProgressIndicator()),
-              );
-            }
-            return _buildReceiptCard(controller.receipts[i]);
-          },
+        return RefreshIndicator(
+          onRefresh: () => controller.loadReport(),
+          child: controller.receipts.isEmpty
+              ? ListView(
+                  // ListView (not Center) so pull-to-refresh works when empty.
+                  children: [
+                    SizedBox(height: MediaQuery.of(context).size.height * 0.35),
+                    Center(
+                      child: Text('no_data_month'.tr,
+                          style:
+                              TextStyle(color: Colors.grey[500], fontSize: 16)),
+                    ),
+                  ],
+                )
+              : ListView.builder(
+                  controller: _scroll,
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  itemCount: controller.receipts.length +
+                      (controller.isReceiptsLoadingMore.value ? 1 : 0),
+                  itemBuilder: (context, i) {
+                    if (i == controller.receipts.length) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    return _buildReceiptCard(controller.receipts[i]);
+                  },
+                ),
         );
       }),
     );

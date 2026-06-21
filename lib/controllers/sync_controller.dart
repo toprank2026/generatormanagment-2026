@@ -162,7 +162,7 @@ class SyncController extends GetxController {
   /// snackbar so the 30s heartbeat doesn't spam; the manual button passes
   /// silent:false to surface the outcome. Either way the failure REASON is kept
   /// in [lastSyncError] so the UI can explain stuck pending (P3).
-  Future<void> syncNow({bool silent = false}) async {
+  Future<void> syncNow({bool silent = false, bool showOverlay = true}) async {
     // Offline-only mode: sync is disabled by the active plan — do nothing.
     if (!_canSync) return;
     // Don't push while a pull / branch-switch is in flight (see maybeAutoSync).
@@ -175,7 +175,10 @@ class SyncController extends GetxController {
     isSyncing.value = true;
     // R7b: only a LARGE upload blocks the UI with the overlay; small auto-sync
     // batches (every 30s) push silently with no overlay flicker.
-    final bool big = pendingCount.value > largeThreshold;
+    // [showOverlay] is false when a caller (e.g. logout) already owns the
+    // SyncProgress overlay — otherwise this push's own hide() in finally would
+    // close the caller's overlay early (the overlay is a single-latch singleton).
+    final bool big = showOverlay && pendingCount.value > largeThreshold;
     try {
       if (big) SyncProgress.show('sync_uploading'.tr);
       await _sync.push();

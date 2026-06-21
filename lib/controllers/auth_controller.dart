@@ -499,7 +499,8 @@ class AuthController extends GetxController {
       try {
         if (online) {
           try {
-            await sync.syncNow(silent: true);
+            // showOverlay:false — logout already owns the SyncProgress overlay.
+            await sync.syncNow(silent: true, showOverlay: false);
           } catch (_) {}
         }
         await sync.deleteAllLocalData();
