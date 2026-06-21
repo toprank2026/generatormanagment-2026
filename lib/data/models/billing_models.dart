@@ -172,3 +172,8 @@ String receiptDiscountText(Receipt r) {
   }
   return '${_fmtNum(r.discountValue)} د.ع';
 }
+
+/// Arabic payment-method label for a PRINTED receipt (v11): 'card' -> بطاقة,
+/// anything else -> نقدي. Hardcoded Arabic like the rest of the printed body.
+String receiptPaymentMethodText(Receipt r) =>
+    r.paymentMethod == 'card' ? 'بطاقة' : 'نقدي';

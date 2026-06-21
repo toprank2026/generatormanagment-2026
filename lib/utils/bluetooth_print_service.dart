@@ -62,7 +62,10 @@ class BluetoothPrintService {
     bool? isConnected = await bluetooth.isConnected;
     if (isConnected != true) return;
 
-    bluetooth.write(" \n"); // Clear buffer
+    // v11: print TWO copies in the same operation (one for the subscriber, one
+    // to keep). Each iteration emits a full receipt with its own tear-off feed.
+    for (int copy = 0; copy < 2; copy++) {
+    bluetooth.write(" \n"); // Clear buffer / separate copies
 
     // Header: generator/business name (set at sign-up)
     await printArabicText(_generatorName(), "", fontSize: 30, textAlign: 1);
@@ -85,6 +88,8 @@ class BluetoothPrintService {
         SubscriberCategory.arabicLabel(receipt.categorySnapshot ?? sub.category)
       ],
       ["المدفوع", "${receipt.paidAmount} د.ع"],
+      // v11: payment method (cash / card).
+      ["طريقة الدفع", receiptPaymentMethodText(receipt)],
       // P5: Discount section — type + value, or "no discount".
       ["الخصم", receiptDiscountText(receipt)],
       ["المتبقي", "${receipt.remainingAfter} د.ع"],
@@ -109,6 +114,7 @@ class BluetoothPrintService {
     bluetooth.printNewLine();
     bluetooth.printNewLine();
     bluetooth.printNewLine(); // Extra lines for tear-off
+    } // end copy loop (two copies)
   }
 
   /// The header printed on the receipt: the ACTIVE BRANCH name (the generator's

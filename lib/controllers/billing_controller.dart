@@ -195,6 +195,7 @@ class BillingController extends GetxController {
     String discountType = 'none',
     double discountAmps = 0,
     double discountValueInput = 0,
+    String paymentMethod = 'cash', // v11: 'cash' | 'card'
   }) async {
     // The receipt belongs to the SUBSCRIBER's branch (correct even when
     // collecting from the consolidated view, where the active branch is null).
@@ -263,6 +264,7 @@ class BillingController extends GetxController {
       discountType: discType,
       discountValue: discountValue,
       discountAmps: discountAmpsRec,
+      paymentMethod: paymentMethod,
       issuedAt: DateTime.now().toIso8601String(),
     );
 

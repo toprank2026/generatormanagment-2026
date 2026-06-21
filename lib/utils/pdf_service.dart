@@ -38,6 +38,8 @@ class PdfService {
         SubscriberCategory.arabicLabel(receipt.categorySnapshot ?? sub.category)
       ],
       ['المدفوع', '${receipt.paidAmount} د.ع'],
+      // v11: payment method (cash / card).
+      ['طريقة الدفع', receiptPaymentMethodText(receipt)],
       // P5: Discount section — type + value, or "no discount".
       ['الخصم', receiptDiscountText(receipt)],
       ['المتبقي', '${receipt.remainingAfter} د.ع'],
@@ -56,6 +58,8 @@ class PdfService {
           ),
         );
 
+    // v11: two copies (two pages) in one print operation.
+    for (int copy = 0; copy < 2; copy++) {
     pdf.addPage(
       pw.Page(
         // Thermal printer width — roll57 for 58mm, roll80 for 80mm (setting).
@@ -116,6 +120,7 @@ class PdfService {
         },
       ),
     );
+    } // end copy loop (two copies)
 
     return pdf.save();
   }

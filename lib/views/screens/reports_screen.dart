@@ -578,7 +578,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(
-          _formatDate(r.issuedAt),
+          // v11: show the payment method alongside the date.
+          '${_formatDate(r.issuedAt)} · ${r.paymentMethod == 'card' ? 'pay_card'.tr : 'pay_cash'.tr}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),

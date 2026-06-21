@@ -25,6 +25,7 @@ Future<Receipt?> showCollectPaymentDialog({
 
   bool full = true; // default to full payment
   String discountType = 'none'; // 'none' | 'ampere' | 'value'
+  String paymentMethod = 'cash'; // v11: 'cash' | 'card'
   final amountCtrl = TextEditingController(text: due.toStringAsFixed(0));
   final discAmpsCtrl = TextEditingController();
   final discValCtrl = TextEditingController();
@@ -100,6 +101,32 @@ Future<Receipt?> showCollectPaymentDialog({
                           full = false;
                           discountType = 'none'; // no discount on partial
                         }),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // v11: payment method (Cash / Credit card).
+                Text('payment_method'.tr,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ChoiceChip(
+                        label: Center(child: Text('pay_cash'.tr)),
+                        selected: paymentMethod == 'cash',
+                        onSelected: (_) =>
+                            setLocal(() => paymentMethod = 'cash'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ChoiceChip(
+                        label: Center(child: Text('pay_card'.tr)),
+                        selected: paymentMethod == 'card',
+                        onSelected: (_) =>
+                            setLocal(() => paymentMethod = 'card'),
                       ),
                     ),
                   ],
@@ -204,6 +231,7 @@ Future<Receipt?> showCollectPaymentDialog({
                         double.tryParse(discAmpsCtrl.text.trim()) ?? 0,
                     discountValueInput:
                         double.tryParse(discValCtrl.text.trim()) ?? 0,
+                    paymentMethod: paymentMethod,
                   );
                   Get.back(result: receipt);
                 } catch (e) {
