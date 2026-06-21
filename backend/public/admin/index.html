@@ -689,7 +689,7 @@ function ensureBranchAccounts(){
   acctBranch.loading=true;
   API.branchAccounts().then(function(res){
     var arr=(res&&res.branches)||[];
-    acctBranch.list=arr.map(function(b){ return {id:String(b.id),name:b.generatorName||b.name||b.phone||String(b.id)}; });
+    acctBranch.list=arr.map(function(b){ return {id:String(b.id),name:b.generatorName||b.name||b.phone||String(b.id),phone:b.phone||b.username||""}; });
     acctBranch.loading=false;
     if(acctBranch.id && !acctBranch.list.some(function(b){ return b.id===acctBranch.id; })) acctBranch.id="";
     // No "my account / all" view: always land on a SPECIFIC branch (the first).
@@ -720,19 +720,21 @@ function acctData(entity,opts){
   if(bid && isBranchScopedEntity(entity)) o=Object.assign({},o,{branchId:bid});
   return API.myData(entity,o);
 }
-// Display name of the currently-selected branch (account switcher first, then
-// the legacy local-branch filter), or null when no specific branch is active.
-function activeBranchName(){
+// The currently-selected branch {name, phone, kind} (account switcher first,
+// then the legacy local-branch filter), or null when no branch is active. The
+// account-branch carries its own phone; a legacy local branch has only a name.
+function activeBranch(){
   if(acctBranch.id && acctBranch.list){
     var a=acctBranch.list.filter(function(b){ return b.id===acctBranch.id; })[0];
-    if(a) return a.name;
+    if(a) return {name:a.name, phone:a.phone||"", kind:"account"};
   }
   if(ownerBranch.id && ownerBranch.list){
     var o=ownerBranch.list.filter(function(b){ return String(b.id)===String(ownerBranch.id); })[0];
-    if(o) return o.name;
+    if(o) return {name:o.name, phone:"", kind:"local"};
   }
   return null;
 }
+function activeBranchName(){ var b=activeBranch(); return b?b.name:null; }
 function acctBranchBar(){
   if(!acctBranch.list || acctBranch.list.length<1) return null;
   // NO "my account / all branches" option — always exactly one branch.
@@ -2210,15 +2212,18 @@ function viewMyDashboard(){
     // App-style gradient banner. When a branch is selected the panel shows THAT
     // branch (title = branch name) with the owner generator as a subtitle, so the
     // upper panel reflects the branch you're viewing — not just the owner.
-    var brName=activeBranchName();
+    var br=activeBranch();
     var bannerKids=[];
-    if(brName){
-      bannerKids.push(bannerRow("account_tree",brName,true));
+    if(br){
+      // Title = branch name; the owner generator as subtitle; phone = the
+      // branch's own (branch-login accounts) else the owner's.
+      bannerKids.push(bannerRow("account_tree","الفرع: "+br.name,true));
       bannerKids.push(bannerRow("bolt",me.generatorName||me.name||"Flash",false));
+      bannerKids.push(bannerRow("phone_android",br.phone||me.username||me.phone||"—",false));
     } else {
       bannerKids.push(bannerRow("bolt",me.generatorName||me.name||"Flash",true));
+      bannerKids.push(bannerRow("phone_android",me.username||me.phone||"—",false));
     }
-    bannerKids.push(bannerRow("phone_android",me.username||me.phone||"—",false));
     bannerKids.push(bannerRow("workspace_premium",planRemainingText(sub),false));
     bannerKids.push(bannerRow("cloud_done","آخر رفع: "+((dash&&dash.lastUploadAt)?fmtDate(dash.lastUploadAt):"—"),false));
     content.appendChild(el("div",{class:"app-banner"},bannerKids));
