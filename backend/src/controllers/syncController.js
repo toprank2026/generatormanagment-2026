@@ -20,6 +20,7 @@ const SYNCED_ENTITIES = new Set([
   'monthly_prices',
   'branches',
   'accountants',
+  'settlements',
 ]);
 
 /**
@@ -38,6 +39,11 @@ const ENTITY_PERMISSION = {
   expenses: 'expenses',
   receipts: null,
   refunds: null,
+  // Wallet settlements are core accountant work (like receipts): always allowed.
+  // authorizeRecord then server-stamps branch_id + accountant_id for a
+  // branch-confined accountant, so a settlement request cannot be forged for
+  // another branch/accountant.
+  settlements: null,
   branches: false,
   accountants: false,
 };
@@ -195,10 +201,15 @@ const push = asyncHandler(async (req, res) => {
 });
 
 /**
- * GET /api/sync/pull?since=ISO (auth)
+ * GET /api/sync/pull?since=ISO[&receiptsMonth=YYYY-MM] (auth)
  * Returns { records: [ { entity, localId, deleted, updatedAt, data } ] } for the
  * current account, updated since `since` (defaults to all). Used by a new device
  * to restore the mirror.
+ *
+ * Optional `receiptsMonth` (YYYY-MM): when present, ONLY the `receipts` entity is
+ * restricted to rows whose `data.month` equals it (every other entity is
+ * unaffected) — used by the post-login pull to restore only the current month's
+ * receipts. `since` still applies to all entities.
  */
 const pull = asyncHandler(async (req, res) => {
   // Accountants pull the OWNER's mirror (effective owner); owners/admins their own.
@@ -210,6 +221,16 @@ const pull = asyncHandler(async (req, res) => {
       throw new HttpError(400, 'invalid since timestamp', 'BAD_SINCE');
     }
     filter.updatedAt = { $gt: since };
+  }
+
+  // Scope ONLY the receipts entity to a single month, leaving all other entities
+  // intact: a record either is NOT a receipt, OR is a receipt of that month.
+  const receiptsMonth = String(req.query.receiptsMonth || '').trim();
+  if (receiptsMonth) {
+    const monthClause = {
+      $or: [{ entity: { $ne: 'receipts' } }, { entity: 'receipts', 'data.month': receiptsMonth }],
+    };
+    filter.$and = (filter.$and || []).concat([monthClause]);
   }
 
   // A branch-confined accountant only sees its OWN branch's rows, plus the

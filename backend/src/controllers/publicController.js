@@ -19,6 +19,9 @@ const PUBLIC_RECEIPT_FIELDS = [
   'discount_type',
   'discount_value',
   'discount_amps',
+  // Payment method ('cash'|'card'); shown on the public QR receipt like the
+  // printed paper one.
+  'payment_method',
   'paid_amount',
   'remaining_after',
   'issued_at',

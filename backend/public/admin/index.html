@@ -479,6 +479,13 @@ function catLabel(v){
   if(v==="standard") return "عادي";
   return "—";
 }
+// Payment-method label ('cash'->'نقدي', 'card'->'بطاقة'); raw value as fallback,
+// "—" when absent.
+function paymentMethodLabel(v){
+  if(v==="cash") return "نقدي";
+  if(v==="card") return "بطاقة";
+  return (v==null||v==="")?"—":String(v);
+}
 // Discount line — mirrors Flutter receiptDiscountText (printed receipt).
 function fmtIntNum(n){ n=Number(n); return isNaN(n)?"0":String(Math.round(n)); }
 function receiptDiscountText(r){
@@ -570,6 +577,11 @@ var API={
   },
   myData:function(entity,opts){ return api("GET","/api/account/data"+syncDataQuery(entity,opts)); },
   myRecent:function(limit,page){ return api("GET","/api/account/recent?limit="+(limit||10)+"&page="+(page||1)); },
+  // Flash v11: owner approves/rejects an accountant wallet settlement request
+  // (mutates the owner mirror row in place; the accountant pulls the decision).
+  decideSettlement:function(localId,status,note){
+    return api("POST","/api/account/settlements/"+encodeURIComponent(localId)+"/decision",{status:status,note:note});
+  },
   // Flash item 7/8: the owner's BRANCH sub-accounts (own login, isolated mirror).
   branchAccounts:function(){ return api("GET","/api/account/branches"); },
   branchStats:function(branchId,month){
@@ -1420,7 +1432,8 @@ var OWNER_ENTITIES=[
   {value:"expenses",label:"المصروفات",icon:"payments"},
   {value:"monthly_prices",label:"أسعار الأشهر",icon:"calendar_month"},
   {value:"accountants",label:"المحاسبون",icon:"badge"},
-  {value:"branches",label:"الفروع",icon:"account_tree"}
+  {value:"branches",label:"الفروع",icon:"account_tree"},
+  {value:"settlements",label:"التسويات",icon:"account_balance_wallet"}
 ];
 function ownerEntityLabel(value){
   for(var i=0;i<OWNER_ENTITIES.length;i++){ if(OWNER_ENTITIES[i].value===value) return OWNER_ENTITIES[i].label; }
@@ -1567,8 +1580,23 @@ var SYNC_COLUMNS={
     {label:"الرمز",get:function(d){ return syncText(d.code); }},
     {label:"رئيسي",get:function(d){ return (d.is_main===1||d.is_main===true)?"نعم":"لا"; }},
     {label:"الحالة",get:function(d){ return (d.active===0||d.active===false)?"موقوف":"مفعّل"; }}
+  ],
+  settlements:[
+    // Accountant NAME is resolved by syncColumnsFor() via the accountants map;
+    // falls back to the raw accountant_id when unresolved.
+    {label:"المحاسب",get:function(d){ return syncText(d.accountant_id); }},
+    {label:"المبلغ",get:function(d){ return d.amount!=null?fmtPrice(d.amount):"—"; }},
+    {label:"الحالة",get:function(d){ return settlementStatusBadge(d.status); }},
+    {label:"تاريخ الطلب",get:function(d){ return d.requested_at?fmtDate(d.requested_at):"—"; }}
   ]
 };
+// Arabic status badge for a settlement ('pending'|'approved'|'rejected').
+var SETTLEMENT_STATUS_LABELS={pending:"قيد الانتظار",approved:"موافق عليه",rejected:"مرفوض"};
+function settlementStatusBadge(status){
+  var cls=status==="approved"?"green":(status==="rejected"?"red":"orange");
+  var lbl=SETTLEMENT_STATUS_LABELS[status]||syncText(status);
+  return el("span",{class:"badge "+cls,text:lbl});
+}
 
 /* Prefetch {localId -> display name} maps for related entities (boards/circuits)
    so tables and statements show NAMES, never raw UUIDs.
@@ -1609,6 +1637,16 @@ function syncColumnsFor(entity,maps){
       }};
     });
   }
+  if(entity==="settlements"&&cols){
+    var accts=(maps&&maps.accountants)||{};
+    cols=cols.map(function(c){
+      if(c.label!=="المحاسب") return c;
+      return {label:c.label,get:function(d){
+        // Accountant NAME via the prefetched map; fall back to the raw id.
+        return syncText(d.accountant_id!=null?(accts[d.accountant_id]||d.accountant_id):null);
+      }};
+    });
+  }
   return cols;
 }
 
@@ -1639,17 +1677,20 @@ function syncedDataCard(u){
 
 /* Shared renderer: a card/table of a user's synced records for one entity.
    `onDelete(record)` adds a trailing per-row Delete (danger ghost) action.
-   `maps` (optional) = name maps from loadNameMaps() used to resolve FK ids. */
-function renderSyncTable(entity,records,onDelete,drill,maps){
+   `maps` (optional) = name maps from loadNameMaps() used to resolve FK ids.
+   `extraActions(record)` (optional) returns extra per-row button elements
+   (e.g. settlement approve/reject) rendered before delete. */
+function renderSyncTable(entity,records,onDelete,drill,maps,extraActions){
   if(!records.length){
     return el("div",{class:"card"},[el("div",{class:"card-b"},[
       el("div",{class:"empty"},[el("div",{class:"big"},[mi("folder_open")]),"لا توجد بيانات ("+entityLabel(entity)+") متزامنة بعد."])
     ])]);
   }
-  var hasActions=!!(onDelete||drill);
+  var hasActions=!!(onDelete||drill||extraActions);
   function actionsCell(r){
     var btns=[];
     if(drill) btns.push(el("button",{class:"btn sm ghost",onclick:function(){ drill.onClick(r); }},["‹ "+drill.label]));
+    if(extraActions){ var ex=extraActions(r); if(ex&&ex.length) btns=btns.concat(ex); }
     if(onDelete) btns.push(el("button",{class:"btn sm danger ghost",onclick:function(){ onDelete(r); }},["حذف"]));
     return el("td",{class:"right"},[el("div",{class:"acts"},btns)]);
   }
@@ -2140,7 +2181,8 @@ function viewMyDashboard(){
         {label:"الجوزات",value:dash.circuits,icon:"electrical_services",chip:"teal",href:"#/my/data/circuits"},
         {label:"الوصولات",value:counts.receipts,icon:"receipt_long",chip:"orange",href:"#/my/data/receipts"},
         {label:"المحاسبون",value:counts.accountants,icon:"badge",chip:"purple"},
-        {label:"الفروع",value:counts.branches,icon:"account_tree",chip:"indigo",href:"#/my/data/branches"}
+        {label:"الفروع",value:counts.branches,icon:"account_tree",chip:"indigo",href:"#/my/data/branches"},
+        {label:"التسويات",value:counts.settlements,icon:"account_balance_wallet",chip:"teal",href:"#/my/data/settlements"}
       ];
     } else {
       cards=[
@@ -2149,7 +2191,8 @@ function viewMyDashboard(){
         {label:"الجوزات",value:counts.circuits,icon:"electrical_services",chip:"teal",href:"#/my/data/circuits"},
         {label:"الوصولات",value:counts.receipts,icon:"receipt_long",chip:"orange",href:"#/my/data/receipts"},
         {label:"المحاسبون",value:counts.accountants,icon:"badge",chip:"purple"},
-        {label:"الفروع",value:counts.branches,icon:"account_tree",chip:"indigo",href:"#/my/data/branches"}
+        {label:"الفروع",value:counts.branches,icon:"account_tree",chip:"indigo",href:"#/my/data/branches"},
+        {label:"التسويات",value:counts.settlements,icon:"account_balance_wallet",chip:"teal",href:"#/my/data/settlements"}
       ];
     }
     var grid=el("div",{class:"app-grid"});
@@ -2415,15 +2458,32 @@ function viewMyEntity(entity,relField,relValue){
   var query="";
   var page=1;
 
-  // Board-name map for the circuits table (renders names, never raw board_id);
-  // fetched once per screen and reused across pagination/search reloads.
+  // Name maps for FK columns (circuits→boards, settlements→accountants) so tables
+  // render names, never raw ids; fetched once per screen, reused across reloads.
   var relNameMaps=null;
   function ensureRelMaps(){
-    if(entity!=="circuits") return Promise.resolve(null);
+    var need=entity==="circuits"?["boards"]:(entity==="settlements"?["accountants"]:null);
+    if(!need) return Promise.resolve(null);
     if(relNameMaps) return Promise.resolve(relNameMaps);
-    return loadNameMaps(function(en,opts){ return acctData(en,opts); },["boards"]).then(function(maps){
+    return loadNameMaps(function(en,opts){ return acctData(en,opts); },need).then(function(maps){
       relNameMaps=maps; return maps;
     });
+  }
+
+  // Settlements: owner approves/rejects a PENDING wallet request inline. After a
+  // decision, reload the list + toast (mirrors the plan-approve flow).
+  function settlementActions(r){
+    var d=(r&&r.data)||{};
+    if(d.status!=="pending") return [];
+    function decide(status,okMsg){
+      API.decideSettlement(r.localId,status).then(function(){
+        toast(okMsg,"ok"); load();
+      }).catch(function(err){ toast(err.message||"تعذّر تنفيذ الإجراء","err"); });
+    }
+    return [
+      el("button",{class:"btn sm success",onclick:function(){ decide("approved","تمت الموافقة على التسوية"); }},["موافقة"]),
+      el("button",{class:"btn sm danger ghost",onclick:function(){ decide("rejected","تم رفض التسوية"); }},["رفض"])
+    ];
   }
 
   var headWrap=el("div");
@@ -2487,8 +2547,10 @@ function viewMyEntity(entity,relField,relValue){
       paintHead(total);
       paintPager(total);
       clear(tableWrap);
-      // Read-only: no onDelete → renderSyncTable shows no delete buttons.
-      tableWrap.appendChild(renderSyncTable(entity,records,null,drill,maps));
+      // Read-only (no onDelete) except settlements, which get inline
+      // approve/reject actions on pending rows.
+      var extra=(entity==="settlements")?settlementActions:null;
+      tableWrap.appendChild(renderSyncTable(entity,records,null,drill,maps,extra));
     }).catch(function(err){
       if(err.status===401) return;
       if(isFeatureDisabled(err)){ shell("#/my/data/"+entity,ownerFeatureBlock()); return; }
@@ -2967,6 +3029,7 @@ function viewPublicReceipt(uuid){
     line("سعر الأمبير", r.price_snapshot!=null?fmtPrice(r.price_snapshot):"—");
     line("نوع الاشتراك", catLabel(r.category_snapshot));
     line("المدفوع", r.paid_amount!=null?fmtPrice(r.paid_amount):"—");
+    line("طريقة الدفع", paymentMethodLabel(r.payment_method));
     line("الخصم", receiptDiscountText(r));
     line("المتبقي", r.remaining_after!=null?fmtPrice(r.remaining_after):"—");
     if(res.accountantName) line("المحاسب", res.accountantName);

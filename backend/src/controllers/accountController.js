@@ -15,6 +15,7 @@ const STAT_ENTITIES = [
   'monthly_prices',
   'accountants',
   'branches',
+  'settlements',
 ];
 
 /**

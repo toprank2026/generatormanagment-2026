@@ -195,13 +195,13 @@ stays the source of truth; the per-account mirror is keyed by
 **Authorization (new in Phase-1 hardening):**
 - `entity` is whitelisted against the synced tables (`subscribers`, `boards`,
   `circuits`, `receipts`, `refunds`, `expenses`, `monthly_prices`, `branches`,
-  `accountants`); any other value → `400 code=BAD_ENTITY`.
+  `accountants`, `settlements`); any other value → `400 code=BAD_ENTITY`.
 - For an **accountant** caller the entity is permission-gated, mirroring the app
   (`lib/core/permissions.dart`): `subscribers→subscribers`, `boards`/`circuits→
-  boards`, `monthly_prices→prices`, `expenses→expenses`; `receipts`/`refunds`
-  are **always allowed**; `branches`/`accountants` are **owner-only**. A missing
-  permission → `403 code=PERMISSION_DENIED`; an owner-only entity →
-  `403 code=ENTITY_FORBIDDEN`.
+  boards`, `monthly_prices→prices`, `expenses→expenses`; `receipts`/`refunds`/
+  `settlements` are **always allowed** (core accountant work); `branches`/
+  `accountants` are **owner-only**. A missing permission →
+  `403 code=PERMISSION_DENIED`; an owner-only entity → `403 code=ENTITY_FORBIDDEN`.
 - A **branch-confined** accountant (has a `branchId`) may only write rows in its
   own branch: a record whose `data.branch_id` is another branch →
   `403 code=BRANCH_FORBIDDEN`; otherwise the server **stamps** `data.branch_id =
@@ -233,7 +233,7 @@ Other errors: `400 code=BAD_RECORDS` (records not an array),
 `400 code=BAD_RECORD` (missing `entity`/`localId`), `403 code=FEATURE_DISABLED`
 (plan has no sync).
 
-### GET `/api/sync/pull?since=ISO`
+### GET `/api/sync/pull?since=ISO[&receiptsMonth=YYYY-MM]`
 ```jsonc
 // 200 response
 { "records": [ { "entity", "localId", "deleted", "updatedAt", "data" } ] }
@@ -242,6 +242,13 @@ Returns the account's mirror rows updated after `since` (omit for a full
 restore). A **branch-confined accountant** receives only its own branch's rows
 plus the branch-agnostic identity tables (`branches`, `accountants`) and any
 legacy rows that carry no `branch_id`; owners/admins receive everything.
+
+Optional **`receiptsMonth=YYYY-MM`** (new in Flash v11): when present, ONLY the
+`receipts` entity is restricted to rows whose `data.month` equals it — **every
+other entity is unaffected**. Used by the post-login pull to restore just the
+current month's receipts (the device passes its own selected month). `since`
+still applies to all entities; combine freely with the branch-confined filter.
+
 Errors: `400 code=BAD_SINCE` (invalid timestamp).
 
 ---
@@ -313,7 +320,10 @@ month falls back to the current server-UTC month.
     "circuits": 9,
     "receipts": 240,
     "expenses": 31,
-    "monthly_prices": 6
+    "monthly_prices": 6,
+    "accountants": 2,
+    "branches": 1,
+    "settlements": 4          // Flash v11 wallet settlement requests
   },
   "dashboard": {
     "month": "2026-06",        // requested ?month, else current month ('YYYY-MM', server UTC)
@@ -402,6 +412,46 @@ Deletes one of the caller's accountants (ownership guarded).
 { "ok": true }
 ```
 Errors: `404 code=ACCOUNTANT_NOT_FOUND`.
+
+**Accountant creation by phone (Flash v11).** `POST /api/account/accountants`
+now takes the accountant's **phone** (the login identifier): the body is
+`{ name, phone, password, branchId?, permissions?, localId? }`. The `username` is
+**derived** as `phone.toLowerCase()` (exactly like register), and both the phone
+and the derived username must be unique → `409 code=PHONE_TAKEN` (phone in use)
+or `409 code=USERNAME_TAKEN` (derived username in use). The accountant then logs
+in via `POST /api/auth/login` with that **phone** + password.
+**Backward-compat:** an old client that still sends `username` (and no `phone`)
+is accepted — the username is used directly and `phone` stays `null`. Missing
+both phone and username, or a password `< 4` chars → `400 code=VALIDATION`.
+
+### Settlements — `/api/account/settlements`  (auth)
+
+A **settlement** is an accountant **wallet** record — the cash an accountant owes
+the owner — synced as a normal business entity (`entity:"settlements"`, device is
+the source of truth). Each row:
+`{ id, accountant_id, branch_id, amount, status:'pending'|'approved'|'rejected',
+requested_at, decided_at, decided_by, note, updated_at }`. An accountant CREATES a
+**pending** settlement by pushing it via `/api/sync/push` (always allowed; a
+branch-confined accountant's `branch_id`/`accountant_id` are server-stamped, so a
+request cannot be forged for another branch/accountant). The owner then approves
+or rejects it.
+
+#### POST `/api/account/settlements/:localId/decision`  (owner|admin)
+The owner records a decision on one of its accountants' settlement requests. It
+mutates the **owner mirror** `SyncRecord` (`entity:"settlements"`, `localId`) in
+place — setting `data.status`, `data.decided_at` (now, ISO), `data.decided_by`
+(`req.user._id`), an optional `data.note`, and bumping `data.updated_at` to now so
+**last-EDIT-wins** applies this decision over the accountant's older pending row
+on its next pull (the accountant pulls the decision; there is no separate push).
+```jsonc
+// request
+{ "status": "approved", "note": "optional" }   // status: 'approved' | 'rejected'
+// 200 response
+{ "settlement": { /* the updated row data, incl. status, decided_at, decided_by */ } }
+```
+Errors: `400 code=BAD_STATUS` (status not `approved`/`rejected`),
+`404 code=SETTLEMENT_NOT_FOUND` (no such settlement in the caller's mirror),
+`403 code=FORBIDDEN` (caller is not an owner/admin).
 
 ### Branches — `/api/account/branches`  (auth; role **owner only**)
 
@@ -574,7 +624,9 @@ mirrors so a scanned QR can be viewed without logging in. Looks up the receipt
 same owner's `subscribers` mirror (matched on `data.subscriber_id`) and the
 generator name from the owning `User.generatorName`. Receipt fields are
 whitelisted (`receipt_no`, `month`, `amps_snapshot`, `price_snapshot`,
-`paid_amount`, `remaining_after`, `issued_at`, `status`).
+`category_snapshot`, `discount_type`, `discount_value`, `discount_amps`,
+`payment_method` (Flash v11: `'cash'`/`'card'`), `paid_amount`,
+`remaining_after`, `issued_at`, `status`).
 
 Always responds `200`; `found` is `false` when no matching (non-deleted) receipt
 exists.

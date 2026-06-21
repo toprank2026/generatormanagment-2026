@@ -196,6 +196,43 @@ test('owner creates an accountant -> 201 + persisted + listed', async () => {
   assert.ok(listed.data.accountants.some((a) => a.id === acc.id && a.username === uname.toLowerCase()));
 });
 
+test('owner creates an accountant by {name,phone,password} -> 201 + can log in with that phone', async () => {
+  const owner = await registerOwner();
+
+  const phone = uniqueUsername('acctphone'); // unique "phone" used as the login
+  const created = await api('POST', '/api/account/accountants', {
+    token: owner.token,
+    body: { name: 'Phone Acct', phone, password: 'secret1', permissions: ['receipts'] },
+  });
+  assert.equal(created.status, 201, `create-by-phone should 201, got ${created.status} ${JSON.stringify(created.data)}`);
+  const acc = created.data.accountant;
+  assert.equal(acc.name, 'Phone Acct');
+  // username is derived from the phone (lowercased), like register.
+  assert.equal(acc.username, phone.toLowerCase());
+
+  // The accountant logs in via the normal login with phone + password.
+  const login = await api('POST', '/api/auth/login', { body: { username: phone, password: 'secret1' } });
+  assert.equal(login.status, 200, `phone login should 200, got ${login.status} ${JSON.stringify(login.data)}`);
+  assert.equal(login.data.account.role, 'accountant');
+  assert.equal(login.data.account.ownerId, owner.account.id);
+
+  // A second accountant with the SAME phone is rejected (PHONE_TAKEN).
+  const dup = await api('POST', '/api/account/accountants', {
+    token: owner.token,
+    body: { name: 'Dup', phone, password: 'secret1' },
+  });
+  assert.equal(dup.status, 409);
+  assert.equal(dup.data.code, 'PHONE_TAKEN');
+
+  // Missing both phone and username -> 400 VALIDATION.
+  const bad = await api('POST', '/api/account/accountants', {
+    token: owner.token,
+    body: { name: 'NoPhone', password: 'secret1' },
+  });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.data.code, 'VALIDATION');
+});
+
 test('duplicate accountant username -> 409 USERNAME_TAKEN', async () => {
   const owner = await registerOwner();
   const uname = uniqueUsername('acct');

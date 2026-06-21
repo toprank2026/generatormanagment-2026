@@ -38,23 +38,44 @@ function serializeAccountant(u) {
 /**
  * POST /api/account/accountants (requireAuth; owner|admin)
  *
- * Create an accountant sub-account owned by the caller. The username is unique
- * (lowercased/trimmed); duplicate -> 409 USERNAME_TAKEN.
+ * Create an accountant sub-account owned by the caller. The accountant logs in
+ * with its PHONE (like register: username = phone.toLowerCase()), so the body is
+ * { name, phone, password, branchId?, permissions?, localId? }. Both the phone
+ * and the derived username must be unique (409 PHONE_TAKEN / USERNAME_TAKEN).
+ *
+ * Backward-compat: an OLD client that still sends `username` (and no `phone`) is
+ * accepted — the username is used directly and `phone` is left null.
  */
 const createAccountant = asyncHandler(async (req, res) => {
-  const { name, username, password, branchId, permissions, localId } = req.body || {};
+  const { name, phone, username, password, branchId, permissions, localId } = req.body || {};
 
   if (!name || typeof name !== 'string' || !name.trim()) {
     throw new HttpError(400, 'name is required', 'VALIDATION');
   }
-  if (!username || typeof username !== 'string' || !username.trim()) {
-    throw new HttpError(400, 'username is required', 'VALIDATION');
+
+  // New clients send `phone` (username is derived from it); old clients may still
+  // send `username`. Require at least one.
+  const hasPhone = phone != null && String(phone).trim() !== '';
+  const hasUsername = username != null && String(username).trim() !== '';
+  if (!hasPhone && !hasUsername) {
+    throw new HttpError(400, 'phone is required', 'VALIDATION');
   }
   if (!password || typeof password !== 'string' || password.length < 4) {
     throw new HttpError(400, 'password must be at least 4 chars', 'VALIDATION');
   }
 
-  const uname = String(username).toLowerCase().trim();
+  const phoneVal = hasPhone ? String(phone).trim() : null;
+  // username = phone.toLowerCase() (like register); fall back to the legacy
+  // explicit username when no phone was sent.
+  const uname = (hasPhone ? phoneVal : String(username)).toLowerCase().trim();
+
+  // Phone uniqueness (reuse register's PHONE_TAKEN); only when a phone was sent.
+  if (phoneVal) {
+    const phoneTaken = await User.findOne({ phone: phoneVal });
+    if (phoneTaken) {
+      throw new HttpError(409, 'Phone number already registered', 'PHONE_TAKEN');
+    }
+  }
   const exists = await User.findOne({ username: uname });
   if (exists) {
     throw new HttpError(409, 'Username already taken', 'USERNAME_TAKEN');
@@ -63,6 +84,7 @@ const createAccountant = asyncHandler(async (req, res) => {
   const passwordHash = await bcrypt.hash(password, 10);
   const accountant = await User.create({
     name: name.trim(),
+    phone: phoneVal,
     username: uname,
     passwordHash,
     role: 'accountant',

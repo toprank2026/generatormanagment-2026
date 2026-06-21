@@ -7,6 +7,7 @@ const { HttpError } = require('../middleware/error');
 const ctrl = require('../controllers/accountController');
 const accountantCtrl = require('../controllers/accountantAccountController');
 const branchCtrl = require('../controllers/branchAccountController');
+const settlementCtrl = require('../controllers/settlementController');
 
 const router = express.Router();
 
@@ -41,6 +42,10 @@ router.post('/accountants', requireOwnerOrAdmin, accountantCtrl.createAccountant
 router.get('/accountants', requireOwnerOrAdmin, accountantCtrl.listAccountants);
 router.put('/accountants/:id', requireOwnerOrAdmin, accountantCtrl.updateAccountant);
 router.delete('/accountants/:id', requireOwnerOrAdmin, accountantCtrl.deleteAccountant);
+
+// Owner approval of an accountant wallet settlement request (mutates the owner's
+// mirror row in place so the accountant pulls the decision). Owner|admin only.
+router.post('/settlements/:localId/decision', requireOwnerOrAdmin, settlementCtrl.decide);
 
 // Branch sub-account management + per-branch data (owner only). Registered BEFORE
 // the ownerPanel feature gate so branch management does not depend on that flag.

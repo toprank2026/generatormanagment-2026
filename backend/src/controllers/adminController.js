@@ -176,6 +176,7 @@ const SEARCH_FIELDS = {
   monthly_prices: ['month', 'category'],
   accountants: ['name', 'username'],
   branches: ['name', 'code'],
+  settlements: ['status', 'accountant_id'],
 };
 
 /** Escape regex metacharacters so q is treated as a literal substring. */
@@ -305,6 +306,7 @@ const labelFor = (entity, data) => {
     case 'monthly_prices': return data.month || null;
     case 'accountants': return data.name || data.username || null;
     case 'branches': return data.name || data.code || null;
+    case 'settlements': return data.amount != null ? String(data.amount) : null;
     default: return null;
   }
 };
