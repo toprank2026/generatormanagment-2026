@@ -627,8 +627,10 @@ var ownerBranch = {
 };
 // branchId to pass to scoped endpoints ("" -> undefined so the param is omitted).
 function ownerBranchParam(){ return ownerBranch.id || undefined; }
-// Entities that carry data.branch_id (everything except the identity tables).
-function isBranchScopedEntity(entity){ return entity!=="branches" && entity!=="accountants"; }
+// Entities scoped by the active branch. accountants carry no data.branch_id but
+// the backend resolves their branch via User.branchId (so we still send branchId
+// for them); only the `branches` identity table itself is never branch-scoped.
+function isBranchScopedEntity(entity){ return entity!=="branches"; }
 // Load the owner's branches once; on first load (if >1) re-render so the
 // switcher appears. Cached — subsequent calls are no-ops.
 function ensureOwnerBranches(){

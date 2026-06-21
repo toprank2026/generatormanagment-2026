@@ -625,3 +625,65 @@ test('owner revokes an accountant BY localId (update + delete) and login stops',
   const gone = await api('POST', '/api/auth/login', { body: { username: uname, password: 'secret1' } });
   assert.equal(gone.status, 401, 'deleted accountant no longer exists');
 });
+
+// ---------------------------------------------------------------------------
+// Owner-panel branch scope for accountants: GET /api/account/data?entity=
+// accountants&branchId=X returns only the accountants assigned to branch X.
+// Accountants carry no data.branch_id in their mirror row, so the backend
+// resolves their branch from the authoritative User.branchId (set at creation).
+// ---------------------------------------------------------------------------
+test('GET /api/account/data?entity=accountants&branchId= scopes to that branch', async () => {
+  const owner = await registerOwner();
+
+  // Two accountants in different branches + one with no branch.
+  const mkAcct = (localId, branchId) =>
+    api('POST', '/api/account/accountants', {
+      token: owner.token,
+      body: {
+        name: `Acct ${localId}`,
+        username: uniqueUsername('acct'),
+        password: 'secret1',
+        branchId,
+        permissions: ['receipts'],
+        localId,
+      },
+    });
+  assert.equal((await mkAcct('br-main-acct', 'b-main')).status, 201);
+  assert.equal((await mkAcct('br-karkh-acct', 'b-karkh')).status, 201);
+  assert.equal((await mkAcct('br-none-acct', null)).status, 201);
+
+  // Push their synced identity rows (the panel reads the mirror).
+  const push = await api('POST', '/api/sync/push', {
+    token: owner.token,
+    body: {
+      records: ['br-main-acct', 'br-karkh-acct', 'br-none-acct'].map((id) => ({
+        entity: 'accountants',
+        localId: id,
+        deleted: false,
+        updatedAt: new Date().toISOString(),
+        data: { id, username: id, name: id, active: 1, permissions: 'receipts' },
+      })),
+    },
+  });
+  assert.equal(push.status, 200, `push should 200, got ${push.status} ${JSON.stringify(push.data)}`);
+
+  // Unfiltered: all three.
+  const all = await api('GET', '/api/account/data?entity=accountants&limit=50', { token: owner.token });
+  assert.equal(all.status, 200);
+  assert.equal(all.data.total, 3, 'all three accountants when no branch filter');
+
+  // branchId=b-main: only the b-main accountant.
+  const main = await api('GET', '/api/account/data?entity=accountants&branchId=b-main&limit=50', { token: owner.token });
+  assert.equal(main.status, 200);
+  assert.deepEqual(main.data.records.map((r) => r.localId), ['br-main-acct'], 'only the b-main accountant');
+
+  // branchId=b-karkh: only the b-karkh accountant.
+  const karkh = await api('GET', '/api/account/data?entity=accountants&branchId=b-karkh&limit=50', { token: owner.token });
+  assert.equal(karkh.status, 200);
+  assert.deepEqual(karkh.data.records.map((r) => r.localId), ['br-karkh-acct'], 'only the b-karkh accountant');
+
+  // A branch with no accountants -> none (NOT "all").
+  const empty = await api('GET', '/api/account/data?entity=accountants&branchId=b-ghost&limit=50', { token: owner.token });
+  assert.equal(empty.status, 200);
+  assert.equal(empty.data.total, 0, 'unknown branch matches no accountant (not all)');
+});

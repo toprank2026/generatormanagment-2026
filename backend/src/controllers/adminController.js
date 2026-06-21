@@ -231,12 +231,27 @@ async function listUserData(userId, query = {}) {
   }
 
   // Optional active-branch scope (full isolation): composes with q/relField so a
-  // panel-wide branch switch narrows EVERY entity list to that branch. Applies
-  // only to branch-partitioned rows (those carry data.branch_id); the branches
-  // and accountants identity tables have no branch_id, so this is a no-op there.
+  // panel-wide branch switch narrows EVERY entity list to that branch. Most
+  // entities carry data.branch_id and filter directly. ACCOUNTANTS carry none in
+  // their synced identity row, so we resolve their branch from the authoritative
+  // User.branchId (set at creation) and filter by localId — so switching a branch
+  // also narrows the accountants list and their wallet/settlement views.
+  // `branches` is the identity table itself and is never branch-scoped.
   const branchId = typeof query.branchId === 'string' ? query.branchId.trim() : '';
-  if (branchId && entity !== 'branches' && entity !== 'accountants') {
-    filter['data.branch_id'] = branchId;
+  if (branchId && entity !== 'branches') {
+    if (entity === 'accountants') {
+      if (!localId) {
+        const accts = await User.find(
+          { owner: userId, role: 'accountant', branchId },
+          { localId: 1 }
+        ).lean();
+        const ids = accts.map((a) => a.localId).filter((x) => x != null).map(String);
+        // No accountant in this branch → match nothing (not "match all").
+        filter.localId = ids.length ? { $in: ids } : '__none__';
+      }
+    } else {
+      filter['data.branch_id'] = branchId;
+    }
   }
 
   const page = Math.max(1, parseInt(query.page, 10) || 1);
