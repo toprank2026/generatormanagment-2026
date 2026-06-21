@@ -166,8 +166,9 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
                   const SizedBox(height: 12),
                   AppTextField(
                     controller: usernameCtrl,
-                    label: 'username'.tr,
-                    icon: Icons.alternate_email,
+                    label: 'phone'.tr,
+                    icon: Icons.phone,
+                    keyboardType: TextInputType.phone,
                   ),
                   const SizedBox(height: 12),
                   AppTextField(

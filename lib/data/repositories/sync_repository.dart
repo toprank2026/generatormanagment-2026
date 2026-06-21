@@ -17,10 +17,19 @@ class SyncRepository {
   /// Pulls this account's mirrored records (optionally only those updated after
   /// [since]). Returns the raw record maps: { entity, localId, deleted,
   /// updatedAt, data }.
-  Future<List<Map<String, dynamic>>> pull({String? since}) async {
+  Future<List<Map<String, dynamic>>> pull(
+      {String? since, String? receiptsMonth}) async {
+    final q = <String, String>{};
+    if (since != null && since.isNotEmpty) q['since'] = since;
+    // v11 (item 3): restrict ONLY receipts to this billing month (other
+    // entities pull fully). Older-month receipts come down when that month is
+    // selected + pulled.
+    if (receiptsMonth != null && receiptsMonth.isNotEmpty) {
+      q['receiptsMonth'] = receiptsMonth;
+    }
     final res = await _api.get(
       ApiConfig.syncPull,
-      query: (since != null && since.isNotEmpty) ? {'since': since} : null,
+      query: q.isEmpty ? null : q,
     );
     final list = (res is Map && res['records'] is List)
         ? res['records'] as List

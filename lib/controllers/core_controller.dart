@@ -145,7 +145,7 @@ class CoreController extends GetxController {
       id: const Uuid().v4(),
       name: name,
       code: code,
-      accountantId: accountantId,
+      accountantId: accountantId ?? _auth.scopeAccountantId, // item 5: link to creator
       branchId: branch,
     );
     await _boardRepo.insert(b);
@@ -237,7 +237,7 @@ class CoreController extends GetxController {
       boardId: boardId,
       name: name,
       phase: phase,
-      accountantId: accountantId,
+      accountantId: accountantId ?? _auth.scopeAccountantId, // item 5: link to creator
       branchId: branch,
     );
     await _circuitRepo.insert(c);
@@ -312,6 +312,8 @@ class CoreController extends GetxController {
     // Stamp the active branch (full isolation): the view doesn't know about
     // branches, so the controller assigns the new subscriber to the current one.
     sub.branchId ??= _branch.writeBranchId;
+    // item 5: link a subscriber created by an accountant to that accountant.
+    sub.accountantId ??= _auth.scopeAccountantId;
     await _validateSubscriber(sub); // R7/R8 — throws ValidationException
     await _subscriberRepo.insert(sub);
     loadSubscribers(); // Refresh list if showing all

@@ -6,6 +6,7 @@ import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
+import 'package:generatormanagment/controllers/month_controller.dart';
 import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/core/logger.dart';
@@ -36,6 +37,18 @@ class SyncController extends GetxController {
 
   /// True when there are no local changes waiting to upload.
   bool get isUpToDate => pendingCount.value == 0;
+
+  /// v11 (item 3): the billing month receipts are scoped to on a pull (login +
+  /// updates). Other entities pull fully. Null when MonthController is absent.
+  String? get _receiptsMonth {
+    try {
+      return Get.isRegistered<MonthController>()
+          ? Get.find<MonthController>().selectedMonth.value
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
 
   StreamSubscription<bool>? _netSub;
   Timer? _timer;
@@ -202,7 +215,7 @@ class SyncController extends GetxController {
       // pendingCount can be stale (refreshed only on the heartbeat); push()
       // early-returns when the outbox is truly empty.
       await _sync.push();
-      final n = await _sync.pull();
+      final n = await _sync.pull(receiptsMonth: _receiptsMonth);
       lastPullAt.value = DateTime.now().toIso8601String();
       await _reloadAppData();
       _lastPulledCount = n;
@@ -270,10 +283,10 @@ class SyncController extends GetxController {
       await _sync.deleteLocalData();
       SyncProgress.update('branch_switch_pulling'.tr);
       try {
-        await _sync.pull();
+        await _sync.pull(receiptsMonth: _receiptsMonth);
       } catch (_) {
         // One retry so a transient failure doesn't strand an empty DB.
-        await _sync.pull();
+        await _sync.pull(receiptsMonth: _receiptsMonth);
       }
       lastPullAt.value = DateTime.now().toIso8601String();
       // 4. Re-establish branches and activate the selected one (fires every

@@ -93,8 +93,8 @@ class SyncService {
   /// fire the change-capture triggers, so any outbox rows they create are removed
   /// inside the same transaction — a pull must never turn into a re-push.
   /// Returns the number of records applied.
-  Future<int> pull({String? since}) async {
-    final records = await _repo.pull(since: since);
+  Future<int> pull({String? since, String? receiptsMonth}) async {
+    final records = await _repo.pull(since: since, receiptsMonth: receiptsMonth);
     if (records.isEmpty) return 0;
 
     final db = await _db.database;

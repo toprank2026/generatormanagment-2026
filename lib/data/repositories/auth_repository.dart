@@ -87,7 +87,10 @@ class AuthRepository {
       body: {
         'localId': localId,
         'name': name,
+        // v11 (item 6): accountants log in by phone (username == phone). Send
+        // both so the backend stores the phone and derives username from it.
         'username': username,
+        'phone': username,
         'password': password,
         'branchId': branchId,
         'permissions': permissions.toList(),
