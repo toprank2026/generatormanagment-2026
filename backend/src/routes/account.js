@@ -63,5 +63,7 @@ router.get('/data', ctrl.getMyData);
 router.get('/stats', ctrl.getMyStats);
 // The caller's most recently uploaded records (owner home "latest uploads").
 router.get('/recent', ctrl.getMyRecent);
+// v11: accountant wallet (server-authoritative collected/settled/balance).
+router.get('/wallet', ctrl.getWallet);
 
 module.exports = router;

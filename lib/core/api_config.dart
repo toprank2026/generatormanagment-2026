@@ -30,6 +30,9 @@ class ApiConfig {
   // --- Branch sub-accounts (Flash item 8: owner creates a branch login) ---
   static const String branches = '/api/account/branches';
 
+  // --- Accountant wallet (v11): server-authoritative balance (all-time). ---
+  static const String accountWallet = '/api/account/wallet';
+
   // --- Subscription ---
   static const String plans = '/api/subscription/plans';
   static const String subscription = '/api/subscription';

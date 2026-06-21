@@ -306,6 +306,13 @@ class SubscriberRepository {
     );
   }
 
+  Future<Subscriber?> getById(String id) async {
+    final db = await _dbHelper.database;
+    final m =
+        await db.query('subscribers', where: 'id = ?', whereArgs: [id], limit: 1);
+    return m.isEmpty ? null : Subscriber.fromMap(m.first);
+  }
+
   /// R5/R7: is [circuitId] already held by an ACTIVE subscriber (other than
   /// [exceptId]) in the same branch? Branch-scoped so a circuit can be reused
   /// across branches but is exclusive within one.

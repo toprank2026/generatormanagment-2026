@@ -228,7 +228,13 @@ const pull = asyncHandler(async (req, res) => {
   const receiptsMonth = String(req.query.receiptsMonth || '').trim();
   if (receiptsMonth) {
     const monthClause = {
-      $or: [{ entity: { $ne: 'receipts' } }, { entity: 'receipts', 'data.month': receiptsMonth }],
+      $or: [
+        { entity: { $ne: 'receipts' } },
+        { entity: 'receipts', 'data.month': receiptsMonth },
+        // Receipt DELETIONS are tombstones with data=null, so they wouldn't match
+        // the month clause — always include them so a delete still propagates.
+        { entity: 'receipts', deleted: true },
+      ],
     };
     filter.$and = (filter.$and || []).concat([monthClause]);
   }

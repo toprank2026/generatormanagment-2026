@@ -289,10 +289,45 @@ const getMyRecent = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * GET /api/account/wallet (auth) — v11 accountant wallet, computed SERVER-SIDE
+ * from the full mirror (authoritative across all months, unaffected by the
+ * device's current-month receipt scope). For an accountant: their own figures;
+ * for an owner: the owner-collected (accountant_id null) figures.
+ *  collected = Σ paid_amount of valid CASH receipts; settled = Σ approved
+ *  settlement amounts; balance = collected − settled.
+ */
+const getWallet = asyncHandler(async (req, res) => {
+  const ownerId = effectiveOwnerId(req.user);
+  const acctId =
+    req.user.role === 'accountant'
+      ? (req.user.localId || String(req.user._id))
+      : null;
+
+  const recFilter = { user: ownerId, entity: 'receipts', deleted: false, 'data.status': 'valid' };
+  if (acctId) recFilter['data.accountant_id'] = acctId;
+  const receipts = await SyncRecord.find(recFilter).lean();
+  let collected = 0;
+  for (const r of receipts) {
+    const d = r.data || {};
+    // Only CASH receipts represent cash the accountant physically holds.
+    if ((d.payment_method || 'cash') === 'cash') collected += Number(d.paid_amount) || 0;
+  }
+
+  const setFilter = { user: ownerId, entity: 'settlements', deleted: false, 'data.status': 'approved' };
+  if (acctId) setFilter['data.accountant_id'] = acctId;
+  const setts = await SyncRecord.find(setFilter).lean();
+  let settled = 0;
+  for (const s of setts) settled += Number((s.data || {}).amount) || 0;
+
+  res.status(200).json({ collected, settled, balance: collected - settled });
+});
+
 module.exports = {
   getMyData,
   getMyStats,
   getMyRecent,
+  getWallet,
   // Exported so the per-branch owner-panel endpoints can reuse the exact same
   // dashboard math + stat-entity list, scoped to a branch user's mirror.
   buildDashboard,

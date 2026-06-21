@@ -7,6 +7,7 @@ import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/month_controller.dart';
+import 'package:generatormanagment/controllers/settlement_controller.dart';
 import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/core/logger.dart';
@@ -53,6 +54,7 @@ class SyncController extends GetxController {
   StreamSubscription<bool>? _netSub;
   Timer? _timer;
   Timer? _nudgeTimer;
+  Worker? _monthWorker;
   bool _askOpen = false;
 
   /// Flash item 9: fire a sync shortly after a local write (debounced ~1.2s to
@@ -91,6 +93,15 @@ class SyncController extends GetxController {
     // Periodic "sync new data" heartbeat.
     _timer = Timer.periodic(const Duration(seconds: 30), (_) => maybeAutoSync());
     maybeAutoSync();
+    // v11 (item 3): when the billing month changes, pull that month's receipts
+    // (other entities are already local) so its payments/history/reports
+    // populate instead of staying empty. Silent + online-gated (pull no-ops
+    // offline). Only when logged in.
+    if (Get.isRegistered<MonthController>()) {
+      _monthWorker = ever(Get.find<MonthController>().selectedMonth, (_) {
+        if (_loggedIn) pull(silent: true);
+      });
+    }
   }
 
   @override
@@ -98,6 +109,7 @@ class SyncController extends GetxController {
     _netSub?.cancel();
     _timer?.cancel();
     _nudgeTimer?.cancel();
+    _monthWorker?.dispose();
     super.onClose();
   }
 
@@ -341,6 +353,11 @@ class SyncController extends GetxController {
       if (Get.isRegistered<BillingController>()) {
         final b = Get.find<BillingController>();
         await b.loadMonthPrice(b.selectedMonth.value);
+      }
+      // v11: refresh the accountant wallet so an owner's settlement approval (or
+      // new collections) shows after a pull, not only on screen reopen.
+      if (Get.isRegistered<SettlementController>()) {
+        await Get.find<SettlementController>().load();
       }
     } catch (_) {}
   }

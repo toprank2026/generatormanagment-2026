@@ -21,7 +21,9 @@ class SettlementRepository {
     final db = await _dbHelper.database;
     final cr = await db.rawQuery(
       "SELECT COALESCE(SUM(paid_amount),0) s FROM receipts "
-      "WHERE accountant_id = ? AND status = 'valid'",
+      "WHERE accountant_id = ? AND status = 'valid' "
+      // Only CASH receipts are cash the accountant physically holds (v11).
+      "AND COALESCE(payment_method,'cash') = 'cash'",
       [accountantId],
     );
     final collected = ((cr.first['s'] as num?) ?? 0).toDouble();

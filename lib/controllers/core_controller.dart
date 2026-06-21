@@ -323,6 +323,9 @@ class CoreController extends GetxController {
 
   Future<void> updateSubscriber(Subscriber sub) async {
     sub.branchId ??= _branch.writeBranchId;
+    // item 5 (review fix): preserve the ORIGINAL creator's accountant_id on edit
+    // (the edit form doesn't carry it) instead of wiping it to null.
+    sub.accountantId ??= (await _subscriberRepo.getById(sub.id))?.accountantId;
     await _validateSubscriber(sub, exceptId: sub.id);
     await _subscriberRepo.update(sub);
     loadSubscribers();
