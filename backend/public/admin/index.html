@@ -692,8 +692,13 @@ function acctStats(month,accountantId){
                        : API.myStats(month,accountantId,ownerBranchParam());
 }
 function acctData(entity,opts){
-  return acctBranch.id ? API.branchData(acctBranch.id,entity,opts)
-                       : API.myData(entity,opts);
+  if(acctBranch.id) return API.branchData(acctBranch.id,entity,opts);
+  // Legacy fallback (ownerBranchBar): scope the owner's OWN mirror by the
+  // selected local branch so switching re-scopes entity LISTS too, not just the
+  // dashboard stats (backend filters data.branch_id — adminController.js).
+  var o=opts||{}, bid=ownerBranchParam();
+  if(bid && isBranchScopedEntity(entity)) o=Object.assign({},o,{branchId:bid});
+  return API.myData(entity,o);
 }
 function acctBranchBar(){
   if(!acctBranch.list || acctBranch.list.length<1) return null;
@@ -884,7 +889,8 @@ var OWNER_MORE=[
 function ownerShell(activeRoute,content){
   setOwnerMode(true);
   closeOwnerSheet();
-  ensureBranchAccounts();  // Flash item 7: branch-ACCOUNT switcher (the only one)
+  ensureBranchAccounts();  // branch-ACCOUNT switcher (separate mirrors)
+  ensureOwnerBranches();   // legacy local-branch filter (fallback switcher)
   var app=$("#app"); clear(app);
   var top=el("div",{class:"app-topbar"},[
     el("span",{class:"brand"},[el("img",{class:"logo",src:"blue.png",alt:"Flash"}),"Flash Owner Panel"]),
@@ -893,12 +899,13 @@ function ownerShell(activeRoute,content){
     }})
   ]);
   var wrap=el("div",{class:"app-wrap"});
-  // Flash item 7: branch-ACCOUNT switcher (separate mirrors) takes precedence;
-  // fall back to the legacy local-branch filter when there are no branch accounts.
-  // Flash item 3: a SINGLE branch switcher — the branch-ACCOUNT one. The legacy
-  // local-branch switcher (ownerBranchBar) is removed.
-  var abb=acctBranchBar();
-  if(abb) wrap.appendChild(abb);
+  // A SINGLE branch switcher: the branch-ACCOUNT one (separate mirrors) takes
+  // precedence; when the owner has no branch sub-accounts, fall back to the
+  // legacy local-branch filter (ownerBranchBar) so branch switching still works
+  // ("old as fallback"). Either path re-scopes ALL data (home stats, every
+  // entity list, reports) via render() on change.
+  var bar=acctBranchBar()||ownerBranchBar();
+  if(bar) wrap.appendChild(bar);
   wrap.appendChild(content);
   app.appendChild(top);
   app.appendChild(wrap);
