@@ -8,6 +8,7 @@ import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/expense_controller.dart';
 import 'package:generatormanagment/controllers/reports_controller.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
+import 'package:generatormanagment/controllers/settlement_controller.dart';
 import 'package:generatormanagment/controllers/subscription_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
 
@@ -36,5 +37,6 @@ class AppBinding extends Bindings {
     Get.lazyPut<ReportsController>(() => ReportsController(), fenix: true);
     Get.lazyPut<SettingsController>(() => SettingsController(), fenix: true);
     Get.lazyPut<SubscriptionController>(() => SubscriptionController(), fenix: true);
+    Get.lazyPut<SettlementController>(() => SettlementController(), fenix: true);
   }
 }

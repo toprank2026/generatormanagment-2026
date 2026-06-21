@@ -34,7 +34,7 @@ class DbHelper {
     final String path = testPath ?? await _defaultPath();
     return await openDatabase(
       path,
-      version: 10,
+      version: 11,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -58,6 +58,8 @@ class DbHelper {
     'accountants': 'id',
     // Branches — server-visible org partitions (synced identity, like accountants).
     'branches': 'id',
+    // Settlements (v11) — accountant wallet settlement requests (synced).
+    'settlements': 'id',
   };
 
   /// Creates the change-capture outbox + AFTER INSERT/UPDATE/DELETE triggers so
@@ -76,6 +78,14 @@ class DbHelper {
     for (final entry in syncedTables.entries) {
       final t = entry.key;
       final pk = entry.value;
+      // During a multi-step upgrade a synced table may not exist yet (it's
+      // created in a LATER _onUpgrade branch). _createSyncInfra is re-run after
+      // that branch, so skip a missing table now and create its triggers then.
+      final tableExists = (await db.rawQuery(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        [t],
+      )).isNotEmpty;
+      if (!tableExists) continue;
       await db.execute('''
         CREATE TRIGGER IF NOT EXISTS ${t}_sync_ai AFTER INSERT ON $t BEGIN
           INSERT INTO sync_outbox(entity, op, local_id) VALUES('$t', 'upsert', NEW.$pk);
@@ -268,6 +278,27 @@ class DbHelper {
       // (metadata only — billing stays month-based, no proration).
       await _addColumn(db, 'monthly_prices', 'start_date', 'TEXT');
     }
+    if (oldVersion < 11) {
+      // v11 (Flash): receipt payment method + accountant wallet settlements.
+      await _addColumn(db, 'receipts', 'payment_method', "TEXT DEFAULT 'cash'");
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS settlements (
+          id TEXT PRIMARY KEY,
+          accountant_id TEXT,
+          branch_id TEXT,
+          amount REAL NOT NULL,
+          status TEXT DEFAULT 'pending',
+          requested_at TEXT,
+          decided_at TEXT,
+          decided_by TEXT,
+          note TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT
+        )
+      ''');
+      // Create the settlements sync triggers (others already exist → skipped).
+      await _createSyncInfra(db);
+    }
   }
 
   Future<String> _defaultPath() async {
@@ -404,6 +435,7 @@ class DbHelper {
         issued_at TEXT NOT NULL,
         status TEXT DEFAULT 'valid', -- valid, refunded
         qr_token TEXT,
+        payment_method TEXT DEFAULT 'cash', -- v11: 'cash' | 'card'
         FOREIGN KEY (subscriber_id) REFERENCES subscribers (id)
       )
     ''');
@@ -434,6 +466,25 @@ class DbHelper {
         accountant_id TEXT,
         branch_id TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    ''');
+
+    // 9. Settlements (v11): accountant wallet settlement requests. Balance is
+    // DERIVED (Σ collected − Σ approved); a settlement records the requested
+    // amount, approved/rejected by the owner from the panel.
+    await db.execute('''
+      CREATE TABLE settlements (
+        id TEXT PRIMARY KEY,
+        accountant_id TEXT,
+        branch_id TEXT,
+        amount REAL NOT NULL,
+        status TEXT DEFAULT 'pending', -- 'pending' | 'approved' | 'rejected'
+        requested_at TEXT,
+        decided_at TEXT,
+        decided_by TEXT,
+        note TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT
       )
     ''');
 

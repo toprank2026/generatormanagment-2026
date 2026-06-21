@@ -9,6 +9,7 @@ import 'package:generatormanagment/views/screens/backup_screen.dart';
 import 'package:generatormanagment/views/screens/sync_screen.dart';
 import 'package:generatormanagment/views/screens/user_switch_screen.dart';
 import 'package:generatormanagment/views/screens/accountants_screen.dart';
+import 'package:generatormanagment/views/screens/my_wallet_screen.dart';
 import 'package:generatormanagment/views/screens/branches_screen.dart';
 import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/repositories/device_repository.dart';
@@ -192,6 +193,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                       onTap: () => Get.to(() => const SubscriptionScreen()),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              );
+            }),
+
+            // My Wallet (accountant-only) — collected total + settlement requests.
+            Obx(() {
+              if (!auth.isAccountant) return const SizedBox.shrink();
+              return Column(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: ListTile(
+                      leading: const Icon(Icons.account_balance_wallet,
+                          color: Color(0xFF1565C0)),
+                      title: Text('my_wallet'.tr),
+                      subtitle: Text('settlement_history'.tr),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Get.to(() => const MyWalletScreen()),
                     ),
                   ),
                   const SizedBox(height: 24),

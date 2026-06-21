@@ -78,6 +78,8 @@ class Receipt {
   String issuedAt;
   String status; // valid, refunded
   String? qrToken;
+  // v11: how the cash was received — 'cash' | 'card'.
+  String paymentMethod;
 
   Receipt({
     required this.uuid,
@@ -98,6 +100,7 @@ class Receipt {
     required this.issuedAt,
     this.status = 'valid',
     this.qrToken,
+    this.paymentMethod = 'cash',
   });
 
   /// True when a discount was applied to this receipt (P5).
@@ -123,6 +126,7 @@ class Receipt {
       'issued_at': issuedAt,
       'status': status,
       'qr_token': qrToken,
+      'payment_method': paymentMethod,
       'updated_at': DateTime.now().toUtc().toIso8601String(), // conflict resolution
     };
   }
@@ -147,6 +151,7 @@ class Receipt {
       issuedAt: map['issued_at'],
       status: map['status'],
       qrToken: map['qr_token'],
+      paymentMethod: (map['payment_method'] ?? 'cash').toString(),
     );
   }
 }
