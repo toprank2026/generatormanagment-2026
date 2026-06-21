@@ -4,9 +4,9 @@ import 'package:intl/intl.dart' hide TextDirection;
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/reports_controller.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
-import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/views/widgets/report_charts.dart';
+import 'package:generatormanagment/views/screens/payments_screen.dart';
 
 /// Monthly reports & statistics: pick a month and see gauges/charts plus
 /// totals (expected / collected / remaining / expenses / net profit) derived
@@ -256,34 +256,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       ),
                       const SizedBox(height: 24),
 
-                      // e) The month's payments list.
-                      Text(
-                        'payments_of_month'.tr,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blueGrey,
+                      // e) The month's payments moved to their own screen.
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF1565C0),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          icon: const Icon(Icons.receipt_long),
+                          label: Text('payments_of_month'.tr),
+                          onPressed: () => Get.to(() => const PaymentsScreen()),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      if (controller.receipts.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 32),
-                          child: Center(
-                            child: Text(
-                              'no_data_month'.tr,
-                              style: TextStyle(color: Colors.grey[400]),
-                            ),
-                          ),
-                        )
-                      else ...[
-                        ...controller.receipts
-                            .map((r) => _buildReceiptCard(r, money)),
-                        if (controller.isReceiptsLoadingMore.value)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 16),
-                            child: Center(child: CircularProgressIndicator()),
-                          ),
-                      ],
                     ],
                   ),
                 );
@@ -549,55 +534,4 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  /// One payment row of the month: receipt no, paid amount and issue date.
-  Widget _buildReceiptCard(Receipt r, NumberFormat money) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.blue.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1565C0).withOpacity(0.1),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(Icons.receipt_long, color: Color(0xFF1565C0)),
-        ),
-        title: Text(
-          '${'receipt_no'.tr} ${r.receiptNo}',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(
-          // v11: show the payment method alongside the date.
-          '${_formatDate(r.issuedAt)} · ${r.paymentMethod == 'card' ? 'pay_card'.tr : 'pay_cash'.tr}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: Text(
-          money.format(r.paidAmount),
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-            color: Color(0xFF2E7D32),
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _formatDate(String iso) {
-    final t = DateTime.tryParse(iso);
-    if (t == null) return iso;
-    return DateFormat('yyyy-MM-dd HH:mm').format(t);
-  }
 }

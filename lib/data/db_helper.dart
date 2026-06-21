@@ -34,7 +34,7 @@ class DbHelper {
     final String path = testPath ?? await _defaultPath();
     return await openDatabase(
       path,
-      version: 11,
+      version: 12,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -299,6 +299,11 @@ class DbHelper {
       // Create the settlements sync triggers (others already exist → skipped).
       await _createSyncInfra(db);
     }
+    if (oldVersion < 12) {
+      // v12 (Flash): settlements gain a method ('cash'|'card') for the second
+      // (credit-card) wallet.
+      await _addColumn(db, 'settlements', 'method', "TEXT DEFAULT 'cash'");
+    }
   }
 
   Future<String> _defaultPath() async {
@@ -478,6 +483,7 @@ class DbHelper {
         accountant_id TEXT,
         branch_id TEXT,
         amount REAL NOT NULL,
+        method TEXT DEFAULT 'cash', -- v12: 'cash' | 'card' (which wallet)
         status TEXT DEFAULT 'pending', -- 'pending' | 'approved' | 'rejected'
         requested_at TEXT,
         decided_at TEXT,
@@ -553,6 +559,24 @@ class DbHelper {
       await db.close();
       _database = null;
     }
+  }
+
+  /// v12 (item 4): wipe ALL local data — every user table (business rows, the
+  /// local `users` credentials, accountants, settlements, the sync outbox, …),
+  /// not just the synced business tables. Used by logout so the next account on
+  /// this device sees NOTHING of the previous one. The schema is kept (tables
+  /// emptied, not dropped). Internal SQLite tables are left alone.
+  Future<void> wipeAllTables() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' "
+      "AND name NOT LIKE 'sqlite_%' AND name != 'android_metadata'",
+    );
+    await db.transaction((txn) async {
+      for (final r in rows) {
+        await txn.delete(r['name'] as String);
+      }
+    });
   }
 
   Future<String> getDbPath() async {

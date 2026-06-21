@@ -10,22 +10,28 @@ import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/data/models/settlement_model.dart';
 import 'package:generatormanagment/data/repositories/settlement_repository.dart';
 
-/// v11 — accountant "My Wallet": shows the cash the accountant has collected and
-/// not yet settled, and lets them request a settlement the owner approves from
-/// the Owner Panel. Balance is DERIVED (Σ collected − Σ approved settlements)
-/// from the local tables. NOTE: with the current-month load scope (item 3) the
-/// receipts on-device are the current period, so the wallet reflects the current
-/// uncleared period; settlements are fully synced (not month-scoped).
+/// v11/v12 — accountant wallets: a CASH wallet and a CREDIT-CARD wallet. Each
+/// shows the collected − settled balance for its method and supports a per-method
+/// settlement request the owner approves from the Owner Panel. Balances are
+/// SERVER-AUTHORITATIVE (all-time, unaffected by the current-month receipt pull
+/// scope), with a local per-method derivation as the offline fallback.
 class SettlementController extends GetxController {
   final SettlementRepository _repo = SettlementRepository();
   final AuthController _auth = Get.find();
   final BranchController _branch = Get.find();
   final ConnectivityService _net = ConnectivityService();
 
-  final collected = 0.0.obs;
-  final settled = 0.0.obs;
-  final balance = 0.0.obs;
-  final hasPending = false.obs;
+  // Cash wallet.
+  final cashCollected = 0.0.obs;
+  final cashSettled = 0.0.obs;
+  final cashBalance = 0.0.obs;
+  final hasPendingCash = false.obs;
+  // Credit-card wallet (v12).
+  final cardCollected = 0.0.obs;
+  final cardSettled = 0.0.obs;
+  final cardBalance = 0.0.obs;
+  final hasPendingCard = false.obs;
+
   final isLoading = false.obs;
 
   final RxList<Settlement> history = <Settlement>[].obs;
@@ -35,39 +41,55 @@ class SettlementController extends GetxController {
   final isMoreLoading = false.obs;
 
   String? get _acctId => _auth.currentUser.value?.id;
+  double _d(dynamic v) => ((v as num?) ?? 0).toDouble();
 
   @override
   void onReady() {
     super.onReady();
-    load();
+    load(pull: true);
   }
 
-  Future<void> load() async {
+  /// Loads both wallets + the history. [pull] (item 2) first syncs down the
+  /// latest receipts + owner settlement decisions so the page shows current data.
+  Future<void> load({bool pull = false}) async {
     final id = _acctId;
     if (id == null) return;
     isLoading.value = true;
     try {
-      // Server-authoritative balance (all-time; unaffected by the current-month
-      // receipt scope). Fall back to the local derivation when offline.
+      final online = await _net.isOnline();
+      if (pull && online && Get.isRegistered<SyncController>()) {
+        try {
+          await Get.find<SyncController>().pull(silent: true);
+        } catch (_) {/* fall through to server/local figures */}
+      }
       bool gotServer = false;
-      if (await _net.isOnline()) {
+      if (online) {
         try {
           final res = await ApiClient().get(ApiConfig.accountWallet);
           if (res is Map) {
-            collected.value = ((res['collected'] as num?) ?? 0).toDouble();
-            settled.value = ((res['settled'] as num?) ?? 0).toDouble();
-            balance.value = ((res['balance'] as num?) ?? 0).toDouble();
+            final cash = (res['cash'] as Map?) ?? res; // back-compat: top-level=cash
+            final card = (res['card'] as Map?) ?? const {};
+            cashCollected.value = _d(cash['collected']);
+            cashSettled.value = _d(cash['settled']);
+            cashBalance.value = _d(cash['balance']);
+            cardCollected.value = _d(card['collected']);
+            cardSettled.value = _d(card['settled']);
+            cardBalance.value = _d(card['balance']);
             gotServer = true;
           }
-        } catch (_) {/* offline-ish / server hiccup → local fallback */}
+        } catch (_) {/* offline-ish → local fallback */}
       }
       if (!gotServer) {
         final w = await _repo.wallet(id);
-        collected.value = w.collected;
-        settled.value = w.settled;
-        balance.value = w.balance;
+        cashCollected.value = w.cashCollected;
+        cashSettled.value = w.cashSettled;
+        cashBalance.value = w.cashBalance;
+        cardCollected.value = w.cardCollected;
+        cardSettled.value = w.cardSettled;
+        cardBalance.value = w.cardBalance;
       }
-      hasPending.value = await _repo.hasPending(id);
+      hasPendingCash.value = await _repo.hasPending(id, 'cash');
+      hasPendingCard.value = await _repo.hasPending(id, 'card');
       _page = 1;
       final page = await _repo.history(id, limit: _perPage + 1, offset: 0);
       hasMore.value = page.length > _perPage;
@@ -95,16 +117,17 @@ class SettlementController extends GetxController {
     update();
   }
 
-  /// Submit a settlement request for the current balance — stays PENDING until
-  /// the owner approves it from the Owner Panel.
-  Future<bool> requestSettlement() async {
+  /// Request a settlement for the [method] ('cash'|'card') wallet's balance —
+  /// stays PENDING until the owner approves it in the Owner Panel.
+  Future<bool> requestSettlement(String method) async {
     final id = _acctId;
     if (id == null) return false;
-    if (balance.value <= 0) {
+    final bal = method == 'card' ? cardBalance.value : cashBalance.value;
+    if (bal <= 0) {
       Get.snackbar('settlement'.tr, 'wallet_no_balance'.tr);
       return false;
     }
-    if (await _repo.hasPending(id)) {
+    if (await _repo.hasPending(id, method)) {
       Get.snackbar('settlement'.tr, 'wallet_pending_exists'.tr);
       return false;
     }
@@ -113,7 +136,8 @@ class SettlementController extends GetxController {
       id: const Uuid().v4(),
       accountantId: id,
       branchId: _branch.writeBranchId,
-      amount: balance.value,
+      amount: bal,
+      method: method,
       status: 'pending',
       requestedAt: now,
     ));

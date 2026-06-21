@@ -131,6 +131,14 @@ class SyncService {
     return records.length;
   }
 
+  /// v12 (item 4): wipe EVERY local table (business + users + accountants +
+  /// settlements + outbox + …), not just the synced business ones. Used by
+  /// logout so nothing of the previous account survives on the device.
+  Future<void> wipeAllLocalData() async {
+    await _db.wipeAllTables();
+    Log.d('SyncService: ALL local data wiped');
+  }
+
   /// Wipes all local business data and clears the outbox (so the wipe is NOT
   /// pushed to the server — the server mirror is left intact and can be pulled
   /// back). Used by Settings → "delete local data".

@@ -294,6 +294,102 @@ test('payment_method round-trips through sync and shows on the public receipt', 
 });
 
 // ---------------------------------------------------------------------------
+// v12 — per-method wallet: GET /api/account/wallet buckets receipts/settlements
+// by payment method (cash|card) and returns a wallet object for each, with the
+// top-level fields mirroring the cash wallet for backward-compat.
+// ---------------------------------------------------------------------------
+test('wallet splits collected/settled/balance by payment method (cash vs card)', async () => {
+  const owner = await registerOwner();
+  const acct = await makeAccountant(owner);
+
+  const recIso = `${CURRENT_MONTH}-08T00:00:00.000Z`;
+  // A cash receipt (5000) + a card receipt (8000) by the accountant, plus an
+  // APPROVED cash settlement (3000). All pushed into the owner mirror.
+  const push = await api('POST', '/api/sync/push', {
+    token: acct.token,
+    body: {
+      records: [
+        {
+          entity: 'receipts',
+          localId: 'w-rec-cash',
+          deleted: false,
+          updatedAt: recIso,
+          data: {
+            uuid: 'w-rec-cash',
+            receipt_no: 101,
+            subscriber_id: 'w-sub',
+            month: CURRENT_MONTH,
+            paid_amount: 5000,
+            payment_method: 'cash',
+            accountant_id: acct.created.localId,
+            status: 'valid',
+            issued_at: recIso,
+            updated_at: recIso,
+          },
+        },
+        {
+          entity: 'receipts',
+          localId: 'w-rec-card',
+          deleted: false,
+          updatedAt: recIso,
+          data: {
+            uuid: 'w-rec-card',
+            receipt_no: 102,
+            subscriber_id: 'w-sub',
+            month: CURRENT_MONTH,
+            paid_amount: 8000,
+            payment_method: 'card',
+            accountant_id: acct.created.localId,
+            status: 'valid',
+            issued_at: recIso,
+            updated_at: recIso,
+          },
+        },
+        {
+          entity: 'settlements',
+          localId: 'w-settle-cash',
+          deleted: false,
+          updatedAt: recIso,
+          data: {
+            id: 'w-settle-cash',
+            accountant_id: acct.created.localId,
+            amount: 3000,
+            method: 'cash',
+            status: 'pending',
+            requested_at: recIso,
+            updated_at: recIso,
+          },
+        },
+      ],
+    },
+  });
+  assert.equal(push.status, 200, `wallet push should 200, got ${push.status} ${JSON.stringify(push.data)}`);
+
+  // Owner approves the cash settlement so it counts toward settled(cash).
+  const decide = await api('POST', '/api/account/settlements/w-settle-cash/decision', {
+    token: owner.token,
+    body: { status: 'approved' },
+  });
+  assert.equal(decide.status, 200, `approve should 200, got ${decide.status} ${JSON.stringify(decide.data)}`);
+
+  // Accountant reads their own wallet.
+  const w = await api('GET', '/api/account/wallet', { token: acct.token });
+  assert.equal(w.status, 200, `wallet should 200, got ${w.status} ${JSON.stringify(w.data)}`);
+
+  assert.equal(w.data.cash.collected, 5000, 'cash.collected = cash receipt');
+  assert.equal(w.data.card.collected, 8000, 'card.collected = card receipt');
+  assert.equal(w.data.cash.settled, 3000, 'cash.settled = approved cash settlement');
+  assert.equal(w.data.card.settled, 0, 'card.settled = 0 (no card settlement)');
+  assert.equal(w.data.cash.balance, 2000, 'cash.balance = 5000 - 3000');
+  assert.equal(w.data.card.balance, 8000, 'card.balance = 8000 - 0');
+
+  // Top-level fields mirror the cash wallet (backward-compat).
+  assert.equal(w.data.collected, 5000, 'top-level collected = cash.collected');
+  assert.equal(w.data.settled, 3000, 'top-level settled = cash.settled');
+  assert.equal(w.data.balance, 2000, 'top-level balance = cash.balance');
+});
+
+// ---------------------------------------------------------------------------
 // TASK 4 (regression) — receiptsMonth pull scopes ONLY receipts to a month.
 // ---------------------------------------------------------------------------
 test('pull?receiptsMonth=YYYY-MM scopes only receipts; other entities unaffected', async () => {

@@ -13,6 +13,7 @@ import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/models/user_model.dart';
 import 'package:generatormanagment/data/repositories/auth_repository.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
+import 'package:generatormanagment/views/widgets/sync_progress_overlay.dart';
 
 /// Authentication + session state.
 ///
@@ -479,37 +480,33 @@ class AuthController extends GetxController {
       // next login). OFFLINE or sync-disabled → wiping is UNRECOVERABLE, so ASK:
       // confirm deletes + logs out; cancel ABORTS the logout (stay signed in) so
       // the user neither loses data nor exposes it.
+      final bool online = canSync && await _net.isOnline();
+      // Confirm first (ONLINE: "do you want to log out?"; OFFLINE: the wipe is
+      // unrecoverable → "local data will be deleted"). Cancel ABORTS the logout.
+      final ok = await Get.defaultDialog<bool>(
+        title: 'logout'.tr,
+        middleText: online ? 'logout_confirm'.tr : 'logout_offline_wipe_msg'.tr,
+        textConfirm: online ? 'logout'.tr : 'delete_local_data'.tr,
+        textCancel: 'cancel'.tr,
+        onConfirm: () => Get.back(result: true),
+        onCancel: () {},
+      );
+      if (ok != true) return; // cancel → abort the logout entirely
+      // Flash item 4: show a loading indicator and delete ALL local data
+      // (every table, not just the synced ones); only finish logout AFTER the
+      // wipe completes. Online: push pending first so nothing unsynced is lost.
+      SyncProgress.show('logging_out'.tr);
       try {
-        if (canSync && await _net.isOnline()) {
-          // Flash item 5: ONLINE logout also confirms first ("do you want to log
-          // out?"). Cancel aborts (stay signed in). Then push + wipe (unchanged).
-          final ok = await Get.defaultDialog<bool>(
-            title: 'logout'.tr,
-            middleText: 'logout_confirm'.tr,
-            textConfirm: 'logout'.tr,
-            textCancel: 'cancel'.tr,
-            onConfirm: () => Get.back(result: true),
-            onCancel: () {},
-          );
-          if (ok != true) return; // cancel → abort the logout entirely
+        if (online) {
           try {
             await sync.syncNow(silent: true);
           } catch (_) {}
-          await sync.deleteLocalData(silent: true);
-        } else {
-          final wipe = await Get.defaultDialog<bool>(
-            title: 'logout'.tr,
-            middleText: 'logout_offline_wipe_msg'.tr,
-            textConfirm: 'delete_local_data'.tr,
-            textCancel: 'cancel'.tr,
-            onConfirm: () => Get.back(result: true),
-            onCancel: () {},
-          );
-          if (wipe != true) return; // cancel → abort the logout entirely
-          await sync.deleteLocalData(silent: true);
         }
+        await sync.deleteAllLocalData();
       } catch (e) {
         Log.w('logout local wipe failed: $e');
+      } finally {
+        SyncProgress.hide();
       }
     }
     await _auth.logout();

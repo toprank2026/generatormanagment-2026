@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
+import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/core/session_cache.dart';
@@ -188,6 +189,7 @@ class SettingsController extends GetxController {
         } catch (_) {/* best-effort rollback */}
         rethrow;
       }
+      SyncController.poke(); // item 3: sync the new accountant identity row
       await loadAccountants();
       Get.snackbar('success'.tr, 'add_accountant'.tr);
     } on ApiException catch (e) {

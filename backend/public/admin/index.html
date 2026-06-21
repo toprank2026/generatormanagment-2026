@@ -1586,6 +1586,8 @@ var SYNC_COLUMNS={
     // falls back to the raw accountant_id when unresolved.
     {label:"المحاسب",get:function(d){ return syncText(d.accountant_id); }},
     {label:"المبلغ",get:function(d){ return d.amount!=null?fmtPrice(d.amount):"—"; }},
+    // v12: payment method ('cash'→نقدي, 'card'→بطاقة, default نقدي).
+    {label:"الطريقة",get:function(d){ return d.method==="card"?"بطاقة":"نقدي"; }},
     {label:"الحالة",get:function(d){ return settlementStatusBadge(d.status); }},
     {label:"تاريخ الطلب",get:function(d){ return d.requested_at?fmtDate(d.requested_at):"—"; }}
   ]

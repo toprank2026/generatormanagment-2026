@@ -317,6 +317,16 @@ class SyncController extends GetxController {
     }
   }
 
+  /// v12 (item 4): wipe EVERY local table (used by logout — "delete all local
+  /// data without exception"). Mirror untouched; the next login re-pulls.
+  Future<void> deleteAllLocalData() async {
+    try {
+      await _sync.wipeAllLocalData();
+    } finally {
+      await refreshPending();
+    }
+  }
+
   /// Clears all local business data (boards/subscribers/receipts/…) and the
   /// pending outbox. The server mirror is untouched, so [pull] restores it.
   /// [silent] suppresses the snackbar + the app-data reload (used by the

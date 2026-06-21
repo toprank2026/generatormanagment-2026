@@ -6,6 +6,7 @@ class Settlement {
   String? accountantId;
   String? branchId;
   double amount;
+  String method; // v12: 'cash' | 'card' (which wallet this settles)
   String status; // 'pending' | 'approved' | 'rejected'
   String? requestedAt;
   String? decidedAt;
@@ -18,6 +19,7 @@ class Settlement {
     this.accountantId,
     this.branchId,
     required this.amount,
+    this.method = 'cash',
     this.status = 'pending',
     this.requestedAt,
     this.decidedAt,
@@ -35,6 +37,7 @@ class Settlement {
         'accountant_id': accountantId,
         'branch_id': branchId,
         'amount': amount,
+        'method': method,
         'status': status,
         'requested_at': requestedAt,
         'decided_at': decidedAt,
@@ -50,6 +53,7 @@ class Settlement {
         accountantId: map['accountant_id'],
         branchId: map['branch_id'],
         amount: (map['amount'] as num?)?.toDouble() ?? 0.0,
+        method: (map['method'] ?? 'cash').toString(),
         status: (map['status'] ?? 'pending').toString(),
         requestedAt: map['requested_at'],
         decidedAt: map['decided_at'],

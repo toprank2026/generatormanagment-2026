@@ -429,8 +429,10 @@ both phone and username, or a password `< 4` chars → `400 code=VALIDATION`.
 A **settlement** is an accountant **wallet** record — the cash an accountant owes
 the owner — synced as a normal business entity (`entity:"settlements"`, device is
 the source of truth). Each row:
-`{ id, accountant_id, branch_id, amount, status:'pending'|'approved'|'rejected',
-requested_at, decided_at, decided_by, note, updated_at }`. An accountant CREATES a
+`{ id, accountant_id, branch_id, amount, method:'cash'|'card', status:'pending'|'approved'|'rejected',
+requested_at, decided_at, decided_by, note, updated_at }`. `method` is the payment
+method the settlement is for (Flash v12; absent = `'cash'`); `data` is Mixed so it
+rides through `/api/sync` with no schema change. An accountant CREATES a
 **pending** settlement by pushing it via `/api/sync/push` (always allowed; a
 branch-confined accountant's `branch_id`/`accountant_id` are server-stamped, so a
 request cannot be forged for another branch/accountant). The owner then approves
@@ -452,6 +454,33 @@ on its next pull (the accountant pulls the decision; there is no separate push).
 Errors: `400 code=BAD_STATUS` (status not `approved`/`rejected`),
 `404 code=SETTLEMENT_NOT_FOUND` (no such settlement in the caller's mirror),
 `403 code=FORBIDDEN` (caller is not an owner/admin).
+
+#### GET `/api/account/wallet`  (auth)
+The accountant **wallet**, computed SERVER-SIDE from the full mirror (authoritative
+across all months, unaffected by the device's current-month receipt scope). For an
+**accountant** it reports their own figures (receipts/settlements with
+`data.accountant_id == localId`); for an **owner** the owner-collected figures
+(`accountant_id` null). Flash v12 returns a **per-method** breakdown: for each
+method `M ∈ {cash, card}` —
+- `collected(M)` = Σ `data.paid_amount` over valid receipts
+  (`entity:"receipts"`, `deleted:false`, `data.status=='valid'`) whose
+  `(data.payment_method||'cash')==M`;
+- `settled(M)` = Σ `data.amount` over approved settlements
+  (`entity:"settlements"`, `deleted:false`, `data.status=='approved'`) whose
+  `(data.method||'cash')==M`;
+- `balance(M)` = `collected(M) − settled(M)`.
+
+The top-level `{ collected, settled, balance }` mirror the **cash** wallet for
+backward-compat with pre-v12 clients.
+```jsonc
+// 200 response
+{
+  "cash": { "collected": 5000, "settled": 3000, "balance": 2000 },
+  "card": { "collected": 8000, "settled": 0,    "balance": 8000 },
+  // back-compat: top-level == the cash wallet
+  "collected": 5000, "settled": 3000, "balance": 2000
+}
+```
 
 ### Branches — `/api/account/branches`  (auth; role **owner only**)
 

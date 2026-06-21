@@ -290,12 +290,17 @@ const getMyRecent = asyncHandler(async (req, res) => {
 });
 
 /**
- * GET /api/account/wallet (auth) — v11 accountant wallet, computed SERVER-SIDE
- * from the full mirror (authoritative across all months, unaffected by the
- * device's current-month receipt scope). For an accountant: their own figures;
- * for an owner: the owner-collected (accountant_id null) figures.
- *  collected = Σ paid_amount of valid CASH receipts; settled = Σ approved
- *  settlement amounts; balance = collected − settled.
+ * GET /api/account/wallet (auth) — v12 per-method accountant wallet, computed
+ * SERVER-SIDE from the full mirror (authoritative across all months, unaffected
+ * by the device's current-month receipt scope). For an accountant: their own
+ * figures; for an owner: the owner-collected (accountant_id null) figures.
+ *
+ * Two wallets are tracked, bucketed by payment method M ('cash'|'card'):
+ *  collected(M) = Σ paid_amount of valid receipts whose (payment_method||'cash')==M;
+ *  settled(M)   = Σ amount of approved settlements whose (method||'cash')==M;
+ *  balance(M)   = collected(M) − settled(M).
+ * The top-level { collected, settled, balance } mirror the CASH wallet for
+ * backward-compat with any old client that predates the per-method split.
  */
 const getWallet = asyncHandler(async (req, res) => {
   const ownerId = effectiveOwnerId(req.user);
@@ -307,20 +312,39 @@ const getWallet = asyncHandler(async (req, res) => {
   const recFilter = { user: ownerId, entity: 'receipts', deleted: false, 'data.status': 'valid' };
   if (acctId) recFilter['data.accountant_id'] = acctId;
   const receipts = await SyncRecord.find(recFilter).lean();
-  let collected = 0;
+  const collected = { cash: 0, card: 0 };
   for (const r of receipts) {
     const d = r.data || {};
-    // Only CASH receipts represent cash the accountant physically holds.
-    if ((d.payment_method || 'cash') === 'cash') collected += Number(d.paid_amount) || 0;
+    const method = (d.payment_method || 'cash') === 'card' ? 'card' : 'cash';
+    collected[method] += Number(d.paid_amount) || 0;
   }
 
   const setFilter = { user: ownerId, entity: 'settlements', deleted: false, 'data.status': 'approved' };
   if (acctId) setFilter['data.accountant_id'] = acctId;
   const setts = await SyncRecord.find(setFilter).lean();
-  let settled = 0;
-  for (const s of setts) settled += Number((s.data || {}).amount) || 0;
+  const settled = { cash: 0, card: 0 };
+  for (const s of setts) {
+    const d = s.data || {};
+    const method = (d.method || 'cash') === 'card' ? 'card' : 'cash';
+    settled[method] += Number(d.amount) || 0;
+  }
 
-  res.status(200).json({ collected, settled, balance: collected - settled });
+  const wallet = (m) => ({
+    collected: collected[m],
+    settled: settled[m],
+    balance: collected[m] - settled[m],
+  });
+  const cash = wallet('cash');
+  const card = wallet('card');
+
+  res.status(200).json({
+    cash,
+    card,
+    // Top-level = cash wallet for backward-compat with pre-v12 clients.
+    collected: cash.collected,
+    settled: cash.settled,
+    balance: cash.balance,
+  });
 });
 
 module.exports = {

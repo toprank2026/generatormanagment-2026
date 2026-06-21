@@ -14,35 +14,62 @@ class SettlementRepository {
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  /// Wallet figures for [accountantId]: total collected cash, total settled
-  /// (approved), and the current balance (collected − settled).
-  Future<({double collected, double settled, double balance})> wallet(
-      String accountantId) async {
+  /// Per-method wallet figures for [accountantId] (v12: cash + card). For each
+  /// method: collected = Σ that-method valid receipts; settled = Σ approved
+  /// settlements of that method; balance = collected − settled. (Local
+  /// fallback; the My Wallet page prefers the server-authoritative endpoint.)
+  Future<
+      ({
+        double cashCollected,
+        double cashSettled,
+        double cashBalance,
+        double cardCollected,
+        double cardSettled,
+        double cardBalance,
+      })> wallet(String accountantId) async {
     final db = await _dbHelper.database;
-    final cr = await db.rawQuery(
-      "SELECT COALESCE(SUM(paid_amount),0) s FROM receipts "
-      "WHERE accountant_id = ? AND status = 'valid' "
-      // Only CASH receipts are cash the accountant physically holds (v11).
-      "AND COALESCE(payment_method,'cash') = 'cash'",
-      [accountantId],
+    Future<double> collected(String m) async {
+      final r = await db.rawQuery(
+        "SELECT COALESCE(SUM(paid_amount),0) s FROM receipts "
+        "WHERE accountant_id = ? AND status = 'valid' "
+        "AND COALESCE(payment_method,'cash') = ?",
+        [accountantId, m],
+      );
+      return ((r.first['s'] as num?) ?? 0).toDouble();
+    }
+
+    Future<double> settled(String m) async {
+      final r = await db.rawQuery(
+        "SELECT COALESCE(SUM(amount),0) s FROM settlements "
+        "WHERE accountant_id = ? AND status = 'approved' "
+        "AND COALESCE(method,'cash') = ?",
+        [accountantId, m],
+      );
+      return ((r.first['s'] as num?) ?? 0).toDouble();
+    }
+
+    final cc = await collected('cash');
+    final cs = await settled('cash');
+    final dc = await collected('card');
+    final ds = await settled('card');
+    return (
+      cashCollected: cc,
+      cashSettled: cs,
+      cashBalance: cc - cs,
+      cardCollected: dc,
+      cardSettled: ds,
+      cardBalance: dc - ds,
     );
-    final collected = ((cr.first['s'] as num?) ?? 0).toDouble();
-    final sr = await db.rawQuery(
-      "SELECT COALESCE(SUM(amount),0) s FROM settlements "
-      "WHERE accountant_id = ? AND status = 'approved'",
-      [accountantId],
-    );
-    final settled = ((sr.first['s'] as num?) ?? 0).toDouble();
-    return (collected: collected, settled: settled, balance: collected - settled);
   }
 
-  /// True when the accountant already has an outstanding (pending) request —
-  /// used to block duplicate settlement requests.
-  Future<bool> hasPending(String accountantId) async {
+  /// True when the accountant already has an outstanding (pending) request for
+  /// the given [method] — blocks duplicate settlement requests per wallet.
+  Future<bool> hasPending(String accountantId, String method) async {
     final db = await _dbHelper.database;
     final r = await db.rawQuery(
-      "SELECT COUNT(*) c FROM settlements WHERE accountant_id = ? AND status = 'pending'",
-      [accountantId],
+      "SELECT COUNT(*) c FROM settlements WHERE accountant_id = ? "
+      "AND status = 'pending' AND COALESCE(method,'cash') = ?",
+      [accountantId, method],
     );
     return (Sqflite.firstIntValue(r) ?? 0) > 0;
   }
