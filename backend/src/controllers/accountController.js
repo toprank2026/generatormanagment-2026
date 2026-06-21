@@ -1,6 +1,7 @@
 'use strict';
 
 const SyncRecord = require('../models/SyncRecord');
+const User = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
 const { listUserData, labelFor } = require('./adminController');
 const { effectiveOwnerId } = require('../utils/effectiveOwner');
@@ -239,19 +240,35 @@ const getMyStats = asyncHandler(async (req, res) => {
   // to their own.
   const ownerId = effectiveOwnerId(req.user);
 
-  const rows = await SyncRecord.aggregate([
-    { $match: { user: ownerId, deleted: false } },
-    { $group: { _id: '$entity', count: { $sum: 1 } } },
-  ]);
-
-  const counts = {};
-  for (const entity of STAT_ENTITIES) counts[entity] = 0;
-  for (const row of rows) counts[row._id] = row.count;
-
   // Optional owner filters: scope the dashboard to one accountant and/or one
   // branch (full isolation). Both default to null = whole account / all branches.
   const accId = String(req.query.accountantId || '').trim() || null;
   const branchId = String(req.query.branchId || '').trim() || null;
+
+  const counts = {};
+  for (const entity of STAT_ENTITIES) counts[entity] = 0;
+  if (branchId) {
+    // Branch selected -> the per-entity COUNT cards must reflect that branch
+    // only (full isolation), mirroring the branch-scoped dashboard below.
+    const rows = await SyncRecord.aggregate([
+      { $match: { user: ownerId, deleted: false, 'data.branch_id': branchId } },
+      { $group: { _id: '$entity', count: { $sum: 1 } } },
+    ]);
+    for (const row of rows) counts[row._id] = row.count;
+    // accountants carry no data.branch_id -> resolve via the authoritative
+    // User.branchId (same rule as the accountants list, adminController.js).
+    counts.accountants = await User.countDocuments({ owner: ownerId, role: 'accountant', branchId });
+    // branches: the count of branch definitions (the switcher itself), not
+    // branch-scoped — keep the full count so the card stays meaningful.
+    counts.branches = await SyncRecord.countDocuments({ user: ownerId, entity: 'branches', deleted: false });
+  } else {
+    const rows = await SyncRecord.aggregate([
+      { $match: { user: ownerId, deleted: false } },
+      { $group: { _id: '$entity', count: { $sum: 1 } } },
+    ]);
+    for (const row of rows) counts[row._id] = row.count;
+  }
+
   const dashboard = await buildDashboard(ownerId, counts, month, accId, branchId);
 
   res.status(200).json({ counts, dashboard });

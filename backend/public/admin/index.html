@@ -642,9 +642,14 @@ function ensureOwnerBranches(){
       return {id:d.id,name:(r&&r.label)||d.name||String(d.id||"")};
     }).filter(function(b){ return b.id!=null && b.id!==""; });
     ownerBranch.loading=false;
-    // Stored branch removed on another device -> fall back to All.
+    // Stored branch removed on another device -> reset (re-defaulted below).
     if(ownerBranch.id && !ownerBranch.list.some(function(b){ return String(b.id)===String(ownerBranch.id); })) ownerBranch.id="";
-    if(ownerBranch.list.length>=2) render();   // reveal the switcher
+    // No "all branches" view: always land on a SPECIFIC branch (the first one).
+    if(!ownerBranch.id && ownerBranch.list.length>=1){
+      ownerBranch.id=String(ownerBranch.list[0].id);
+      try { localStorage.setItem("ownerBranchId",ownerBranch.id); } catch(e){}
+    }
+    if(ownerBranch.list.length>=1) render();   // reveal the switcher
   }).catch(function(){ ownerBranch.list=[]; ownerBranch.loading=false; });
 }
 function setOwnerBranch(id){
@@ -652,10 +657,11 @@ function setOwnerBranch(id){
   try { localStorage.setItem("ownerBranchId",ownerBranch.id); } catch(e){}
   render();   // re-route current hash -> active view re-fetches, branch-scoped
 }
-// The switcher bar shown in the owner shell. Hidden for single-branch owners.
+// The switcher bar shown in the owner shell. NO "all branches" option — the
+// owner is always viewing exactly one branch. Hidden only when there are none.
 function ownerBranchBar(){
-  if(!ownerBranch.list || ownerBranch.list.length<2) return null;
-  var opts=[el("option",{value:"",selected:(ownerBranch.id==="")?"":false,text:"كل الفروع"})];
+  if(!ownerBranch.list || ownerBranch.list.length<1) return null;
+  var opts=[];
   ownerBranch.list.forEach(function(b){
     opts.push(el("option",{value:b.id,selected:(String(b.id)===String(ownerBranch.id))?"":false,text:b.name}));
   });
@@ -674,7 +680,10 @@ function ownerBranchBar(){
    reports) then re-fetches from that branch ACCOUNT's mirror via the
    /api/account/branches/:id/* endpoints. id==="" -> the owner's own account.
    ============================================================ */
-var acctBranch = { id:"", list:null, loading:false };
+var acctBranch = {
+  id: (function(){ try { return localStorage.getItem("acctBranchId")||""; } catch(e){ return ""; } })(),
+  list:null, loading:false
+};
 function ensureBranchAccounts(){
   if(acctBranch.list!==null || acctBranch.loading) return;
   acctBranch.loading=true;
@@ -683,10 +692,19 @@ function ensureBranchAccounts(){
     acctBranch.list=arr.map(function(b){ return {id:String(b.id),name:b.generatorName||b.name||b.phone||String(b.id)}; });
     acctBranch.loading=false;
     if(acctBranch.id && !acctBranch.list.some(function(b){ return b.id===acctBranch.id; })) acctBranch.id="";
+    // No "my account / all" view: always land on a SPECIFIC branch (the first).
+    if(!acctBranch.id && acctBranch.list.length>=1){
+      acctBranch.id=acctBranch.list[0].id;
+      try { localStorage.setItem("acctBranchId",acctBranch.id); } catch(e){}
+    }
     if(acctBranch.list.length>=1) render();   // reveal the switcher
   }).catch(function(){ acctBranch.list=[]; acctBranch.loading=false; });
 }
-function setAcctBranch(id){ acctBranch.id=id||""; render(); }
+function setAcctBranch(id){
+  acctBranch.id=id||"";
+  try { localStorage.setItem("acctBranchId",acctBranch.id); } catch(e){}
+  render();
+}
 // Account-aware fetchers: route to the selected branch ACCOUNT's mirror, else
 // the owner's own (preserving the legacy local-branch filter for own data).
 function acctStats(month,accountantId){
@@ -702,9 +720,23 @@ function acctData(entity,opts){
   if(bid && isBranchScopedEntity(entity)) o=Object.assign({},o,{branchId:bid});
   return API.myData(entity,o);
 }
+// Display name of the currently-selected branch (account switcher first, then
+// the legacy local-branch filter), or null when no specific branch is active.
+function activeBranchName(){
+  if(acctBranch.id && acctBranch.list){
+    var a=acctBranch.list.filter(function(b){ return b.id===acctBranch.id; })[0];
+    if(a) return a.name;
+  }
+  if(ownerBranch.id && ownerBranch.list){
+    var o=ownerBranch.list.filter(function(b){ return String(b.id)===String(ownerBranch.id); })[0];
+    if(o) return o.name;
+  }
+  return null;
+}
 function acctBranchBar(){
   if(!acctBranch.list || acctBranch.list.length<1) return null;
-  var opts=[el("option",{value:"",selected:(acctBranch.id==="")?"":false,text:"حسابي (المالك)"})];
+  // NO "my account / all branches" option — always exactly one branch.
+  var opts=[];
   acctBranch.list.forEach(function(b){
     opts.push(el("option",{value:b.id,selected:(b.id===acctBranch.id)?"":false,text:b.name}));
   });
@@ -733,8 +765,12 @@ function doLogout(silent){
   state.token=null; state.me=null;
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(ME_KEY);
-  // Reset the owner branch cache so the next account reloads its own branches.
-  ownerBranch.list=null; ownerBranch.loading=false;
+  // Reset BOTH branch caches + the persisted selection so the next account that
+  // logs in (same page session) reloads its OWN branches and re-defaults — else
+  // the previous owner's selected branch stays sticky and every scoped call 404s.
+  ownerBranch.list=null; ownerBranch.loading=false; ownerBranch.id="";
+  acctBranch.list=null; acctBranch.loading=false; acctBranch.id="";
+  try { localStorage.removeItem("ownerBranchId"); localStorage.removeItem("acctBranchId"); } catch(e){}
   disconnectEvents();
   if(!silent) toast("تم تسجيل الخروج","ok");
   if(location.hash!=="#/login") location.hash="#/login";
@@ -2171,13 +2207,21 @@ function viewMyDashboard(){
 
     var content=el("div");
 
-    // App-style gradient banner: generator name + phone + plan time remaining.
-    content.appendChild(el("div",{class:"app-banner"},[
-      bannerRow("bolt",me.generatorName||me.name||"Flash",true),
-      bannerRow("phone_android",me.username||me.phone||"—",false),
-      bannerRow("workspace_premium",planRemainingText(sub),false),
-      bannerRow("cloud_done","آخر رفع: "+((dash&&dash.lastUploadAt)?fmtDate(dash.lastUploadAt):"—"),false)
-    ]));
+    // App-style gradient banner. When a branch is selected the panel shows THAT
+    // branch (title = branch name) with the owner generator as a subtitle, so the
+    // upper panel reflects the branch you're viewing — not just the owner.
+    var brName=activeBranchName();
+    var bannerKids=[];
+    if(brName){
+      bannerKids.push(bannerRow("account_tree",brName,true));
+      bannerKids.push(bannerRow("bolt",me.generatorName||me.name||"Flash",false));
+    } else {
+      bannerKids.push(bannerRow("bolt",me.generatorName||me.name||"Flash",true));
+    }
+    bannerKids.push(bannerRow("phone_android",me.username||me.phone||"—",false));
+    bannerKids.push(bannerRow("workspace_premium",planRemainingText(sub),false));
+    bannerKids.push(bannerRow("cloud_done","آخر رفع: "+((dash&&dash.lastUploadAt)?fmtDate(dash.lastUploadAt):"—"),false));
+    content.appendChild(el("div",{class:"app-banner"},bannerKids));
 
     // "نظرة عامة": 2-column app stat cards. With the dashboard object we show
     // the app's paid/unpaid stats; otherwise fall back to entity counts only.

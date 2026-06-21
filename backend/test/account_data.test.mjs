@@ -654,3 +654,38 @@ test('invalid ?month falls back to the current month', async () => {
   assert.equal(dashboard.month, CURRENT_MONTH, "month '20xx-99' fails /^\\d{4}-\\d{2}$/ -> current month");
   assert.equal(Number(dashboard.collected), 15000, 'and the data is the current-month data');
 });
+
+// ---------------------------------------------------------------------------
+// /api/account/stats?branchId= scopes the per-entity COUNT cards to that branch
+// (full isolation in the owner panel). A separate owner D keeps A/B/C intact.
+// ---------------------------------------------------------------------------
+test('GET /api/account/stats?branchId= scopes the per-entity counts to that branch', async () => {
+  const ownerD = await registerOwner({ phone: '0700009001' });
+  const push = await api('POST', '/api/sync/push', {
+    token: ownerD.token,
+    body: {
+      records: [
+        { entity: 'subscribers', localId: 'd-s1', deleted: false, updatedAt: new Date().toISOString(), data: { id: 'd-s1', name: 'M1', amps: 5, branch_id: 'bA' } },
+        { entity: 'subscribers', localId: 'd-s2', deleted: false, updatedAt: new Date().toISOString(), data: { id: 'd-s2', name: 'M2', amps: 5, branch_id: 'bA' } },
+        { entity: 'subscribers', localId: 'd-s3', deleted: false, updatedAt: new Date().toISOString(), data: { id: 'd-s3', name: 'K1', amps: 5, branch_id: 'bB' } },
+        { entity: 'boards', localId: 'd-b1', deleted: false, updatedAt: new Date().toISOString(), data: { id: 'd-b1', name: 'BA', branch_id: 'bA' } },
+      ],
+    },
+  });
+  assert.equal(push.status, 200, `push should 200, got ${push.status} ${JSON.stringify(push.data)}`);
+
+  // No branch -> all rows counted.
+  const all = await api('GET', '/api/account/stats', { token: ownerD.token });
+  assert.equal(Number(extractCounts(all.data).subscribers), 3, 'all 3 subscribers when no branch filter');
+  assert.equal(Number(extractCounts(all.data).boards), 1);
+
+  // branchId=bA -> only that branch's rows.
+  const bA = await api('GET', '/api/account/stats?branchId=bA', { token: ownerD.token });
+  assert.equal(Number(extractCounts(bA.data).subscribers), 2, 'branch bA has 2 subscribers');
+  assert.equal(Number(extractCounts(bA.data).boards), 1, 'branch bA has 1 board');
+
+  // branchId=bB -> only that branch's rows.
+  const bB = await api('GET', '/api/account/stats?branchId=bB', { token: ownerD.token });
+  assert.equal(Number(extractCounts(bB.data).subscribers), 1, 'branch bB has 1 subscriber');
+  assert.equal(Number(extractCounts(bB.data).boards), 0, 'branch bB has no boards');
+});
