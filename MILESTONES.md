@@ -80,6 +80,14 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ `RUN.md` (run steps + creds/env) · `CUSTOMER_WORKFLOW.md` (customer guide) · removed stale `readme.html`.
 - ✅ Committed & pushed to GitHub (`toprank2026/generatormanagment-2026`, `main`).
 
+## Flash v12
+- ✅ **Credit-card wallet** — a second accountant wallet (alongside Cash) for card-paid receipts: `settlements.method` ('cash'|'card', schema v11→v12), per-method balance (collected − approved settlements), server-authoritative `GET /api/account/wallet` returns `{cash,card}`, owner-panel settlements show the method.
+- ✅ **Wallet pull-on-open** — My Wallet pulls latest receipts + owner decisions before showing balances.
+- ✅ **Broader auto-sync** — `poke()` now also fires on accountant creation (all writes covered).
+- ✅ **Hard logout** — confirm → loading overlay → wipe **ALL** local tables (`DbHelper.wipeAllTables`, outbox cleared last to avoid tombstone data-loss) → only then clear session.
+- ✅ **Payments-of-month** moved out of Reports into its own `PaymentsScreen`.
+- ✅ Adversarial review (1 HIGH + 1 MED + 1 LOW) fixed; Tikrit release APK built; pushed to `main`.
+
 ## Backlog
 - ⬜ Localize backend plan names/descriptions (currently English server data).
 - ⬜ DB migration path (schema v1, `onCreate` only); index on `expenses.date`.
