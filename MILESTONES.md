@@ -88,6 +88,16 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Payments-of-month** moved out of Reports into its own `PaymentsScreen`.
 - ✅ Adversarial review (1 HIGH + 1 MED + 1 LOW) fixed; Tikrit release APK built; pushed to `main`.
 
+## Flash v13
+- ✅ **Role separation** — billing is ACCOUNTANT-only (owner/admin can't bill: collectPayment no-ops + collect/record UI hidden); pricing is OWNER/admin-only (accountants can't edit: setPrice/setPrices no-op + pricing editor hidden).
+- ✅ **Independent branch generators** — a new branch is a full generator with its OWN plan (plan picker on create) + its own **super-admin approval** (`User.independentPlan`; gated on its own subscription via `effectiveOwner`/auth). LEGACY branches still inherit the parent (backward-compat). Complete data isolation (separate mirrors).
+- ✅ **Accountant inherits the owner** (plan/approval/features) → logs in directly + syncs immediately; fixed "password incorrect after logout" (offline profile-switch falls back to a real online login when the wiped local credential is gone).
+- ✅ **Main branch shown** in the owner-panel switcher as the first NAMED entry (original generator name); banner shows the selected branch (الفرع: name + branch phone).
+- ✅ **Switch accountant/branch** → confirm → wipe ALL local + clear wallet → load new identity.
+- ✅ **Settlement decision fix** — approving/rejecting a NON-main-branch settlement now targets the branch mirror (was "Settlement not found").
+- ✅ **Reports** — owner-panel reports match the app (gauge/donut/bars/cards/prices + per-tariff PAID counts) and now re-scope to the selected accountant.
+- ✅ Spec-kit + read-only mapping + adversarial review; Flutter 90, backend 131; Tikrit release APK.
+
 ## Backlog
 - ⬜ Localize backend plan names/descriptions (currently English server data).
 - ⬜ DB migration path (schema v1, `onCreate` only); index on `expenses.date`.
