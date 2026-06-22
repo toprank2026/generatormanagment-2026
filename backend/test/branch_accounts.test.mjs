@@ -454,3 +454,45 @@ test('blocking the PARENT blocks the branch (login 403 + existing token 403)', a
   assert.equal(me.status, 403, 'existing branch token must be rejected once the parent is blocked');
   assert.equal(me.data.code, 'BLOCKED');
 });
+
+// ---------------------------------------------------------------------------
+// v13: approve/reject a settlement that lives in a BRANCH account's mirror.
+// Without branchId the decision keys on the owner mirror and 404s; WITH branchId
+// it targets the branch mirror and applies.
+// ---------------------------------------------------------------------------
+test('owner approves a BRANCH settlement via branchId (fixes "Settlement not found")', async () => {
+  const owner = await registerOwner();
+  await activatePlan(owner.account.id, 'yearly');
+  const br = await createBranch(owner, { generatorName: 'Settle Branch' });
+
+  // Branch logs in and pushes a pending settlement into ITS OWN mirror.
+  const login = await api('POST', '/api/auth/login', { body: { username: br.phone, password: br.password, device: makeDevice() } });
+  assert.equal(login.status, 200, `branch login should 200, got ${login.status}`);
+  const bToken = login.data.token;
+  const push = await api('POST', '/api/sync/push', {
+    token: bToken,
+    body: { records: [{ entity: 'settlements', localId: 'st-1', deleted: false, updatedAt: new Date().toISOString(),
+      data: { id: 'st-1', amount: 5000, method: 'cash', status: 'pending', requested_at: new Date().toISOString() } }] },
+  });
+  assert.equal(push.status, 200, `branch push should 200, got ${push.status} ${JSON.stringify(push.data)}`);
+
+  // Owner decision WITHOUT branchId -> looks in the owner mirror -> 404.
+  const miss = await api('POST', '/api/account/settlements/st-1/decision', { token: owner.token, body: { status: 'approved' } });
+  assert.equal(miss.status, 404, 'owner-mirror lookup must 404 for a branch settlement');
+
+  // Owner decision WITH branchId -> targets the branch mirror -> 200 + approved.
+  const ok = await api('POST', '/api/account/settlements/st-1/decision', { token: owner.token, body: { status: 'approved', branchId: br.id } });
+  assert.equal(ok.status, 200, `branch settlement decision should 200, got ${ok.status} ${JSON.stringify(ok.data)}`);
+  assert.equal(ok.data.settlement.status, 'approved');
+
+  // The branch's own mirror now shows the approved row (the accountant would pull it).
+  const list = await api('GET', '/api/account/data?entity=settlements', { token: bToken });
+  assert.equal(list.status, 200);
+  const row = (list.data.records || []).find((r) => r.localId === 'st-1');
+  assert.ok(row && row.data.status === 'approved', 'branch mirror settlement is approved');
+
+  // A foreign owner cannot decide on someone else's branch settlement.
+  const other = await registerOwner();
+  const foreign = await api('POST', '/api/account/settlements/st-1/decision', { token: other.token, body: { status: 'approved', branchId: br.id } });
+  assert.equal(foreign.status, 404, 'a non-parent owner cannot decide on this branch');
+});

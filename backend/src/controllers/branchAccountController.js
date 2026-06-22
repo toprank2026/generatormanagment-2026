@@ -129,9 +129,11 @@ const getBranchStats = asyncHandler(async (req, res) => {
   for (const entity of STAT_ENTITIES) counts[entity] = 0;
   for (const row of rows) counts[row._id] = row.count;
 
-  // The branch is a full owner of its own mirror, so no inner accountant/branch
-  // filter is applied here — the dashboard is the WHOLE branch account.
-  const dashboard = await buildDashboard(branch._id, counts, month, null, null);
+  // Optional accountant filter (owner panel reports): scope the dashboard MONEY
+  // figures to one accountant within this branch account's mirror. null = whole
+  // branch. (Branch is the outer mirror; accountant is the inner money scope.)
+  const accId = String(req.query.accountantId || '').trim() || null;
+  const dashboard = await buildDashboard(branch._id, counts, month, accId, null);
 
   res.status(200).json({ counts, dashboard });
 });

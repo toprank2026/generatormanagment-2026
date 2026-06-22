@@ -580,12 +580,19 @@ var API={
   // Flash v11: owner approves/rejects an accountant wallet settlement request
   // (mutates the owner mirror row in place; the accountant pulls the decision).
   decideSettlement:function(localId,status,note){
-    return api("POST","/api/account/settlements/"+encodeURIComponent(localId)+"/decision",{status:status,note:note});
+    var body={status:status,note:note};
+    // When viewing a BRANCH account, the settlement lives in that branch's mirror
+    // — tell the backend which one (else it 404s "Settlement not found").
+    if(typeof acctBranch!=="undefined" && acctBranch.id) body.branchId=acctBranch.id;
+    return api("POST","/api/account/settlements/"+encodeURIComponent(localId)+"/decision",body);
   },
   // Flash item 7/8: the owner's BRANCH sub-accounts (own login, isolated mirror).
   branchAccounts:function(){ return api("GET","/api/account/branches"); },
-  branchStats:function(branchId,month){
-    return api("GET","/api/account/branches/"+encodeURIComponent(branchId)+"/stats"+(month?("?month="+encodeURIComponent(month)):""));
+  branchStats:function(branchId,month,accountantId){
+    var q=[];
+    if(month) q.push("month="+encodeURIComponent(month));
+    if(accountantId) q.push("accountantId="+encodeURIComponent(accountantId));
+    return api("GET","/api/account/branches/"+encodeURIComponent(branchId)+"/stats"+(q.length?("?"+q.join("&")):""));
   },
   branchData:function(branchId,entity,opts){
     return api("GET","/api/account/branches/"+encodeURIComponent(branchId)+"/data"+syncDataQuery(entity,opts));
@@ -708,7 +715,7 @@ function setAcctBranch(id){
 // Account-aware fetchers: route to the selected branch ACCOUNT's mirror, else
 // the owner's own (preserving the legacy local-branch filter for own data).
 function acctStats(month,accountantId){
-  return acctBranch.id ? API.branchStats(acctBranch.id,month)
+  return acctBranch.id ? API.branchStats(acctBranch.id,month,accountantId)
                        : API.myStats(month,accountantId,ownerBranchParam());
 }
 function acctData(entity,opts){

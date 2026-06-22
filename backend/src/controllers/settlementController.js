@@ -1,6 +1,8 @@
 'use strict';
 
+const mongoose = require('mongoose');
 const SyncRecord = require('../models/SyncRecord');
+const User = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
 const { HttpError } = require('../middleware/error');
 const { effectiveOwnerId } = require('../utils/effectiveOwner');
@@ -19,19 +21,37 @@ const DECISIONS = new Set(['approved', 'rejected']);
  * makes last-EDIT-wins apply this owner decision over the accountant's older
  * pending row (the accountant's local copy is overwritten on pull).
  *
- * Owners/admins only (route-gated by requireOwnerOrAdmin); a settlement always
- * lives in the OWNER's mirror, so we key on the effective owner. The accountant
- * cannot reach this route — its decision authority is the owner's alone.
+ * Owners/admins only (route-gated by requireOwnerOrAdmin); the accountant cannot
+ * reach this route — its decision authority is the owner's alone.
+ *
+ * The settlement lives in the mirror of the generator that owns the accountant.
+ * For the MAIN account that is the caller's own mirror (effective owner). For a
+ * BRANCH account (independent generator the owner views via the panel switcher),
+ * the body carries `branchId` and the settlement lives in THAT branch account's
+ * mirror — we verify the branch belongs to the caller, then target it. Without
+ * this, approving a branch settlement keyed on the owner mirror and 404'd
+ * ("Settlement not found").
  */
 const decide = asyncHandler(async (req, res) => {
-  const { status, note } = req.body || {};
+  const { status, note, branchId } = req.body || {};
 
   if (!status || !DECISIONS.has(status)) {
     throw new HttpError(400, "status must be 'approved' or 'rejected'", 'BAD_STATUS');
   }
 
   const nowIso = new Date().toISOString();
-  const ownerId = effectiveOwnerId(req.user);
+
+  // Which mirror holds the settlement: a branch account's (verified owned by the
+  // caller) when branchId is given, else the caller's own (effective owner).
+  let mirrorUserId = effectiveOwnerId(req.user);
+  if (branchId) {
+    if (!mongoose.isValidObjectId(branchId)) {
+      throw new HttpError(404, 'Settlement not found', 'SETTLEMENT_NOT_FOUND');
+    }
+    const branch = await User.findOne({ _id: branchId, parentOwner: req.user._id });
+    if (!branch) throw new HttpError(404, 'Branch not found', 'BRANCH_NOT_FOUND');
+    mirrorUserId = branch._id;
+  }
 
   const set = {
     'data.status': status,
@@ -45,7 +65,7 @@ const decide = asyncHandler(async (req, res) => {
   if (note !== undefined) set['data.note'] = note;
 
   const updated = await SyncRecord.findOneAndUpdate(
-    { user: ownerId, entity: 'settlements', localId: req.params.localId },
+    { user: mirrorUserId, entity: 'settlements', localId: req.params.localId },
     { $set: set },
     { new: true }
   );
