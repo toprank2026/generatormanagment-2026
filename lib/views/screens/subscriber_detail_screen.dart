@@ -272,7 +272,8 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
                     );
                   }),
                   const SizedBox(height: 16),
-                  if (dueAmount > 0)
+                  // v13: billing is accountant-only — owner/admin sees no collect button.
+                  if (dueAmount > 0 && auth.isAccountant)
                     ElevatedButton.icon(
                       onPressed: () => _showCollectDialog(),
                       icon: const Icon(Icons.payment, color: Color(0xFFD32F2F)),

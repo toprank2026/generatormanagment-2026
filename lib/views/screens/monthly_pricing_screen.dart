@@ -333,7 +333,8 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
                   const SizedBox(height: 24),
 
                   // Set New Prices Input — one field per category (R4).
-                  if (price?.locked != 1 && auth.can(Perm.prices)) ...[
+                  // v13: pricing is OWNER/admin-only — accountants never see the editor.
+                  if (price?.locked != 1 && auth.can(Perm.prices) && !auth.isAccountant) ...[
                     Container(
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(

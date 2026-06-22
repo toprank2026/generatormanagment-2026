@@ -65,6 +65,8 @@ class BillingController extends GetxController {
   /// [category] (R4). Each category is independent.
   Future<void> setPrice(double price,
       {String category = SubscriberCategory.standard}) async {
+    // v13: pricing is OWNER/admin-only — accountants cannot change prices.
+    if (Get.find<AuthController>().isAccountant) return;
     final mp = MonthlyPrice(
       month: selectedMonth.value,
       pricePerAmp: price,
@@ -86,6 +88,8 @@ class BillingController extends GetxController {
   /// required — writes each row then reloads + refreshes the dashboard ONCE.
   Future<void> setPrices(Map<String, double> pricesByCategory,
       {String? startDate}) async {
+    // v13: pricing is OWNER/admin-only — accountants cannot change prices.
+    if (Get.find<AuthController>().isAccountant) return;
     for (final entry in pricesByCategory.entries) {
       await _priceRepo.insert(MonthlyPrice(
         month: selectedMonth.value,
@@ -197,6 +201,10 @@ class BillingController extends GetxController {
     double discountValueInput = 0,
     String paymentMethod = 'cash', // v11: 'cash' | 'card'
   }) async {
+    // v13: billing is ACCOUNTANT-ONLY. The owner/admin role cannot bill (gated
+    // here at the single write choke point too, not just the UI). Silent no-op
+    // (return null) — never snackbar here (it would block the dialog's Get.back).
+    if (!Get.find<AuthController>().isAccountant) return null;
     // The receipt belongs to the SUBSCRIBER's branch (correct even when
     // collecting from the consolidated view, where the active branch is null).
     final String branchId = sub.branchId ?? _branch.writeBranchId;

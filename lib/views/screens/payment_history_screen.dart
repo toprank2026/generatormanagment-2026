@@ -5,6 +5,7 @@ import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
+import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
 import 'package:generatormanagment/utils/pdf_service.dart';
@@ -30,6 +31,7 @@ class PaymentHistoryScreen extends StatefulWidget {
 class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   final ReceiptRepository _repo = ReceiptRepository();
   final BillingController _billing = Get.find<BillingController>();
+  final AuthController _auth = Get.find<AuthController>(); // v13: billing = accountant-only
   final ScrollController _scroll = ScrollController();
   final _amountCtrl = TextEditingController();
 
@@ -182,21 +184,26 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            tooltip: 'record_payment'.tr,
-            icon: const Icon(Icons.add_card),
-            onPressed: _showCollectDialog,
-          ),
-        ],
+        // v13: recording a payment is accountant-only.
+        actions: _auth.isAccountant
+            ? [
+                IconButton(
+                  tooltip: 'record_payment'.tr,
+                  icon: const Icon(Icons.add_card),
+                  onPressed: _showCollectDialog,
+                ),
+              ]
+            : null,
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: const Color(0xFF1565C0),
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.payment),
-        label: Text('record_payment'.tr),
-        onPressed: _showCollectDialog,
-      ),
+      floatingActionButton: _auth.isAccountant
+          ? FloatingActionButton.extended(
+              backgroundColor: const Color(0xFF1565C0),
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.payment),
+              label: Text('record_payment'.tr),
+              onPressed: _showCollectDialog,
+            )
+          : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _items.isEmpty
