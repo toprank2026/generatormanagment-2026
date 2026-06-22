@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/controllers/sync_controller.dart';
+import 'package:generatormanagment/controllers/settlement_controller.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/views/widgets/app_form_field.dart';
+import 'package:generatormanagment/views/widgets/sync_progress_overlay.dart';
 
 /// Local profile switch: pick the owner or an accountant sub-user and sign in
 /// (offline, password-checked). The owner runs the cloud session; accountants
@@ -39,15 +42,60 @@ class _UserSwitchScreenState extends State<UserSwitchScreen> {
   Future<void> _pickOwner() async {
     final pwd = await _askPassword(auth.ownerUser.value?.displayName ?? 'owner'.tr);
     if (pwd == null) return;
+    if (!await _confirmSwitchWipe()) return;
+    await _wipeForSwitch();
     final ok = await auth.switchToOwner(pwd);
+    if (ok) await _reloadAfterSwitch();
     _afterSwitch(ok);
   }
 
   Future<void> _pickAccountant(Accountant a) async {
     final pwd = await _askPassword(a.displayName);
     if (pwd == null) return;
+    if (!await _confirmSwitchWipe()) return;
+    await _wipeForSwitch();
+    // loginAsAccountant re-pulls the accountant's data online after the wipe.
     final ok = await auth.loginAsAccountant(a.username, pwd);
     _afterSwitch(ok);
+  }
+
+  /// Req 10: switching accounts clears the wallet + deletes ALL local data, so
+  /// confirm first (the wipe is unrecoverable locally; data re-pulls on switch).
+  Future<bool> _confirmSwitchWipe() async {
+    final ok = await Get.defaultDialog<bool>(
+      title: 'switch_user'.tr,
+      middleText: 'switch_wipe_warn'.tr,
+      textConfirm: 'continue'.tr,
+      textCancel: 'cancel'.tr,
+      onConfirm: () => Get.back(result: true),
+      onCancel: () {},
+    );
+    return ok == true;
+  }
+
+  /// Delete ALL local data (incl. the wallet/settlements tables) behind a
+  /// blocking overlay before loading the new identity.
+  Future<void> _wipeForSwitch() async {
+    SyncProgress.show('switching_user'.tr);
+    try {
+      if (Get.isRegistered<SyncController>()) {
+        await Get.find<SyncController>().deleteAllLocalData();
+      }
+    } catch (_) {/* best-effort */} finally {
+      SyncProgress.hide();
+    }
+  }
+
+  /// After switching to the OWNER, re-pull its mirror (the wipe emptied local).
+  Future<void> _reloadAfterSwitch() async {
+    try {
+      if (Get.isRegistered<SyncController>()) {
+        await Get.find<SyncController>().pull(silent: true);
+      }
+      if (Get.isRegistered<SettlementController>()) {
+        await Get.find<SettlementController>().load();
+      }
+    } catch (_) {/* best-effort */}
   }
 
   void _afterSwitch(bool ok) {

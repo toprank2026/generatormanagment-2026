@@ -381,6 +381,10 @@ class Messages extends Translations {
       'feature_owner_panel': 'Owner dashboard',
       'feature_multi_branch': 'Multiple branches',
       'switch_user': 'Switch user',
+      'switching_user': 'Switching…',
+      'switch_wipe_warn':
+          'Switching accounts deletes all local data on this device (it re-downloads from the server). Continue?',
+      'continue': 'Continue',
       'switched_to': 'Switched to',
       'wrong_password': 'Wrong password',
       'owner': 'Owner',
@@ -806,6 +810,10 @@ class Messages extends Translations {
       'feature_owner_panel': 'لوحة المالك',
       'feature_multi_branch': 'تعدّد الفروع',
       'switch_user': 'تبديل المستخدم',
+      'switching_user': 'جارٍ التبديل…',
+      'switch_wipe_warn':
+          'تبديل الحساب سيحذف كل البيانات المحلية على هذا الجهاز (ستُعاد تنزيلها من الخادم). هل تريد المتابعة؟',
+      'continue': 'متابعة',
       'switched_to': 'تم التبديل إلى',
       'wrong_password': 'كلمة المرور غير صحيحة',
       'owner': 'المالك',
