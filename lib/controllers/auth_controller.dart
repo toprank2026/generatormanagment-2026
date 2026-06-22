@@ -549,12 +549,22 @@ class AuthController extends GetxController {
   /// credentials or a disabled accountant.
   Future<bool> loginAsAccountant(String username, String password) async {
     final user = await _accountants.authenticate(username.trim(), password);
-    if (user == null) return false;
-    currentUser.value = user;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kActingUserId, user.id);
-    update();
-    return true;
+    if (user != null) {
+      currentUser.value = user;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kActingUserId, user.id);
+      update();
+      return true;
+    }
+    // v13 fix: the local credential (users.password_hash) is wiped by a hard
+    // logout and is NOT synced, so the offline profile-switch can't find it after
+    // logout+login. Fall back to a REAL backend login (the server holds the
+    // password + inherits the owner plan), which works with no local credential.
+    if (await _net.isOnline()) {
+      final res = await login(username.trim(), password);
+      return res['success'] == true && isAccountant;
+    }
+    return false;
   }
 
   /// Switch back to the owner/admin. Requires the owner's password, verified

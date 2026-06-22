@@ -698,12 +698,9 @@ function ensureBranchAccounts(){
     var arr=(res&&res.branches)||[];
     acctBranch.list=arr.map(function(b){ return {id:String(b.id),name:b.generatorName||b.name||b.phone||String(b.id),phone:b.phone||b.username||""}; });
     acctBranch.loading=false;
+    // id==="" => the MAIN branch (the owner's own generator). It is shown in the
+    // switcher as a NAMED entry (the generator name), NOT an "all branches" view.
     if(acctBranch.id && !acctBranch.list.some(function(b){ return b.id===acctBranch.id; })) acctBranch.id="";
-    // No "my account / all" view: always land on a SPECIFIC branch (the first).
-    if(!acctBranch.id && acctBranch.list.length>=1){
-      acctBranch.id=acctBranch.list[0].id;
-      try { localStorage.setItem("acctBranchId",acctBranch.id); } catch(e){}
-    }
     if(acctBranch.list.length>=1) render();   // reveal the switcher
   }).catch(function(){ acctBranch.list=[]; acctBranch.loading=false; });
 }
@@ -714,16 +711,20 @@ function setAcctBranch(id){
 }
 // Account-aware fetchers: route to the selected branch ACCOUNT's mirror, else
 // the owner's own (preserving the legacy local-branch filter for own data).
+// Branch-ACCOUNT selected -> that account's mirror. Else the MAIN branch (owner's
+// own mirror): in the ACCOUNT model (branch accounts exist) the main is the FULL
+// owner mirror; in the LEGACY model (local branches only) it carries the
+// ownerBranch local-branch filter.
+function _legacyBranchParam(){
+  return (acctBranch.list && acctBranch.list.length) ? undefined : ownerBranchParam();
+}
 function acctStats(month,accountantId){
   return acctBranch.id ? API.branchStats(acctBranch.id,month,accountantId)
-                       : API.myStats(month,accountantId,ownerBranchParam());
+                       : API.myStats(month,accountantId,_legacyBranchParam());
 }
 function acctData(entity,opts){
   if(acctBranch.id) return API.branchData(acctBranch.id,entity,opts);
-  // Legacy fallback (ownerBranchBar): scope the owner's OWN mirror by the
-  // selected local branch so switching re-scopes entity LISTS too, not just the
-  // dashboard stats (backend filters data.branch_id — adminController.js).
-  var o=opts||{}, bid=ownerBranchParam();
+  var o=opts||{}, bid=_legacyBranchParam();
   if(bid && isBranchScopedEntity(entity)) o=Object.assign({},o,{branchId:bid});
   return API.myData(entity,o);
 }
@@ -744,8 +745,11 @@ function activeBranch(){
 function activeBranchName(){ var b=activeBranch(); return b?b.name:null; }
 function acctBranchBar(){
   if(!acctBranch.list || acctBranch.list.length<1) return null;
-  // NO "my account / all branches" option — always exactly one branch.
-  var opts=[];
+  // First entry = the MAIN branch (the owner's own generator), named with the
+  // ORIGINAL generator name (NOT "all branches" / NOT "Main Branch"); then each
+  // branch account. id="" selects the main branch.
+  var mainName=(state.me&&(state.me.generatorName||state.me.name))||"الفرع الرئيسي";
+  var opts=[el("option",{value:"",selected:(acctBranch.id==="")?"":false,text:mainName})];
   acctBranch.list.forEach(function(b){
     opts.push(el("option",{value:b.id,selected:(b.id===acctBranch.id)?"":false,text:b.name}));
   });
