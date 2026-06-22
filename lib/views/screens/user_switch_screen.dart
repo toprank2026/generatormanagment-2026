@@ -42,22 +42,31 @@ class _UserSwitchScreenState extends State<UserSwitchScreen> {
   Future<void> _pickOwner() async {
     final pwd = await _askPassword(auth.ownerUser.value?.displayName ?? 'owner'.tr);
     if (pwd == null) return;
+    // Verify BEFORE the destructive wipe — a wrong password must NOT wipe data.
+    if (!await auth.verifyOwnerPassword(pwd)) {
+      _wrongPassword();
+      return;
+    }
     if (!await _confirmSwitchWipe()) return;
-    await _wipeForSwitch();
-    final ok = await auth.switchToOwner(pwd);
-    if (ok) await _reloadAfterSwitch();
-    _afterSwitch(ok);
+    await _switchWithWipe(() => auth.switchToOwner(pwd), reloadOwner: true);
   }
 
   Future<void> _pickAccountant(Accountant a) async {
     final pwd = await _askPassword(a.displayName);
     if (pwd == null) return;
+    // Verify BEFORE the wipe (online check if the local credential was wiped).
+    if (!await auth.verifyAccountantPassword(a.username, pwd)) {
+      _wrongPassword();
+      return;
+    }
     if (!await _confirmSwitchWipe()) return;
-    await _wipeForSwitch();
     // loginAsAccountant re-pulls the accountant's data online after the wipe.
-    final ok = await auth.loginAsAccountant(a.username, pwd);
-    _afterSwitch(ok);
+    await _switchWithWipe(() => auth.loginAsAccountant(a.username, pwd),
+        reloadOwner: false);
   }
+
+  void _wrongPassword() => Get.snackbar('error'.tr, 'wrong_password'.tr,
+      snackPosition: SnackPosition.BOTTOM);
 
   /// Req 10: switching accounts clears the wallet + deletes ALL local data, so
   /// confirm first (the wipe is unrecoverable locally; data re-pulls on switch).
@@ -73,40 +82,38 @@ class _UserSwitchScreenState extends State<UserSwitchScreen> {
     return ok == true;
   }
 
-  /// Delete ALL local data (incl. the wallet/settlements tables) behind a
-  /// blocking overlay before loading the new identity.
-  Future<void> _wipeForSwitch() async {
+  /// Wipe ALL local data (incl. wallet/settlements) then load the new identity,
+  /// keeping ONE blocking overlay up across the whole wipe→switch→pull sequence
+  /// so the user can't act on half-loaded data. Credentials are pre-verified by
+  /// the callers, so a failure here is unexpected (and never silently loses data
+  /// without a result message).
+  Future<void> _switchWithWipe(Future<bool> Function() doSwitch,
+      {required bool reloadOwner}) async {
     SyncProgress.show('switching_user'.tr);
+    bool ok = false;
     try {
       if (Get.isRegistered<SyncController>()) {
         await Get.find<SyncController>().deleteAllLocalData();
       }
+      ok = await doSwitch();
+      if (ok) {
+        if (reloadOwner && Get.isRegistered<SyncController>()) {
+          await Get.find<SyncController>().pull(silent: true);
+        }
+        if (Get.isRegistered<SettlementController>()) {
+          await Get.find<SettlementController>().load();
+        }
+      }
     } catch (_) {/* best-effort */} finally {
       SyncProgress.hide();
     }
-  }
-
-  /// After switching to the OWNER, re-pull its mirror (the wipe emptied local).
-  Future<void> _reloadAfterSwitch() async {
-    try {
-      if (Get.isRegistered<SyncController>()) {
-        await Get.find<SyncController>().pull(silent: true);
-      }
-      if (Get.isRegistered<SettlementController>()) {
-        await Get.find<SettlementController>().load();
-      }
-    } catch (_) {/* best-effort */}
-  }
-
-  void _afterSwitch(bool ok) {
+    // Snackbars AFTER the overlay closes (a snackbar while open blocks Get.back).
     if (!ok) {
-      Get.snackbar('error'.tr, 'wrong_password'.tr,
-          snackPosition: SnackPosition.BOTTOM);
+      _wrongPassword();
       return;
     }
     Get.back();
-    Get.snackbar('switch_user'.tr,
-        '${'switched_to'.tr}: ${auth.actingUserName}',
+    Get.snackbar('switch_user'.tr, '${'switched_to'.tr}: ${auth.actingUserName}',
         snackPosition: SnackPosition.BOTTOM);
   }
 

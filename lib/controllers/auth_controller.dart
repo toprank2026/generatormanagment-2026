@@ -547,6 +547,32 @@ class AuthController extends GetxController {
   /// check (no network). On success the accountant becomes the acting user and
   /// the selection is persisted across relaunches. Returns false on bad
   /// credentials or a disabled accountant.
+  /// v13: verify the owner password WITHOUT mutating the session — used to gate
+  /// an account switch BEFORE the destructive local wipe (a wrong password must
+  /// not wipe data). No captured hash (legacy session) => allow.
+  Future<bool> verifyOwnerPassword(String password) async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_kOwnerPwdHash);
+    if (stored == null || stored.isEmpty) return true;
+    return AccountantRepository.hashPassword(password) == stored;
+  }
+
+  /// v13: verify accountant credentials WITHOUT switching/wiping — local hash
+  /// first, else (online) a backend login check. Used to gate the switch wipe.
+  Future<bool> verifyAccountantPassword(String username, String password) async {
+    final local = await _accountants.authenticate(username.trim(), password);
+    if (local != null) return true;
+    if (await _net.isOnline()) {
+      try {
+        final r = await _auth.login(username: username.trim(), password: password);
+        return r.account.role == 'accountant';
+      } catch (_) {
+        return false;
+      }
+    }
+    return false;
+  }
+
   Future<bool> loginAsAccountant(String username, String password) async {
     final user = await _accountants.authenticate(username.trim(), password);
     if (user != null) {

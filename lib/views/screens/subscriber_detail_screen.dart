@@ -272,8 +272,23 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
                     );
                   }),
                   const SizedBox(height: 16),
-                  // v13: billing is accountant-only — owner/admin sees no collect button.
-                  if (dueAmount > 0 && auth.isAccountant)
+                  // Paid/unpaid badge keyed ONLY on the due amount (so it never
+                  // lies). The collect button is the accountant-only part: an
+                  // owner viewing an UNPAID subscriber sees the due (above) but no
+                  // collect button — and crucially NOT a false "paid in full".
+                  if (dueAmount <= 0)
+                    Chip(
+                      label: Text(
+                        'paid_full'.tr,
+                        style: const TextStyle(color: Colors.green),
+                      ),
+                      backgroundColor: Colors.white,
+                      avatar: const Icon(
+                        Icons.check_circle,
+                        color: Colors.green,
+                      ),
+                    )
+                  else if (auth.isAccountant)
                     ElevatedButton.icon(
                       onPressed: () => _showCollectDialog(),
                       icon: const Icon(Icons.payment, color: Color(0xFFD32F2F)),
@@ -293,18 +308,6 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(30),
                         ),
-                      ),
-                    )
-                  else
-                    Chip(
-                      label: Text(
-                        'paid_full'.tr,
-                        style: const TextStyle(color: Colors.green),
-                      ),
-                      backgroundColor: Colors.white,
-                      avatar: const Icon(
-                        Icons.check_circle,
-                        color: Colors.green,
                       ),
                     ),
                 ],
