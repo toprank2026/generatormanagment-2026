@@ -110,6 +110,7 @@ class AuthRepository {
     required String generatorName,
     required String phone,
     required String password,
+    String? planCode, // v13: branch is an independent generator with its OWN plan
   }) async {
     final res = await _api.post(
       ApiConfig.branches,
@@ -117,6 +118,7 @@ class AuthRepository {
         'generatorName': generatorName,
         'phone': phone,
         'password': password,
+        if (planCode != null && planCode.isNotEmpty) 'planCode': planCode,
       },
     );
     final map = (res as Map).cast<String, dynamic>();

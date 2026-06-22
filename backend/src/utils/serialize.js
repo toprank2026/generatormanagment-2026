@@ -88,6 +88,9 @@ function serializeAccount(user, currentDeviceId) {
     ownerId: user.owner ? String(user.owner) : null,
     // Branch sub-account: the parent top-level owner (null for a top-level owner).
     parentOwnerId: user.parentOwner ? String(user.parentOwner) : null,
+    // Flash v13 Phase D: true for an INDEPENDENT branch gated on its own plan;
+    // false for a top-level owner or a LEGACY (inheriting) branch.
+    independentPlan: Boolean(user.independentPlan),
     branchId: user.branchId || null,
     permissions: Array.isArray(user.permissions) ? user.permissions : [],
     localId: user.localId || null,
@@ -113,6 +116,10 @@ function serializeBranch(user) {
     phone: u.phone || null,
     username: u.username,
     parentOwnerId: u.parentOwner ? String(u.parentOwner) : null,
+    // Flash v13 Phase D: an independent branch has its own plan/approval (the
+    // panel surfaces its own subscription status); legacy branches inherit.
+    independentPlan: Boolean(u.independentPlan),
+    subscription: serializeSubscription(u.subscription),
     blocked: Boolean(u.blocked),
     createdAt: toIso(u.createdAt),
   };

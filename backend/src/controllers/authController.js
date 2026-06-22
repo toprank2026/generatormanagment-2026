@@ -97,16 +97,25 @@ const login = asyncHandler(async (req, res) => {
     return;
   }
 
-  // A BRANCH sub-account (role:'owner' with parentOwner set) is cascade-blocked
-  // by its parent top-level owner and INHERITS the parent's subscription/features
-  // for gating (so a branch is never gated on its own empty subscription). It is
-  // still a full owner for its OWN data mirror, so device binding below applies.
+  // A BRANCH sub-account (role:'owner' with parentOwner set) is ALWAYS
+  // cascade-blocked by its parent top-level owner (a blocked/missing parent kills
+  // the branch). It is still a full owner for its OWN data mirror, so device
+  // binding below applies.
+  //
+  // Flash v13 Phase D: subscription/feature reporting splits on independentPlan:
+  //  - independentPlan === true  => report its OWN subscription/features (so the
+  //    branch is subscriptionBlocked / needs approval until the super-admin
+  //    activates its plan, exactly like a freshly-registered owner).
+  //  - independentPlan falsy (LEGACY) => INHERIT the parent's subscription/features
+  //    (so the branch is never gated on its own empty subscription) — unchanged.
   let parent = null;
+  let inheritParentPlan = false;
   if (user.parentOwner) {
     parent = await User.findById(user.parentOwner);
     if (!parent || parent.blocked) {
       throw new HttpError(403, 'Account blocked', 'BLOCKED');
     }
+    inheritParentPlan = user.independentPlan !== true;
   }
 
   // Bind / validate the device WHEN PRESENT. The mobile app always sends one
@@ -125,9 +134,9 @@ const login = asyncHandler(async (req, res) => {
 
   const token = signToken(user);
   const account = serializeAccount(user, device && device.deviceId);
-  // Branches report the PARENT's subscription/features (inherited); top-level
-  // owners report their own.
-  if (parent) {
+  // LEGACY branches report the PARENT's subscription/features (inherited);
+  // INDEPENDENT branches and top-level owners report their OWN.
+  if (inheritParentPlan && parent) {
     account.subscription = serializeSubscription(parent.subscription);
     account.subscription.features = await featuresForUser(parent);
   } else {
@@ -221,8 +230,11 @@ const me = asyncHandler(async (req, res) => {
     return;
   }
 
-  // A BRANCH inherits the parent owner's subscription/features (requireAuth has
-  // already rejected a blocked/missing parent and attached req.parentAccount).
+  // A BRANCH is cascade-blocked by its parent (requireAuth already rejected a
+  // blocked/missing parent and attached req.parentAccount). Flash v13 Phase D:
+  //  - LEGACY branch (independentPlan falsy) => INHERIT the parent's plan/features.
+  //  - INDEPENDENT branch (independentPlan===true) => report its OWN plan/features
+  //    (subscriptionBlocked until the super-admin activates it).
   if (req.user.parentOwner) {
     const parent =
       req.parentAccount ||
@@ -230,8 +242,12 @@ const me = asyncHandler(async (req, res) => {
     if (!parent || parent.blocked) {
       throw new HttpError(403, 'Account blocked', 'BLOCKED');
     }
-    account.subscription = serializeSubscription(parent.subscription);
-    account.subscription.features = await featuresForUser(parent);
+    if (req.user.independentPlan === true) {
+      account.subscription.features = await featuresForUser(req.user);
+    } else {
+      account.subscription = serializeSubscription(parent.subscription);
+      account.subscription.features = await featuresForUser(parent);
+    }
     res.status(200).json({ account });
     return;
   }

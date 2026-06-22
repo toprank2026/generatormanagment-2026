@@ -70,6 +70,12 @@ const UserSchema = new Schema(
     // the parent's subscription/features and is cascade-blocked by the parent.
     // A branch may NOT create sub-branches (parentOwner-set callers are rejected).
     parentOwner: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+    // Flash v13 Phase D: distinguishes an INDEPENDENT branch (its own plan +
+    // its own super-admin approval, gated on its OWN subscription) from a LEGACY
+    // branch (independentPlan falsy => inherits the parentOwner's plan/features,
+    // exactly as before). New branches are created with independentPlan:true;
+    // pre-existing branch docs have no field => falsy => inherit (backward-compat).
+    independentPlan: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

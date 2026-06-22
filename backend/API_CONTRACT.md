@@ -77,14 +77,25 @@ set (a branch sub-account created via `POST /api/account/branches`):
 - the password is verified normally and the `device` is bound / `maxDevices`
   enforced **like a normal owner** (a branch is a real owner of its own mirror —
   NOT device-exempt, unlike accountants);
-- the returned `subscription` (incl. `features`) is **inherited from the parent
-  top-level owner** (`parentOwnerId`), so a branch is never `subscriptionBlocked`
-  on its own (empty) subscription;
 - a **blocked/missing parent** → `403 code=BLOCKED` (cascade), at login and on
-  every authed request (`requireAuth`);
-- the returned account carries `parentOwnerId` (see the **Account** object).
+  every authed request (`requireAuth`) — **always**, regardless of plan mode;
+- the returned account carries `parentOwnerId` and `independentPlan` (see the
+  **Account** object).
 
-`GET /api/auth/me` applies the same parent inheritance for a branch token.
+Subscription/feature reporting splits on the `independentPlan` flag (Flash v13
+Phase D):
+- **Independent branch** (`independentPlan:true` — every branch created on/after
+  Phase D): the returned `subscription` (incl. `features`) is the branch's **OWN**
+  subscription. A new branch starts `status:"none"` with the chosen `planCode`
+  pending the **super-admin's own approval** (`PUT /api/admin/users/:branchId/plan`),
+  so it is `subscriptionBlocked` until activated, exactly like a freshly-registered
+  owner. It does **NOT** inherit the parent's plan.
+- **Legacy branch** (`independentPlan` falsy — branch docs created before Phase D):
+  the returned `subscription` (incl. `features`) is **inherited from the parent
+  top-level owner** (`parentOwnerId`), so the branch is never `subscriptionBlocked`
+  on its own (empty) subscription — unchanged from the previous contract.
+
+`GET /api/auth/me` applies the same split for a branch token.
 
 **Rate limiting.** `POST /api/auth/login`, `POST /api/auth/register`, and
 `POST /api/auth/recover-device` are IP-rate-limited (~10 requests / minute / IP).
@@ -491,11 +502,20 @@ sub-account"). A BRANCH is itself a `User` with `role:"owner"` whose
 `/api/account/stats|data|recent` all resolve to its **own** mirror — fully
 isolated from the parent's and from sibling branches). A branch **logs in through
 the normal `/api/auth/login`** (its `phone` as `username`, its own password), and:
-- **INHERITS** the parent owner's subscription/features for gating (its own
-  subscription stays `none` and is never used — resolved via `parentOwner`, just
-  like an accountant resolves via `owner`). The login / `me` response reports the
-  **parent's** `subscription` (incl. `features`);
-- is **cascade-blocked** by the parent: a blocked/missing parent top-level owner
+- has its own **plan mode** keyed off the boolean `independentPlan` flag (Flash
+  v13 Phase D):
+  - **Independent** (`independentPlan:true`, every branch created on/after Phase
+    D): gated on **its OWN** subscription/features — a separate generator with its
+    own plan and its own super-admin approval. Created `status:"none"` (+ optional
+    chosen `planCode`) pending approval, so it is `subscriptionBlocked` like a new
+    owner until the super-admin activates it via
+    `PUT /api/admin/users/:branchId/plan`. Does **NOT** inherit the parent's plan.
+  - **Legacy** (`independentPlan` falsy, branch docs predating Phase D):
+    **INHERITS** the parent owner's subscription/features (its own subscription
+    stays `none` and is never used — resolved via `parentOwner`, just like an
+    accountant resolves via `owner`). Login / `me` report the **parent's**
+    `subscription` (incl. `features`). Unchanged from before.
+- is **cascade-blocked** by the parent (ALWAYS, both modes): a blocked/missing parent top-level owner
   → `403 code=BLOCKED` on the branch's login and on any authed request
   (`requireAuth`), mirroring the accountant rule;
 - is a real owner of its own mirror, so its login **does** bind a device /
@@ -508,23 +528,32 @@ A non-owner caller (accountant, admin) hitting any of these → `403 code=FORBID
 The Branch object returned here (compact, no secrets):
 ```jsonc
 { "id": "mongoid", "generatorName": "...", "name": "...", "phone": "...",
-  "username": "...", "parentOwnerId": "owner-mongoid", "blocked": false,
-  "createdAt": "ISO" }
+  "username": "...", "parentOwnerId": "owner-mongoid",
+  "independentPlan": true,                 // Flash v13 Phase D: own plan vs. legacy inherit
+  "subscription": { "planCode": "monthly", "status": "none",
+                    "startedAt": null, "expiresAt": null },
+  "blocked": false, "createdAt": "ISO" }
 ```
 
 #### POST `/api/account/branches`  (owner only)
 Creates a branch owned by the caller. `username` = `phone.toLowerCase()` and must
-be unique; `phone` must be unique (same checks as register).
+be unique; `phone` must be unique (same checks as register). The branch is created
+**independent** (`independentPlan:true`) with its own pending subscription
+(`status:"none"`, `planCode` = the optional `planCode` body field or `null`).
 ```jsonc
-// request
-{ "generatorName": "North Gen", "phone": "07710000000", "password": "secret" }
+// request — planCode is OPTIONAL (a known, existing plan code; omitted/null = no plan chosen yet)
+{ "generatorName": "North Gen", "phone": "07710000000", "password": "secret",
+  "planCode": "monthly" }
 // 201 response
 { "branch": { /* Branch */ } }
 ```
 Errors: `400 code=VALIDATION` (missing generatorName/phone or password < 4
-chars), `409 code=PHONE_TAKEN` (phone/username already in use),
+chars), `404 code=PLAN_NOT_FOUND` (a non-empty `planCode` that is not a known
+plan), `409 code=PHONE_TAKEN` (phone/username already in use),
 `403 code=SUB_BRANCH_FORBIDDEN` (caller is itself a branch),
-`403 code=FORBIDDEN` (caller is not an owner).
+`403 code=FORBIDDEN` (caller is not an owner). The super-admin later activates the
+branch's own plan via `PUT /api/admin/users/:branchId/plan` (the branch is a
+`User`, so the existing endpoint works unchanged).
 
 #### GET `/api/account/branches`  (owner only)
 ```jsonc
@@ -697,6 +726,7 @@ The Flutter receipt QR encodes `${API_BASE_URL}/admin/#/r/<uuid>`; the admin SPA
   "role": "owner|admin|accountant",
   "ownerId": null,          // accountant only: the parent owner/admin account id (string); null for owner/admin
   "parentOwnerId": null,    // BRANCH only: the parent top-level owner id (string); null for a top-level owner/admin/accountant
+  "independentPlan": false, // BRANCH only: true => gated on its OWN plan (Flash v13 Phase D); false => top-level owner OR legacy inheriting branch
   "branchId": null,         // accountant only: the branch the accountant is scoped to; null otherwise
   "permissions": [],        // accountant only: granted permission keys; [] for owner/admin
   "localId": null,          // accountant only: the app-side accountant UUID (attribution round-trip); null otherwise

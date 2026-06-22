@@ -166,6 +166,9 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
   let totalAmps = 0;
   let expected = 0; // Σ amps × priceMap[category] over all in-scope subscribers.
   let paidCount = 0;
+  // Per-tariff PAID counts so the owner panel reports match the app (which shows
+  // gold/standard/commercial paid counts). Unknown/legacy category => 'standard'.
+  const paidByCategory = { gold: 0, standard: 0, commercial: 0 };
   for (const s of subscribers) {
     const data = s.data || {};
     const amps = num(data.amps);
@@ -177,7 +180,11 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     const due = amps * catPrice;
     expected += due;
     const coverage = coverageBySubscriber.get(data.id || s.localId) || 0;
-    if (coverage >= due) paidCount += 1;
+    if (coverage >= due) {
+      paidCount += 1;
+      const cat = paidByCategory[data.category] !== undefined ? data.category : 'standard';
+      paidByCategory[cat] += 1;
+    }
   }
 
   // Expenses total scoped to the selected accountant (or all when unfiltered).
@@ -202,6 +209,8 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     totalAmps,
     paidCount,
     unpaidCount: subscribers.length - paidCount,
+    // Per-tariff paid counts (owner-panel reports parity with the app).
+    paidByCategory,
     totalDue: remaining,
     collected,
     // Explicit aliases for the app/panels: revenue = collected valid receipts

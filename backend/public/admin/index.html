@@ -2491,6 +2491,14 @@ function viewMyReports(){
     } else {
       cards.push({label:"سعر الأمبير",value:fmtPrice(dash.pricePerAmp),icon:"bolt",chip:"indigo"});
     }
+    // Per-tariff PAID counts (parity with the app reports). Older backends that
+    // don't return paidByCategory simply omit these three cards.
+    var pbc=dash.paidByCategory;
+    if(pbc&&typeof pbc==="object"){
+      cards.push({label:"المسددون - ذهبي",value:repNum(pbc.gold),icon:"check_circle",chip:"green"});
+      cards.push({label:"المسددون - عادي",value:repNum(pbc.standard),icon:"check_circle",chip:"green"});
+      cards.push({label:"المسددون - تجاري",value:repNum(pbc.commercial),icon:"check_circle",chip:"green"});
+    }
 
     wrap.appendChild(el("div",{class:"app-section-title",text:"إجماليات الشهر"}));
     var grid=el("div",{class:"app-grid"});

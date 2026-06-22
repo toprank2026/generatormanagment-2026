@@ -38,6 +38,7 @@ class Messages extends Translations {
       'confirm_pricing_title': 'Confirm pricing',
       'confirm_pricing_msg': 'Save these prices for this month?',
       'add_branch_account': 'Add branch account',
+      'select_plan': 'Select a plan',
       'branch_account_created': 'Branch account created — it can now log in',
       'branch_login_hint':
           'Each branch is a separate account. To use a branch, log in with its phone + password from the login screen. Switch between branches from the Owner Panel.',
@@ -469,6 +470,7 @@ class Messages extends Translations {
       'confirm_pricing_title': 'تأكيد التسعير',
       'confirm_pricing_msg': 'هل تريد حفظ هذه الأسعار لهذا الشهر؟',
       'add_branch_account': 'إضافة حساب فرع',
+      'select_plan': 'اختر خطة',
       'branch_account_created': 'تم إنشاء حساب الفرع — يمكنه تسجيل الدخول الآن',
       'branch_login_hint':
           'كل فرع هو حساب منفصل. لاستخدام فرع، سجّل الدخول برقم هاتفه وكلمة مروره من شاشة الدخول. التبديل بين الفروع من لوحة المالك.',

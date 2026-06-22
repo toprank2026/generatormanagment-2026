@@ -4,6 +4,8 @@ import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/data/repositories/auth_repository.dart';
+import 'package:generatormanagment/data/repositories/subscription_repository.dart';
+import 'package:generatormanagment/data/models/plan.dart';
 import 'package:generatormanagment/views/widgets/app_form_field.dart';
 
 /// Flash items 6/7/8: a branch is its OWN login account (generator name + phone
@@ -170,6 +172,13 @@ class _BranchesScreenState extends State<BranchesScreen> {
     final phoneCtrl = TextEditingController();
     final passCtrl = TextEditingController();
     final busy = false.obs;
+    // v13: a branch is an independent generator — pick its OWN plan (it then
+    // waits for super-admin approval, like a brand-new account).
+    final plans = <Plan>[].obs;
+    final selectedPlan = RxnString();
+    SubscriptionRepository().getPlans().then((p) {
+      plans.assignAll(p.where((x) => x.active));
+    }).catchError((_) {});
 
     Get.dialog(
       AlertDialog(
@@ -195,6 +204,21 @@ class _BranchesScreenState extends State<BranchesScreen> {
                   label: 'password'.tr,
                   icon: Icons.lock,
                   obscureText: true),
+              const SizedBox(height: 12),
+              Obx(() => DropdownButtonFormField<String>(
+                    initialValue: selectedPlan.value,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      labelText: 'select_plan'.tr,
+                      prefixIcon: const Icon(Icons.workspace_premium),
+                      border: const OutlineInputBorder(),
+                    ),
+                    items: plans
+                        .map((p) => DropdownMenuItem(
+                            value: p.code, child: Text(p.name)))
+                        .toList(),
+                    onChanged: (v) => selectedPlan.value = v,
+                  )),
             ],
           ),
         ),
@@ -222,7 +246,8 @@ class _BranchesScreenState extends State<BranchesScreen> {
                           await _repo.createBranch(
                               generatorName: gen,
                               phone: phone,
-                              password: pass);
+                              password: pass,
+                              planCode: selectedPlan.value);
                           Get.back();
                           Get.snackbar('branches'.tr, 'branch_account_created'.tr,
                               backgroundColor: Colors.green,

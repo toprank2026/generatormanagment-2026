@@ -20,10 +20,15 @@ function effectiveOwnerId(user) {
 /**
  * The account whose subscription/feature flags gate a request.
  *
- * Both kinds of sub-account INHERIT their parent's plan for gating:
- *  - an accountant inherits its `owner`'s plan;
- *  - a BRANCH (role:'owner' with parentOwner set) inherits its `parentOwner`'s
- *    plan — so a branch is never gated on its own empty subscription (which would
+ * Accountants ALWAYS inherit their `owner`'s plan for gating.
+ *
+ * BRANCHES (role:'owner' with parentOwner set) split by the `independentPlan` flag:
+ *  - INDEPENDENT branch (`independentPlan === true`, Flash v13 Phase D): gated on
+ *    ITS OWN subscription/features — a brand-new generator with its own plan and
+ *    its own super-admin approval. Returns self (so it is subscriptionBlocked /
+ *    needs approval until the super-admin activates its plan).
+ *  - LEGACY branch (`independentPlan` falsy): INHERITS its `parentOwner`'s plan,
+ *    exactly as before — never gated on its own empty subscription (which would
  *    default every feature to true and bypass a restricted parent's plan).
  *
  * requireAuth pre-loads these parents (req.ownerAccount for accountants,
@@ -36,7 +41,11 @@ function effectiveOwnerId(user) {
 function featureSubject(user, loaded = {}) {
   if (!user) return null;
   if (user.role === 'accountant') return loaded.ownerAccount || null;
-  if (user.parentOwner) return loaded.parentAccount || null;
+  if (user.parentOwner) {
+    // Independent branch => its own plan; legacy branch => the parent's.
+    if (user.independentPlan === true) return user;
+    return loaded.parentAccount || null;
+  }
   return user;
 }
 

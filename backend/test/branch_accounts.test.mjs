@@ -222,11 +222,17 @@ test('duplicate branch phone -> 409 PHONE_TAKEN; missing fields -> 400 VALIDATIO
 });
 
 // ---------------------------------------------------------------------------
-// Branch login + inherited subscription.
+// Branch login + subscription.
+//
+// Flash v13 Phase D: a NEWLY-created branch (createBranch helper, no planCode) is
+// INDEPENDENT (independentPlan:true) — it reports its OWN subscription ('none' /
+// pending), NOT the parent's active plan, and needs its own super-admin approval.
+// (Legacy parent-inheritance is covered by the dedicated "LEGACY branch ... still
+// INHERITS" test below.)
 // ---------------------------------------------------------------------------
-test('branch logs in via /api/auth/login -> token + INHERITED active subscription', async () => {
+test('branch logs in via /api/auth/login -> token + its OWN (independent) subscription', async () => {
   const owner = await registerOwner();
-  await activatePlan(owner.account.id, 'yearly'); // active plan to inherit
+  await activatePlan(owner.account.id, 'yearly'); // parent active; branch must NOT inherit it
   const b = await createBranch(owner);
 
   const login = await api('POST', '/api/auth/login', {
@@ -236,19 +242,19 @@ test('branch logs in via /api/auth/login -> token + INHERITED active subscriptio
   const acc = login.data.account;
   assert.equal(acc.role, 'owner', 'a branch is itself a role:owner');
   assert.equal(acc.parentOwnerId, owner.account.id, 'parentOwnerId points at the creator');
-  // Inherited subscription from the parent (active yearly), NOT its own 'none'.
-  assert.equal(acc.subscription.status, 'active', 'subscription inherited from parent');
-  assert.equal(acc.subscription.planCode, 'yearly');
+  assert.equal(acc.independentPlan, true, 'a freshly-created branch is independent');
+  // Its OWN subscription ('none'/pending), NOT the parent's active yearly.
+  assert.equal(acc.subscription.status, 'none', 'independent branch reports its own pending plan');
+  assert.notEqual(acc.subscription.status, 'active', 'must NOT inherit the parent active plan');
   assert.ok(acc.subscription.features && typeof acc.subscription.features === 'object');
   // A branch IS a real owner of its own mirror, so its login binds a device.
   assert.equal(acc.devices.length, 1, 'branch login binds the device (owner of its own mirror)');
 
-  // /me applies the same inheritance.
+  // /me agrees: own pending plan, not the parent's.
   const me = await api('GET', '/api/auth/me', { token: login.data.token });
   assert.equal(me.status, 200);
   assert.equal(me.data.account.parentOwnerId, owner.account.id);
-  assert.equal(me.data.account.subscription.status, 'active');
-  assert.equal(me.data.account.subscription.planCode, 'yearly');
+  assert.equal(me.data.account.subscription.status, 'none');
 });
 
 // ---------------------------------------------------------------------------
@@ -495,4 +501,116 @@ test('owner approves a BRANCH settlement via branchId (fixes "Settlement not fou
   const other = await registerOwner();
   const foreign = await api('POST', '/api/account/settlements/st-1/decision', { token: other.token, body: { status: 'approved', branchId: br.id } });
   assert.equal(foreign.status, 404, 'a non-parent owner cannot decide on this branch');
+});
+
+// ---------------------------------------------------------------------------
+// v13 Phase D: a branch is an INDEPENDENT generator with its OWN plan + approval
+// (independentPlan:true), NOT inheriting the parent's plan — while LEGACY branches
+// (independentPlan falsy) keep inheriting exactly as before.
+// ---------------------------------------------------------------------------
+test('INDEPENDENT branch (created with planCode) has its OWN pending plan, not the parent\'s active one; super-admin activates it', async () => {
+  const owner = await registerOwner();
+  await activatePlan(owner.account.id, 'yearly'); // parent has an ACTIVE plan
+
+  // Create the branch WITH a chosen plan code => independent + pending.
+  const phone = uniquePhone('0793');
+  const create = await api('POST', '/api/account/branches', {
+    token: owner.token,
+    body: { generatorName: 'Independent Gen', phone, password: 'secret1', planCode: 'monthly' },
+  });
+  assert.equal(create.status, 201, `create independent branch should 201, got ${create.status} ${JSON.stringify(create.data)}`);
+  assert.equal(create.data.branch.independentPlan, true, 'serialized branch flagged independentPlan');
+  assert.equal(create.data.branch.subscription.status, 'none', 'branch starts with no active plan (pending approval)');
+  assert.equal(create.data.branch.subscription.planCode, 'monthly', 'branch stores its chosen plan code');
+
+  // Branch logs in -> reports its OWN subscription (status 'none', planCode
+  // 'monthly'), NOT the parent's active yearly. It is treated as needing approval.
+  const login = await api('POST', '/api/auth/login', {
+    body: { username: phone, password: 'secret1', device: makeDevice() },
+  });
+  assert.equal(login.status, 200, `independent branch login should 200, got ${login.status} ${JSON.stringify(login.data)}`);
+  const acc = login.data.account;
+  assert.equal(acc.role, 'owner');
+  assert.equal(acc.parentOwnerId, owner.account.id);
+  assert.equal(acc.independentPlan, true, 'login account flagged independentPlan');
+  assert.equal(acc.subscription.status, 'none', 'independent branch is NOT inheriting the parent active plan');
+  assert.equal(acc.subscription.planCode, 'monthly', 'independent branch reports its OWN chosen plan');
+
+  // /me agrees: own pending plan, not the parent's.
+  const meBefore = await api('GET', '/api/auth/me', { token: login.data.token });
+  assert.equal(meBefore.status, 200);
+  assert.equal(meBefore.data.account.subscription.status, 'none', 'me: own pending plan');
+  assert.equal(meBefore.data.account.subscription.planCode, 'monthly');
+  assert.notEqual(meBefore.data.account.subscription.status, 'active', 'must NOT show the parent active plan');
+
+  // Super-admin activates the BRANCH's plan via the EXISTING admin endpoint
+  // (the branch is a User by _id) -> branch /me now shows its OWN active plan.
+  await activatePlan(create.data.branch.id, 'monthly');
+  const meAfter = await api('GET', '/api/auth/me', { token: login.data.token });
+  assert.equal(meAfter.status, 200);
+  assert.equal(meAfter.data.account.subscription.status, 'active', 'branch now has its OWN active plan');
+  assert.equal(meAfter.data.account.subscription.planCode, 'monthly');
+  assert.ok(
+    meAfter.data.account.subscription.features && typeof meAfter.data.account.subscription.features === 'object',
+    'features resolved from the branch own active plan'
+  );
+});
+
+test('LEGACY branch (independentPlan falsy / old data) still INHERITS the parent\'s active plan (backward-compat)', async () => {
+  const owner = await registerOwner();
+  await activatePlan(owner.account.id, 'yearly'); // parent active
+
+  // Simulate OLD data: a branch created the new way, then forced back to the
+  // legacy shape (independentPlan:false + empty own subscription) to mimic a
+  // pre-Phase-D branch document.
+  const b = await createBranch(owner, { generatorName: 'Legacy Gen' });
+  // Reuse the ALREADY-open mongoose connection from test.before (do NOT call
+  // connectDb() here — that swaps to a fresh in-memory DB and wipes seeded data).
+  const User = require('../src/models/User');
+  await User.updateOne(
+    { _id: b.id },
+    { $set: { independentPlan: false, subscription: { status: 'none', planCode: null } } }
+  );
+
+  const login = await api('POST', '/api/auth/login', {
+    body: { username: b.phone, password: b.password, device: makeDevice() },
+  });
+  assert.equal(login.status, 200, `legacy branch login should 200, got ${login.status} ${JSON.stringify(login.data)}`);
+  const acc = login.data.account;
+  assert.equal(acc.independentPlan, false, 'legacy branch is not flagged independent');
+  // INHERITS the parent's active yearly plan, exactly as before Phase D.
+  assert.equal(acc.subscription.status, 'active', 'legacy branch inherits the parent active plan');
+  assert.equal(acc.subscription.planCode, 'yearly', 'legacy branch inherits the parent plan code');
+
+  const me = await api('GET', '/api/auth/me', { token: login.data.token });
+  assert.equal(me.status, 200);
+  assert.equal(me.data.account.subscription.status, 'active', 'me: legacy branch still inherits');
+  assert.equal(me.data.account.subscription.planCode, 'yearly');
+});
+
+test('createBranch with an UNKNOWN planCode -> 404 PLAN_NOT_FOUND', async () => {
+  const owner = await registerOwner();
+  const r = await api('POST', '/api/account/branches', {
+    token: owner.token,
+    body: { generatorName: 'Bad Plan Gen', phone: uniquePhone('0794'), password: 'secret1', planCode: 'no-such-plan' },
+  });
+  assert.equal(r.status, 404, `unknown planCode should 404, got ${r.status} ${JSON.stringify(r.data)}`);
+  assert.equal(r.data.code, 'PLAN_NOT_FOUND');
+});
+
+test('createBranch WITHOUT planCode -> independent branch with no chosen plan (planCode null)', async () => {
+  const owner = await registerOwner();
+  await activatePlan(owner.account.id, 'yearly');
+  const b = await createBranch(owner, { generatorName: 'No Plan Yet Gen' });
+  assert.equal(b.branch.independentPlan, true, 'still independent even without a chosen plan');
+  assert.equal(b.branch.subscription.planCode, null, 'no plan chosen yet');
+  assert.equal(b.branch.subscription.status, 'none');
+
+  // It does NOT inherit the parent's active plan.
+  const login = await api('POST', '/api/auth/login', {
+    body: { username: b.phone, password: b.password, device: makeDevice() },
+  });
+  assert.equal(login.status, 200);
+  assert.equal(login.data.account.subscription.status, 'none', 'independent branch not inheriting parent active plan');
+  assert.equal(login.data.account.subscription.planCode, null);
 });

@@ -3,6 +3,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
+const Plan = require('../models/Plan');
 const SyncRecord = require('../models/SyncRecord');
 const asyncHandler = require('../utils/asyncHandler');
 const { HttpError } = require('../middleware/error');
@@ -41,9 +42,21 @@ async function findOwnedBranch(parentOwnerId, branchId) {
  *
  * Create a branch sub-account owned by the caller. Owner-only: a branch (caller
  * with parentOwner set) cannot create sub-branches (403 SUB_BRANCH_FORBIDDEN);
- * accountants are rejected at the route. Body: { generatorName, phone, password }.
+ * accountants are rejected at the route.
+ *
+ * Body: { generatorName, phone, password, planCode? }.
  * username = phone.toLowerCase() and must be unique (and phone unique) — reusing
- * the same checks as register. Returns { branch: serialized }.
+ * the same checks as register.
+ *
+ * Flash v13 Phase D: a NEW branch is an INDEPENDENT generator with its OWN plan +
+ * its own super-admin approval (independentPlan:true). Its own subscription is set
+ * PENDING-style — { status:'none', planCode: planCode||null } — and is NOT
+ * inherited from the parent: it is gated on its own plan and is subscriptionBlocked
+ * (needs approval) until the super-admin activates it via
+ * PUT /api/admin/users/:branchId/plan. (LEGACY branches created before this change
+ * keep independentPlan falsy and still inherit the parent's plan.)
+ *
+ * Returns { branch: serialized }.
  */
 const createBranch = asyncHandler(async (req, res) => {
   // A branch cannot create sub-branches (one level deep only).
@@ -51,7 +64,7 @@ const createBranch = asyncHandler(async (req, res) => {
     throw new HttpError(403, 'A branch cannot create sub-branches', 'SUB_BRANCH_FORBIDDEN');
   }
 
-  const { generatorName, phone, password } = req.body || {};
+  const { generatorName, phone, password, planCode } = req.body || {};
 
   if (!generatorName || typeof generatorName !== 'string' || !generatorName.trim()) {
     throw new HttpError(400, 'generatorName is required', 'VALIDATION');
@@ -61,6 +74,19 @@ const createBranch = asyncHandler(async (req, res) => {
   }
   if (!password || typeof password !== 'string' || password.length < 4) {
     throw new HttpError(400, 'password must be at least 4 chars', 'VALIDATION');
+  }
+
+  // planCode is OPTIONAL. When supplied it must be a known plan code (mirrors the
+  // requestPlan check); a null/absent planCode means "no plan chosen yet" and the
+  // branch simply starts with no pending plan until the super-admin sets one.
+  let chosenPlanCode = null;
+  if (planCode !== undefined && planCode !== null && String(planCode).trim() !== '') {
+    const code = String(planCode).trim();
+    const plan = await Plan.findOne({ code });
+    if (!plan) {
+      throw new HttpError(404, 'Plan not found', 'PLAN_NOT_FOUND');
+    }
+    chosenPlanCode = code;
   }
 
   // The branch logs in with username == phone (same convention as the app's
@@ -84,9 +110,12 @@ const createBranch = asyncHandler(async (req, res) => {
     passwordHash,
     role: 'owner',
     parentOwner: req.user._id,
-    // A branch inherits the parent's plan via parentOwner (see featureSubject):
-    // its own subscription stays 'none' and is never used for gating.
-    subscription: { status: 'none', planCode: null },
+    // Flash v13 Phase D: an INDEPENDENT branch is gated on its OWN plan (not the
+    // parent's). Its subscription starts PENDING-style ('none' + the chosen
+    // planCode, no active dates) and must be approved by the super-admin. The
+    // independentPlan flag is what featureSubject/auth key off to stop inheriting.
+    independentPlan: true,
+    subscription: { status: 'none', planCode: chosenPlanCode },
     devices: [],
   });
 
