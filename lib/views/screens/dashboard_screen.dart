@@ -124,8 +124,13 @@ class DashboardScreen extends StatelessWidget {
                                   // their own name.
                                   final isMain = cur?.isMainBranch ?? true;
                                   final String title;
-                                  if (isMain && g != null && g.trim().isNotEmpty) {
-                                    title = g;
+                                  if (isMain) {
+                                    // Main branch: generator name, NEVER the
+                                    // stored "main branch" literal. No generator
+                                    // name yet → neutral fallback (not the name).
+                                    title = (g != null && g.trim().isNotEmpty)
+                                        ? g
+                                        : 'generator_name'.tr;
                                   } else if (branchName != null &&
                                       branchName.trim().isNotEmpty) {
                                     title = branchName;

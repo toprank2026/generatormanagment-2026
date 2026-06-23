@@ -128,7 +128,11 @@ class BluetoothPrintService {
       if (b != null && b.isMainBranch && g != null && g.trim().isNotEmpty) {
         return g.trim();
       }
-      if (b != null && b.name.trim().isNotEmpty) return b.name.trim();
+      // Only a NON-main branch falls back to its stored name (the main branch's
+      // stored name is the "main branch" literal, which must never be printed).
+      if (b != null && !b.isMainBranch && b.name.trim().isNotEmpty) {
+        return b.name.trim();
+      }
       if (g != null && g.trim().isNotEmpty) return g.trim();
     } catch (_) {}
     return 'TopRank';

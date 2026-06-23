@@ -19,7 +19,9 @@ import 'package:generatormanagment/views/screens/branches_screen.dart';
 String branchDisplayName(Branch b, AuthController auth) {
   if (b.isMainBranch) {
     final g = auth.account.value?.generatorName;
-    if (g != null && g.trim().isNotEmpty) return g.trim();
+    // Main branch: generator name, never the stored "main branch" literal; no
+    // generator name yet → neutral fallback (not the literal name).
+    return (g != null && g.trim().isNotEmpty) ? g.trim() : 'generator_name'.tr;
   }
   return b.name;
 }
