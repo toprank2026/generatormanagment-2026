@@ -13,7 +13,7 @@ class ApiConfig {
 
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://generator.tikritstore.shop',
+    defaultValue: 'https://generator.ecommerceflash.com',
   );
 
   static const Duration timeout = Duration(seconds: 20);

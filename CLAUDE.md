@@ -25,7 +25,7 @@ dart format .
 flutter test                          # run all; single file: flutter test test/v8_discount_test.dart
 flutter build apk --release
 ```
-`API_BASE_URL` defaults to the **live production server** `https://generator.tikritstore.shop` (see `lib/core/api_config.dart`) when no `--dart-define` is given — so a plain `flutter build apk --release` ships pointed at production. Pass `--dart-define=API_BASE_URL=...` only to point at a local/LAN backend for dev.
+`API_BASE_URL` defaults to the **live production server** `https://generator.ecommerceflash.com` (see `lib/core/api_config.dart`) when no `--dart-define` is given — so a plain `flutter build apk --release` ships pointed at production. Pass `--dart-define=API_BASE_URL=...` only to point at a local/LAN backend for dev.
 
 ### Backend (`backend/`)
 ```bash

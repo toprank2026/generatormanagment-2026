@@ -7,20 +7,20 @@ backend now running on the production server.
 
 | | Value |
 | --- | --- |
-| **API base URL** (set this in the app) | `https://generator.tikritstore.shop` |
-| API root | `https://generator.tikritstore.shop/api` |
-| Health check | `https://generator.tikritstore.shop/api/health` |
-| Admin panel (browser) | `https://generator.tikritstore.shop/admin` |
+| **API base URL** (set this in the app) | `https://generator.ecommerceflash.com` |
+| API root | `https://generator.ecommerceflash.com/api` |
+| Health check | `https://generator.ecommerceflash.com/api/health` |
+| Admin panel (browser) | `https://generator.ecommerceflash.com/admin` |
 
 > ⚠️ Use **scheme + host only** — **no** trailing slash and **no** `/api`.
 > The app appends the `/api/...` paths itself (see `lib/core/api_config.dart`).
-> So the correct value is `https://generator.tikritstore.shop`, **not**
-> `https://generator.tikritstore.shop/` or `.../api`.
+> So the correct value is `https://generator.ecommerceflash.com`, **not**
+> `https://generator.ecommerceflash.com/` or `.../api`.
 
 Quick sanity check from any machine/browser:
 
 ```bash
-curl https://generator.tikritstore.shop/api/health
+curl https://generator.ecommerceflash.com/api/health
 # -> {"ok":true,"ts":"..."}
 ```
 
@@ -31,7 +31,7 @@ curl https://generator.tikritstore.shop/api/health
 ```dart
 static const String baseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'https://generator.tikritstore.shop',
+  defaultValue: 'https://generator.ecommerceflash.com',
 );
 ```
 
@@ -50,14 +50,14 @@ therefore set it in one of two ways:
 
 ```bash
 flutter pub get
-flutter run --dart-define=API_BASE_URL=https://generator.tikritstore.shop
+flutter run --dart-define=API_BASE_URL=https://generator.ecommerceflash.com
 ```
 
 ### Build a release APK (Android)
 
 ```bash
 flutter build apk --release \
-  --dart-define=API_BASE_URL=https://generator.tikritstore.shop
+  --dart-define=API_BASE_URL=https://generator.ecommerceflash.com
 # output: build/app/outputs/flutter-apk/app-release.apk
 ```
 
@@ -65,21 +65,21 @@ flutter build apk --release \
 
 ```bash
 flutter build appbundle --release \
-  --dart-define=API_BASE_URL=https://generator.tikritstore.shop
+  --dart-define=API_BASE_URL=https://generator.ecommerceflash.com
 ```
 
 ### iOS
 
 ```bash
 flutter build ipa --release \
-  --dart-define=API_BASE_URL=https://generator.tikritstore.shop
+  --dart-define=API_BASE_URL=https://generator.ecommerceflash.com
 ```
 
 ### Web (if you ship the Flutter web build)
 
 ```bash
 flutter build web --release \
-  --dart-define=API_BASE_URL=https://generator.tikritstore.shop
+  --dart-define=API_BASE_URL=https://generator.ecommerceflash.com
 ```
 
 ### Tip: a dart-define file (avoid retyping)
@@ -87,7 +87,7 @@ flutter build web --release \
 Create `env.prod.json`:
 
 ```json
-{ "API_BASE_URL": "https://generator.tikritstore.shop" }
+{ "API_BASE_URL": "https://generator.ecommerceflash.com" }
 ```
 
 Then:
@@ -98,13 +98,13 @@ flutter build apk --release --dart-define-from-file=env.prod.json
 
 ## 4. Verify the connection
 
-1. **Backend reachable:** open `https://generator.tikritstore.shop/api/health`
+1. **Backend reachable:** open `https://generator.ecommerceflash.com/api/health`
    in a browser — you should see `{"ok":true,...}`.
 2. **In the app:** launch it, then **Register** a new owner account (or sign in).
    - Successful register/login = the app is talking to the server.
    - The bound device counts against the plan's `maxDevices`; a 2nd device on a
      1-device plan returns `403 DEVICE_LIMIT` (expected).
-3. **Admin view:** log in to `https://generator.tikritstore.shop/admin` to see
+3. **Admin view:** log in to `https://generator.ecommerceflash.com/admin` to see
    the account and its synced data.
 
 ## 5. Option B — bake the URL into the app as the default (done)
@@ -114,7 +114,7 @@ The default in `lib/core/api_config.dart` is set to the live server:
 ```dart
 static const String baseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'https://generator.tikritstore.shop',   // live default
+  defaultValue: 'https://generator.ecommerceflash.com',   // live default
 );
 ```
 
@@ -138,7 +138,7 @@ and `--dart-define=API_BASE_URL=...` still overrides it for local dev.
 
 ## 7. Endpoint reference (paths the app calls)
 
-All are relative to `https://generator.tikritstore.shop`:
+All are relative to `https://generator.ecommerceflash.com`:
 
 | Area | Method | Path |
 | --- | --- | --- |

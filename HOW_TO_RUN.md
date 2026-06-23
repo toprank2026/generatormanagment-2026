@@ -4,7 +4,7 @@ Two parts: the **backend** (Node/Express + MongoDB, also serves the admin web pa
 and the **frontend** (the Flutter app). You can run everything locally, or just run
 the app against the live production server.
 
-- **Production API / admin panel:** `https://generator.tikritstore.shop`
+- **Production API / admin panel:** `https://generator.ecommerceflash.com`
 - The Flutter app **defaults to production** — a plain `flutter run` / `flutter build`
   talks to the live server. Pass `--dart-define=API_BASE_URL=...` only to point it at a
   local backend (see §2).
@@ -44,7 +44,7 @@ flutter pub get
 
 # A) Against PRODUCTION (default — no flag needed):
 flutter run
-flutter build apk --release        # release APK, points at generator.tikritstore.shop
+flutter build apk --release        # release APK, points at generator.ecommerceflash.com
 
 # B) Against a LOCAL backend (dev):
 #   Android emulator → host machine:
@@ -59,14 +59,14 @@ flutter run --dart-define=API_BASE_URL=http://<PC-LAN-IP>:4000
 - The base URL lives in `lib/core/api_config.dart` (`API_BASE_URL`, default = production).
 - `flutter analyze` (0 errors) · `flutter test` (53 tests).
 - The release APK currently installed on the connected device is build **B-from-production**
-  (a plain release build, so it is already pointed at `generator.tikritstore.shop`).
+  (a plain release build, so it is already pointed at `generator.ecommerceflash.com`).
 
 ---
 
 ## 3) Login accounts
 
 ### Admin — runs the admin panel (and is an admin inside the app)
-- **Where:** `https://generator.tikritstore.shop/admin` (prod) or
+- **Where:** `https://generator.ecommerceflash.com/admin` (prod) or
   <http://localhost:4000/admin> (local).
 - **Credentials:** the backend `.env` values `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
   - **Local default** (from `.env.example`, no `.env` present): **`admin` / `admin123`**.
