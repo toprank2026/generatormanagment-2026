@@ -114,16 +114,26 @@ class DashboardScreen extends StatelessWidget {
                                 // Tapping it opens the branch switcher when
                                 // Multi-Branch is enabled (title + button).
                                 Obx(() {
-                                  final branchName =
-                                      branchController.currentBranch.value?.name;
+                                  final cur = branchController.currentBranch.value;
+                                  final branchName = cur?.name;
                                   final g = authController
                                       .account.value?.generatorName;
-                                  final title = (branchName != null &&
-                                          branchName.trim().isNotEmpty)
-                                      ? branchName
-                                      : ((g == null || g.isEmpty)
-                                          ? 'generator_name'.tr
-                                          : g);
+                                  // v14: never show the literal "main branch"
+                                  // name — for the MAIN branch use the generator
+                                  // name from registration; other branches keep
+                                  // their own name.
+                                  final isMain = cur?.isMainBranch ?? true;
+                                  final String title;
+                                  if (isMain && g != null && g.trim().isNotEmpty) {
+                                    title = g;
+                                  } else if (branchName != null &&
+                                      branchName.trim().isNotEmpty) {
+                                    title = branchName;
+                                  } else {
+                                    title = (g == null || g.isEmpty)
+                                        ? 'generator_name'.tr
+                                        : g;
+                                  }
                                   // Flash: NO in-app branch switching — a branch
                                   // is a separate account (log in from the login
                                   // screen to use it); switching between branches

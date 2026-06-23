@@ -158,11 +158,19 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
                 backgroundColor: Colors.white,
                 foregroundColor: gradient.first,
               ),
-              icon: const Icon(Icons.request_quote),
-              label: Text(pending
-                  ? 'wallet_pending_exists'.tr
-                  : 'request_settlement'.tr),
-              onPressed: (pending || balance <= 0)
+              // v14: loading state while the request saves (disabled + spinner).
+              icon: c.isRequesting.value
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.request_quote),
+              label: Text(c.isRequesting.value
+                  ? 'saving'.tr
+                  : (pending
+                      ? 'wallet_pending_exists'.tr
+                      : 'request_settlement'.tr)),
+              onPressed: (pending || balance <= 0 || c.isRequesting.value)
                   ? null
                   : () => c.requestSettlement(method),
             ),

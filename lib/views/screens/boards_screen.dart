@@ -9,6 +9,7 @@ import 'package:generatormanagment/data/repositories/core_repositories.dart'
 import 'package:generatormanagment/views/widgets/app_form_field.dart';
 import 'package:generatormanagment/views/screens/subscribers_screen.dart';
 import 'package:generatormanagment/views/screens/circuits_screen.dart';
+import 'package:generatormanagment/views/widgets/sync_progress_overlay.dart';
 
 class BoardsScreen extends StatefulWidget {
   final bool forCircuits;
@@ -268,6 +269,12 @@ class _BoardsScreenState extends State<BoardsScreen> {
       // the board is persisted (R2). Empty name keeps it open.
       onConfirm: () async {
         if (nameCtrl.text.trim().isEmpty) return;
+        // v14: block with a loading overlay until the write completes (prevents
+        // double-tap + the crash from acting before it's saved); hide it BEFORE
+        // any snackbar so it never blocks the dialog close.
+        SyncProgress.show('saving'.tr);
+        ValidationException? verr;
+        bool ok = false;
         try {
           if (isEdit) {
             await controller.updateBoard(
@@ -286,16 +293,18 @@ class _BoardsScreenState extends State<BoardsScreen> {
             await controller.addBoard(
                 nameCtrl.text.trim(), codeCtrl.text.trim());
           }
+          ok = true;
         } on ValidationException catch (e) {
-          // R1: duplicate name — keep the dialog open, show the reason.
-          Get.snackbar(
-            'error'.tr,
-            e.messageKey.tr,
-            backgroundColor: Colors.redAccent,
-            colorText: Colors.white,
-          );
+          verr = e; // R1: duplicate name — keep the dialog open, show the reason.
+        } finally {
+          SyncProgress.hide();
+        }
+        if (verr != null) {
+          Get.snackbar('error'.tr, verr.messageKey.tr,
+              backgroundColor: Colors.redAccent, colorText: Colors.white);
           return;
         }
+        if (!ok) return;
         Get.back();
         Get.snackbar(
           "success".tr,

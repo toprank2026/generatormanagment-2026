@@ -33,6 +33,7 @@ class SettlementController extends GetxController {
   final hasPendingCard = false.obs;
 
   final isLoading = false.obs;
+  final isRequesting = false.obs; // v14: loading while a settlement request saves
 
   final RxList<Settlement> history = <Settlement>[].obs;
   static const int _perPage = 15;
@@ -131,18 +132,24 @@ class SettlementController extends GetxController {
       Get.snackbar('settlement'.tr, 'wallet_pending_exists'.tr);
       return false;
     }
-    final now = DateTime.now().toUtc().toIso8601String();
-    await _repo.insert(Settlement(
-      id: const Uuid().v4(),
-      accountantId: id,
-      branchId: _branch.writeBranchId,
-      amount: bal,
-      method: method,
-      status: 'pending',
-      requestedAt: now,
-    ));
-    SyncController.poke(); // push the request into the owner's mirror
-    await load();
+    // v14: loading until the request is saved + synced (prevents double-tap).
+    isRequesting.value = true;
+    try {
+      final now = DateTime.now().toUtc().toIso8601String();
+      await _repo.insert(Settlement(
+        id: const Uuid().v4(),
+        accountantId: id,
+        branchId: _branch.writeBranchId,
+        amount: bal,
+        method: method,
+        status: 'pending',
+        requestedAt: now,
+      ));
+      SyncController.poke(); // push the request into the owner's mirror
+      await load();
+    } finally {
+      isRequesting.value = false;
+    }
     Get.snackbar('settlement'.tr, 'settlement_requested'.tr,
         backgroundColor: Colors.green, colorText: Colors.white);
     return true;

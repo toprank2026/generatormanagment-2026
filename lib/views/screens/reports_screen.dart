@@ -83,16 +83,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 final money = NumberFormat.decimalPattern();
                 final double expected = controller.expectedTotal.value;
                 final double collected = controller.collectedTotal.value;
-                // item 4 fix: collection rate is COVERAGE / expected, where
-                // coverage = collected cash + waived discount = expected −
-                // remaining (discount-aware, matches the dashboard). Using bare
-                // collected/expected understated the rate whenever a discount
-                // was given (a fully-paid-with-discount month never hit 100%).
-                final double rate = expected > 0
-                    ? ((expected - controller.remainingTotal.value) / expected)
-                        .clamp(0.0, 1.0)
-                        .toDouble()
-                    : 0.0;
                 final double net = controller.netProfit.value;
                 final Color netColor =
                     net >= 0 ? const Color(0xFF2E7D32) : const Color(0xFFC62828);
@@ -135,14 +125,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           ),
                         ),
 
-                      // a) Collection-rate gauge.
-                      _chartCard(
-                        GaugeChart(
-                          value: rate,
-                          label: 'collection_rate'.tr,
-                          centerText: '${(rate * 100).toStringAsFixed(0)}%',
-                        ),
-                      ),
+                      // v14: collection-rate gauge removed.
 
                       // b) Paid / unpaid donut.
                       _chartCard(

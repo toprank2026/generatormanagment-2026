@@ -139,11 +139,14 @@ class PdfService {
   /// identity for that branch), falling back to the account generator name.
   String _generatorName() {
     try {
-      final b = Get.find<BranchController>().currentBranch.value?.name;
-      if (b != null && b.trim().isNotEmpty) return b.trim();
-    } catch (_) {}
-    try {
+      final b = Get.find<BranchController>().currentBranch.value;
       final g = Get.find<AuthController>().account.value?.generatorName;
+      // v14: the MAIN branch prints the registration generator name, never the
+      // stored "main branch" literal; other branches keep their own name.
+      if (b != null && b.isMainBranch && g != null && g.trim().isNotEmpty) {
+        return g.trim();
+      }
+      if (b != null && b.name.trim().isNotEmpty) return b.name.trim();
       if (g != null && g.trim().isNotEmpty) return g.trim();
     } catch (_) {}
     return 'TopRank';

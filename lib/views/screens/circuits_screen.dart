@@ -7,6 +7,7 @@ import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart'
     show ValidationException;
 import 'package:generatormanagment/views/widgets/app_form_field.dart';
+import 'package:generatormanagment/views/widgets/sync_progress_overlay.dart';
 
 class CircuitsScreen extends StatefulWidget {
   final Board board;
@@ -128,22 +129,28 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
       // and only after the circuit is persisted (R2). Empty name keeps it open.
       onConfirm: () async {
         if (nameCtrl.text.trim().isEmpty) return;
+        // v14: loading overlay until saved; hide BEFORE any snackbar.
+        SyncProgress.show('saving'.tr);
+        ValidationException? verr;
+        bool ok = false;
         try {
           await controller.addCircuit(
             widget.board.id,
             nameCtrl.text.trim(),
             phaseCtrl.text.trim(),
           );
+          ok = true;
         } on ValidationException catch (e) {
-          // R1: duplicate feed name — keep the dialog open, show the reason.
-          Get.snackbar(
-            'error'.tr,
-            e.messageKey.tr,
-            backgroundColor: Colors.redAccent,
-            colorText: Colors.white,
-          );
+          verr = e; // R1: duplicate feed name — keep the dialog open.
+        } finally {
+          SyncProgress.hide();
+        }
+        if (verr != null) {
+          Get.snackbar('error'.tr, verr.messageKey.tr,
+              backgroundColor: Colors.redAccent, colorText: Colors.white);
           return;
         }
+        if (!ok) return;
         Get.back();
         Get.snackbar(
           "success".tr,

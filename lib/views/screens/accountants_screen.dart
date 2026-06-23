@@ -145,6 +145,7 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
     // R8: the accountant is tied to a branch. Multi-branch owners pick one;
     // single-branch owners default to the active (Main) branch.
     String selectedBranchId = branch.writeBranchId;
+    bool busy = false; // v14: loading state while the accountant is created
 
     Get.dialog(
       StatefulBuilder(
@@ -219,26 +220,38 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
                   backgroundColor: kAppBlue,
                   foregroundColor: Colors.white,
                 ),
-                onPressed: () {
-                  final name = nameCtrl.text.trim();
-                  final username = usernameCtrl.text.trim();
-                  final password = passwordCtrl.text;
-                  if (name.isEmpty ||
-                      username.isEmpty ||
-                      password.trim().isEmpty) {
-                    Get.snackbar('error'.tr, 'fill_all_fields'.tr);
-                    return;
-                  }
-                  Get.back();
-                  controller.createAccountant(
-                    name,
-                    username,
-                    password,
-                    permissions: selected,
-                    branchId: selectedBranchId,
-                  );
-                },
-                child: Text('add'.tr),
+                // v14: keep the dialog open with a loading spinner until the
+                // accountant is fully created, THEN dismiss it (was: close first
+                // + fire-and-forget, which could act before the save completed).
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final name = nameCtrl.text.trim();
+                        final username = usernameCtrl.text.trim();
+                        final password = passwordCtrl.text;
+                        if (name.isEmpty ||
+                            username.isEmpty ||
+                            password.trim().isEmpty) {
+                          Get.snackbar('error'.tr, 'fill_all_fields'.tr);
+                          return;
+                        }
+                        setLocalState(() => busy = true);
+                        await controller.createAccountant(
+                          name,
+                          username,
+                          password,
+                          permissions: selected,
+                          branchId: selectedBranchId,
+                        );
+                        if (Get.isDialogOpen ?? false) Get.back();
+                      },
+                child: busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : Text('add'.tr),
               ),
             ],
           );

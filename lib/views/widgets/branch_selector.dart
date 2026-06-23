@@ -14,6 +14,16 @@ import 'package:generatormanagment/views/screens/branches_screen.dart';
 ///
 /// The dashboard now hosts the switcher as a button INSIDE the top banner (see
 /// [openBranchSheet]); this standalone card is kept for any other entry points.
+/// v14: the MAIN branch must show the registration GENERATOR NAME, never the
+/// stored "main branch" literal; other branches keep their own name.
+String branchDisplayName(Branch b, AuthController auth) {
+  if (b.isMainBranch) {
+    final g = auth.account.value?.generatorName;
+    if (g != null && g.trim().isNotEmpty) return g.trim();
+  }
+  return b.name;
+}
+
 class BranchSelector extends StatelessWidget {
   const BranchSelector({super.key});
 
@@ -25,7 +35,9 @@ class BranchSelector extends StatelessWidget {
     return Obx(() {
       if (!auth.canMultiBranch) return const SizedBox.shrink();
       final current = branch.currentBranch.value;
-      final label = current?.name ?? 'all_branches_consolidated'.tr;
+      final label = current != null
+          ? branchDisplayName(current, auth)
+          : 'all_branches_consolidated'.tr;
       final consolidated = current == null;
       return Padding(
         padding: const EdgeInsets.only(bottom: 16),
@@ -109,7 +121,7 @@ void openBranchSheet(BuildContext context) {
                           b.isMainBranch ? Icons.home_work : Icons.account_tree,
                           color: b.id == currentId ? kAppBlue : Colors.grey,
                         ),
-                        title: Text(b.name),
+                        title: Text(branchDisplayName(b, auth)),
                         trailing: b.id == currentId
                             ? const Icon(Icons.check_circle, color: kAppBlue)
                             : null,
