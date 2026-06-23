@@ -153,14 +153,20 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     const data = r.data || {};
     const paid = num(data.paid_amount);
     const discount = num(data.discount_value); // legacy receipts -> 0
+    // v14 (item 3): coverage (paid/unpaid) honors the accountant scope, so a
+    // per-accountant report shows the subscribers THAT accountant collected from.
+    // When accountantId is null (overall/branch report) inScope() is always true,
+    // so this is byte-identical to the prior global behavior — no regression.
     if (inScope(data)) {
       collected += paid;
       discountTotal += discount;
+      const sid = data.subscriber_id;
+      // Coverage folds the waived discount in so a discounted FULL payment counts
+      // as fully paid (coverage = paid_amount + discount_value >= due).
+      if (sid != null) {
+        coverageBySubscriber.set(sid, (coverageBySubscriber.get(sid) || 0) + paid + discount);
+      }
     }
-    const sid = data.subscriber_id;
-    // Coverage folds the waived discount in so a discounted FULL payment counts
-    // as fully paid (coverage = paid_amount + discount_value >= due).
-    if (sid != null) coverageBySubscriber.set(sid, (coverageBySubscriber.get(sid) || 0) + paid + discount);
   }
 
   let totalAmps = 0;

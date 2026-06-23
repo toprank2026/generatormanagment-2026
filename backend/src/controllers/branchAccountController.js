@@ -111,11 +111,17 @@ const createBranch = asyncHandler(async (req, res) => {
     role: 'owner',
     parentOwner: req.user._id,
     // Flash v13 Phase D: an INDEPENDENT branch is gated on its OWN plan (not the
-    // parent's). Its subscription starts PENDING-style ('none' + the chosen
-    // planCode, no active dates) and must be approved by the super-admin. The
-    // independentPlan flag is what featureSubject/auth key off to stop inheriting.
+    // parent's). independentPlan is what featureSubject/auth key off to stop
+    // inheriting. Flash v14 (item 5): when a plan is chosen at creation the
+    // branch enters PENDING — exactly like a new registration that requested a
+    // plan — so it appears in the Admin Panel awaiting approval (admin
+    // approve-plan requires status 'pending' + planCode). No plan chosen => stays
+    // 'none' (the branch picks one after login, then it goes pending).
     independentPlan: true,
-    subscription: { status: 'none', planCode: chosenPlanCode },
+    subscription: {
+      status: chosenPlanCode ? 'pending' : 'none',
+      planCode: chosenPlanCode,
+    },
     devices: [],
   });
 

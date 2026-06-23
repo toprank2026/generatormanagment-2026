@@ -520,10 +520,12 @@ test('INDEPENDENT branch (created with planCode) has its OWN pending plan, not t
   });
   assert.equal(create.status, 201, `create independent branch should 201, got ${create.status} ${JSON.stringify(create.data)}`);
   assert.equal(create.data.branch.independentPlan, true, 'serialized branch flagged independentPlan');
-  assert.equal(create.data.branch.subscription.status, 'none', 'branch starts with no active plan (pending approval)');
+  // v14 (item 5): choosing a plan at creation enters PENDING (like a new account
+  // that requested a plan) so it appears in the Admin Panel awaiting approval.
+  assert.equal(create.data.branch.subscription.status, 'pending', 'branch starts PENDING (awaiting approval)');
   assert.equal(create.data.branch.subscription.planCode, 'monthly', 'branch stores its chosen plan code');
 
-  // Branch logs in -> reports its OWN subscription (status 'none', planCode
+  // Branch logs in -> reports its OWN subscription (status 'pending', planCode
   // 'monthly'), NOT the parent's active yearly. It is treated as needing approval.
   const login = await api('POST', '/api/auth/login', {
     body: { username: phone, password: 'secret1', device: makeDevice() },
@@ -533,13 +535,13 @@ test('INDEPENDENT branch (created with planCode) has its OWN pending plan, not t
   assert.equal(acc.role, 'owner');
   assert.equal(acc.parentOwnerId, owner.account.id);
   assert.equal(acc.independentPlan, true, 'login account flagged independentPlan');
-  assert.equal(acc.subscription.status, 'none', 'independent branch is NOT inheriting the parent active plan');
+  assert.equal(acc.subscription.status, 'pending', 'independent branch is NOT inheriting the parent active plan');
   assert.equal(acc.subscription.planCode, 'monthly', 'independent branch reports its OWN chosen plan');
 
   // /me agrees: own pending plan, not the parent's.
   const meBefore = await api('GET', '/api/auth/me', { token: login.data.token });
   assert.equal(meBefore.status, 200);
-  assert.equal(meBefore.data.account.subscription.status, 'none', 'me: own pending plan');
+  assert.equal(meBefore.data.account.subscription.status, 'pending', 'me: own pending plan');
   assert.equal(meBefore.data.account.subscription.planCode, 'monthly');
   assert.notEqual(meBefore.data.account.subscription.status, 'active', 'must NOT show the parent active plan');
 
