@@ -29,8 +29,11 @@
   .wrap{max-width:1140px;margin:0 auto;padding:0 20px}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 26px;border-radius:11px;border:1px solid transparent;background:var(--primary);color:#fff;font-weight:700;font-size:15px;cursor:pointer;transition:.15s;font-family:inherit}
   .btn:hover{background:var(--primary-dark)}
-  .btn.ghost{background:#fff;color:var(--primary);border-color:rgba(255,255,255,.6)}
-  .btn.ghost:hover{background:var(--primary-light)}
+  .btn.ghost{background:#fff;color:var(--primary);border-color:#fff}
+  .btn.ghost:hover{background:var(--primary-light);color:var(--primary-dark)}
+  /* outlined-white secondary button (clear title on the blue hero) */
+  .btn.outline{background:transparent;color:#fff;border-color:rgba(255,255,255,.75)}
+  .btn.outline:hover{background:rgba(255,255,255,.14);color:#fff}
   .sec{padding:74px 0}
   .sec-h{text-align:center;max-width:680px;margin:0 auto 46px}
   .sec-h .kicker{color:var(--primary);font-weight:800;font-size:14px;letter-spacing:.5px;display:inline-flex;align-items:center;gap:6px;background:var(--primary-light);padding:6px 14px;border-radius:30px;margin-bottom:14px}
@@ -43,8 +46,11 @@
   .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;color:var(--text)}
   .brand img{width:34px;height:34px;border-radius:8px}
   .nav-links{display:flex;gap:26px;align-items:center}
-  .nav-links a{color:var(--muted);font-weight:600}
+  .nav-links a{color:var(--text);font-weight:700;position:relative;padding:6px 2px;transition:color .15s}
   .nav-links a:hover{color:var(--primary)}
+  /* active section (scroll-spy) */
+  .nav-links a.active{color:var(--primary)}
+  .nav-links a.active::after{content:"";position:absolute;inset-inline:0;bottom:-2px;height:3px;border-radius:3px;background:var(--primary)}
   @media(max-width:760px){.nav-links{display:none}}
 
   /* ===== hero ===== */
@@ -58,6 +64,14 @@
   .hero-shot{display:flex;justify-content:center}
   .hero-shot img{width:260px;max-width:80%;border-radius:26px;box-shadow:0 24px 60px rgba(0,0,0,.4);border:6px solid rgba(255,255,255,.16)}
   @media(max-width:860px){.hero .wrap{grid-template-columns:1fr;text-align:center;padding:56px 20px}.hero p{margin-inline:auto}.hero .cta,.hero .pills{justify-content:center}.hero h1{font-size:32px}}
+
+  /* ===== stats band (social proof) ===== */
+  .statsband{background:#fff;border-bottom:1px solid var(--border)}
+  .statsband .wrap{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;padding:30px 20px}
+  .stat-box{flex:1 1 200px;max-width:280px;text-align:center;background:var(--primary-light);border:1px solid #cfe2fb;border-radius:16px;padding:22px 18px}
+  .stat-box .num{font-size:38px;font-weight:800;color:var(--primary);line-height:1;display:flex;align-items:center;justify-content:center;gap:6px}
+  .stat-box .num .msi{font-size:30px}
+  .stat-box .lbl{color:var(--muted);font-weight:700;margin-top:8px;font-size:15px}
 
   /* ===== features ===== */
   .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
@@ -93,29 +107,46 @@
   .step p{margin:0;color:var(--muted);font-size:14.5px}
 
   /* ===== plans ===== */
-  .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:22px;align-items:stretch}
-  .plan{background:var(--surface);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:28px 24px;display:flex;flex-direction:column}
-  .plan.feat-plan{border:2px solid var(--primary);box-shadow:var(--shadow-lg);position:relative}
-  .plan .tag{position:absolute;top:-13px;inset-inline-start:24px;background:var(--primary);color:#fff;font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px}
-  .plan h3{margin:0 0 4px;font-size:21px;font-weight:800}
-  .plan .desc{color:var(--muted);font-size:13.5px;min-height:20px;margin-bottom:14px}
-  .plan .price{font-size:34px;font-weight:800;color:var(--primary);line-height:1}
-  .plan .price small{font-size:14px;color:var(--muted);font-weight:600}
-  .plan .meta{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
-  .plan .chip{background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:5px 11px;font-size:12.5px;font-weight:600;color:var(--muted);display:inline-flex;gap:5px;align-items:center}
-  .plan ul{list-style:none;padding:0;margin:0 0 20px}
-  .plan li{display:flex;gap:9px;align-items:center;margin-bottom:9px;font-size:14px}
-  .plan li .msi{font-size:19px}
-  .plan li.on .msi{color:var(--success)}
-  .plan li.off{color:#b0b8c5}
+  /* plans: ONE horizontal row of COLORED cards (reference design) */
+  .plans{display:flex;flex-wrap:nowrap;gap:22px;align-items:stretch;justify-content:center;overflow-x:auto;padding:14px 4px 18px}
+  .plan{flex:1 1 0;min-width:250px;max-width:330px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;transition:.18s}
+  .plan:hover{transform:translateY(-6px)}
+  .plan .phead{background:var(--c,#1565C0);color:#fff;text-align:center;padding:0 0 24px}
+  .plan .pname{background:rgba(0,0,0,.14);padding:13px;font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
+  .plan .pprice{font-size:42px;font-weight:800;line-height:1;margin-top:22px}
+  .plan .pprice .cur{font-size:16px;font-weight:700;opacity:.92}
+  .plan .pper{font-size:12px;font-weight:700;opacity:.92;letter-spacing:2px;margin-top:10px}
+  .plan .pbody{padding:24px 22px;display:flex;flex-direction:column}
+  .plan .pdesc{color:var(--muted);font-size:13px;text-align:center;margin-bottom:16px;min-height:18px}
+  .plan ul{list-style:none;padding:0;margin:0}
+  .plan li{display:flex;gap:9px;align-items:center;margin-bottom:12px;font-size:14px;font-weight:600}
+  .plan li .msi{font-size:19px;color:var(--c,#1565C0)}
+  .plan li.off{color:#b6bdc9;font-weight:500}
   .plan li.off .msi{color:#d3d8e0}
-  .plan .foot{margin-top:auto}
-  #plansNote{text-align:center;color:var(--muted);grid-column:1/-1;padding:20px}
+  #plansNote{text-align:center;color:var(--muted);padding:20px;flex:1}
 
-  /* ===== gallery ===== */
-  .gal{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
-  @media(max-width:780px){.gal{grid-template-columns:repeat(2,1fr)}}
-  .gal img{width:100%;border-radius:16px;box-shadow:var(--shadow);border:1px solid var(--border);background:#fff}
+  /* ===== gallery: auto-scrolling marquee in ONE row ===== */
+  .marquee{overflow:hidden;width:100%;-webkit-mask-image:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent);mask-image:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent)}
+  .mtrack{display:flex;gap:16px;width:max-content;direction:ltr;animation:scrollx 42s linear infinite}
+  .marquee:hover .mtrack{animation-play-state:paused}
+  .mtrack img{height:360px;width:auto;border-radius:16px;box-shadow:var(--shadow);border:1px solid var(--border);background:#fff;flex:0 0 auto}
+  @keyframes scrollx{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  @media(max-width:560px){.mtrack img{height:280px}}
+  @media(prefers-reduced-motion:reduce){.mtrack{animation:none}}
+
+  /* ===== contact ===== */
+  .contact-row{display:flex;gap:18px;justify-content:center;flex-wrap:wrap}
+  .contact-card{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:18px 24px;min-width:280px;transition:.15s}
+  .contact-card:hover{box-shadow:var(--shadow-lg);transform:translateY(-2px)}
+  .contact-card .cic{flex:0 0 auto;width:52px;height:52px;border-radius:14px;background:var(--primary-light);color:var(--primary);display:flex;align-items:center;justify-content:center}
+  .contact-card .cic .msi{font-size:27px}
+  .contact-card .cic.ig{background:linear-gradient(45deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5);color:#fff}
+  .contact-card .cic-img{flex:0 0 auto;width:52px;height:52px;border-radius:14px;object-fit:cover;display:block}
+  .contact-card .ct{color:var(--muted);font-size:13px;font-weight:700}
+  .contact-card .cv{color:var(--text);font-size:17px;font-weight:800}
+  .foot-contact{display:flex;gap:18px;justify-content:center;margin:14px 0 4px}
+  .foot-contact a{display:inline-flex;align-items:center;gap:7px;color:#cdd9ea;font-weight:700}
+  .foot-contact a:hover{color:#fff}
 
   /* ===== cta band + footer ===== */
   .band{background:linear-gradient(135deg,#0d47a1,#1565C0);color:#fff;text-align:center;border-radius:22px;padding:50px 24px;margin:0 20px}
@@ -135,8 +166,7 @@
     <a href="#features">المزايا</a>
     <a href="#how">طريقة الاستخدام</a>
     <a href="#plans">الخطط</a>
-    <a href="#screens">لقطات</a>
-    <a class="btn" style="padding:9px 18px" href="/admin">لوحة التحكم</a>
+    <a href="#contact">تواصل</a>
   </div>
 </div></div>
 
@@ -147,7 +177,7 @@
     <p>أدِر المشتركين واللوحات والجوزات، والفوترة الشهرية بالأمبير، والمصروفات، واطبع الإيصالات على طابعة بلوتوث — مع عمل كامل بدون إنترنت ومزامنة تلقائية مع الخادم.</p>
     <div class="cta">
       <a class="btn ghost" href="#plans"><span class="msi">sell</span> عرض الخطط</a>
-      <a class="btn ghost" href="#how"><span class="msi">menu_book</span> طريقة الاستخدام</a>
+      <a class="btn outline" href="#how"><span class="msi">menu_book</span> طريقة الاستخدام</a>
     </div>
     <div class="pills">
       <span class="pill"><span class="msi">wifi_off</span> يعمل بدون إنترنت</span>
@@ -158,6 +188,13 @@
   </div>
   <div class="hero-shot"><img src="nova/home.jpg" alt="الشاشة الرئيسية" /></div>
 </div></header>
+
+<!-- stats / social proof -->
+<section class="statsband"><div class="wrap">
+  <div class="stat-box"><div class="num"><span class="msi">groups</span> +150</div><div class="lbl">عميل يثق بنا</div></div>
+  <div class="stat-box"><div class="num"><span class="msi">wifi_off</span> 100%</div><div class="lbl">يعمل بدون إنترنت</div></div>
+  <div class="stat-box"><div class="num"><span class="msi">cloud_done</span> تلقائية</div><div class="lbl">مزامنة سحابية</div></div>
+</div></section>
 
 <!-- features -->
 <section class="sec" id="features"><div class="wrap">
@@ -256,32 +293,25 @@
     <h2>اختر الخطة المناسبة لك</h2>
     <p>خطط الاشتراك المتاحة مباشرةً من الخادم.</p>
   </div>
-  <div class="plans" id="plans"><div id="plansNote">جارٍ تحميل الخطط…</div></div>
+  <div class="plans" id="plansBox"><div id="plansNote">جارٍ تحميل الخطط…</div></div>
 </div></section>
 
-<!-- screenshots gallery (all Nova images) -->
-<section class="sec" id="screens"><div class="wrap">
+<!-- contact us -->
+<section class="sec" id="contact" style="padding-top:0"><div class="wrap">
   <div class="sec-h">
-    <span class="kicker"><span class="msi">photo_library</span> لقطات من التطبيق</span>
-    <h2>شاهد التطبيق أثناء العمل</h2>
+    <span class="kicker"><span class="msi">support_agent</span> تواصل معنا</span>
+    <h2>هل لديك سؤال؟ نحن هنا لمساعدتك</h2>
+    <p>تواصل معنا عبر الهاتف أو إنستغرام.</p>
   </div>
-  <div class="gal">
-    <img src="nova/home.jpg" alt="الرئيسية" />
-    <img src="nova/home2.jpg" alt="لوحة التحكم" />
-    <img src="nova/price.jpg" alt="التسعير" />
-    <img src="nova/expenses.jpg" alt="المصروفات" />
-    <img src="nova/settings.jpg" alt="الإعدادات" />
-    <img src="nova/settings2.jpg" alt="الإعدادات" />
-    <img src="nova/bluetooth.png" alt="طابعة البلوتوث" />
-  </div>
-</div></section>
-
-<!-- cta band -->
-<section class="sec" style="padding-top:0"><div class="wrap">
-  <div class="band">
-    <h2>جاهز لإدارة مولّدتك باحترافية؟</h2>
-    <p>ابدأ الآن — أنشئ حسابك، اختر خطتك، ونظّم اشتراكاتك بسهولة.</p>
-    <a class="btn ghost" href="/admin"><span class="msi">login</span> الدخول إلى لوحة التحكم</a>
+  <div class="contact-row">
+    <a class="contact-card" href="tel:+9647708216878">
+      <span class="cic"><span class="msi">call</span></span>
+      <div><div class="ct">اتصل بنا</div><div class="cv" dir="ltr">+964 770 821 6878</div></div>
+    </a>
+    <a class="contact-card" href="https://www.instagram.com/toprank_solution?igsh=MXkwNGxwNXNsMW5ucg==" target="_blank" rel="noopener">
+      <img class="cic-img" src="nova/social.png" alt="إنستغرام" />
+      <div><div class="ct">إنستغرام</div><div class="cv">toprank_solution@</div></div>
+    </a>
   </div>
 </div></section>
 
@@ -289,6 +319,10 @@
   <div class="wrap">
     <div class="brand"><img src="blue.png" alt="Flash" style="width:30px;height:30px;border-radius:7px" /> Flash</div>
     <div>نظام إدارة اشتراكات المولدات الكهربائية</div>
+    <div class="foot-contact">
+      <a href="tel:+9647708216878"><span class="msi">call</span><span dir="ltr">+964 770 821 6878</span></a>
+      <a href="https://www.instagram.com/toprank_solution?igsh=MXkwNGxwNXNsMW5ucg==" target="_blank" rel="noopener"><img src="nova/social.png" alt="" style="width:20px;height:20px;border-radius:5px;vertical-align:middle" /> إنستغرام</a>
+    </div>
     <small>© <span id="yr"></span> Flash — جميع الحقوق محفوظة</small>
   </div>
 </footer>
@@ -309,6 +343,8 @@
   function featRow(on,label){
     return '<li class="'+(on?'on':'off')+'"><span class="msi">'+(on?'check_circle':'cancel')+'</span>'+label+'</li>';
   }
+  // all-blue cards (design-system blue, with subtle shade variation per plan)
+  var PLAN_COLORS = ['#1565C0','#0d47a1','#1e88e5','#1976d2','#0277bd','#1565C0'];
 
   // Bring plans from the REAL backend (same origin: /api/subscription/plans).
   fetch('/api/subscription/plans')
@@ -316,37 +352,52 @@
     .then(function(data){
       var plans = (data && data.plans) || [];
       plans = plans.filter(function(p){ return p && p.active !== false; });
-      var box = document.getElementById('plans');
+      var box = document.getElementById('plansBox');
       if(!plans.length){ box.innerHTML = '<div id="plansNote">لا توجد خطط متاحة حاليًّا.</div>'; return; }
-      // highlight the most feature-rich paid plan, else the longest one.
-      var hi = plans.reduce(function(a,b){ return ((b.price||0)>(a.price||0))?b:a; }, plans[0]);
-      box.innerHTML = plans.map(function(p){
+      box.innerHTML = plans.map(function(p, i){
+        var color = PLAN_COLORS[i % PLAN_COLORS.length];
         var price = Number(p.price)||0;
-        var priceHtml = price>0 ? (price.toLocaleString('en-US')+' <small>د.ع</small>') : 'مجاني';
-        var isHi = (p.code===hi.code) && price>0;
+        var priceHtml = price>0 ? (price.toLocaleString('en-US')+' <span class="cur">د.ع</span>') : 'مجاني';
         return ''
-          + '<div class="plan'+(isHi?' feat-plan':'')+'">'
-          +   (isHi?'<span class="tag">الأكثر تكاملاً</span>':'')
-          +   '<h3>'+esc(p.name||p.code)+'</h3>'
-          +   '<div class="desc">'+esc(p.description||'')+'</div>'
-          +   '<div class="price">'+priceHtml+'</div>'
-          +   '<div class="meta">'
-          +     '<span class="chip"><span class="msi">schedule</span>'+durLabel(p.durationDays)+'</span>'
-          +     '<span class="chip"><span class="msi">devices</span>'+(Number(p.maxDevices)||1)+' جهاز</span>'
+          + '<div class="plan" style="--c:'+color+'">'
+          +   '<div class="phead">'
+          +     '<div class="pname">'+esc(p.name||p.code)+'</div>'
+          +     '<div class="pprice">'+priceHtml+'</div>'
+          +     '<div class="pper">'+durLabel(p.durationDays)+'</div>'
           +   '</div>'
-          +   '<ul>'
-          +     featRow(p.syncEnabled,'المزامنة مع الخادم')
-          +     featRow(p.backupEnabled,'النسخ الاحتياطي السحابي')
-          +     featRow(p.ownerPanelEnabled,'لوحة المالك على الويب')
-          +     featRow(p.multiBranchEnabled,'تعدّد الفروع')
-          +   '</ul>'
-          +   '<div class="foot"><a class="btn" style="width:100%" href="/admin"><span class="msi">login</span> ابدأ الآن</a></div>'
+          +   '<div class="pbody">'
+          +     (p.description?('<div class="pdesc">'+esc(p.description)+'</div>'):'')
+          +     '<ul>'
+          +       '<li class="on"><span class="msi">devices</span>'+(Number(p.maxDevices)||1)+' جهاز</li>'
+          +       featRow(p.syncEnabled,'المزامنة مع الخادم')
+          +       featRow(p.backupEnabled,'النسخ الاحتياطي السحابي')
+          +       featRow(p.ownerPanelEnabled,'لوحة المالك على الويب')
+          +       featRow(p.multiBranchEnabled,'تعدّد الفروع')
+          +     '</ul>'
+          +   '</div>'
           + '</div>';
       }).join('');
     })
     .catch(function(){
-      document.getElementById('plans').innerHTML = '<div id="plansNote">تعذّر تحميل الخطط حاليًّا. تحقّق من الاتصال وأعد المحاولة.</div>';
+      document.getElementById('plansBox').innerHTML = '<div id="plansNote">تعذّر تحميل الخطط حاليًّا. تحقّق من الاتصال وأعد المحاولة.</div>';
     });
+
+  // ===== scroll-spy: highlight the nav link of the section in view =====
+  (function(){
+    var links = Array.prototype.slice.call(document.querySelectorAll('.nav-links a[href^="#"]'));
+    if(!links.length || !('IntersectionObserver' in window)) return;
+    var map = {};
+    links.forEach(function(a){ var id=a.getAttribute('href').slice(1); if(id) map[id]=a; });
+    var obs = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(a){ a.classList.remove('active'); });
+          if(map[e.target.id]) map[e.target.id].classList.add('active');
+        }
+      });
+    }, { rootMargin:'-45% 0px -50% 0px', threshold:0 });
+    Object.keys(map).forEach(function(id){ var s=document.getElementById(id); if(s) obs.observe(s); });
+  })();
 </script>
 </body>
 </html>
