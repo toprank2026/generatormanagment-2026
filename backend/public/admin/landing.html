@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="light" />
+<title>Flash — نظام إدارة اشتراكات المولدات</title>
+<link rel="icon" href="blue.png" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,300..600,0..1,0">
+<style>
+  /* ===== design system (mirrors backend/public/admin/index.html) ===== */
+  .msi{font-family:'Material Symbols Outlined';font-weight:500;font-style:normal;display:inline-block;line-height:1;direction:ltr;-webkit-font-smoothing:antialiased;font-variation-settings:'FILL' 1;vertical-align:middle}
+  :root{
+    --primary:#1565C0; --primary-dark:#0d47a1; --primary-light:#e3f0fc;
+    --bg:#f4f6fa; --surface:#ffffff; --border:#e2e6ee;
+    --text:#1f2733; --muted:#69748a;
+    --success:#2e7d32; --success-light:#e8f5e9; --warn:#ed6c02;
+    --radius:14px;
+    --shadow:0 1px 3px rgba(16,24,40,.08),0 1px 2px rgba(16,24,40,.04);
+    --shadow-lg:0 12px 32px rgba(16,24,40,.18);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;scroll-behavior:smooth}
+  body{
+    font-family:"Cairo","Segoe UI","Tahoma",-apple-system,BlinkMacSystemFont,Roboto,Arial,sans-serif;
+    background:var(--bg);color:var(--text);font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--primary);text-decoration:none}
+  .wrap{max-width:1140px;margin:0 auto;padding:0 20px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 26px;border-radius:11px;border:1px solid transparent;background:var(--primary);color:#fff;font-weight:700;font-size:15px;cursor:pointer;transition:.15s;font-family:inherit}
+  .btn:hover{background:var(--primary-dark)}
+  .btn.ghost{background:#fff;color:var(--primary);border-color:rgba(255,255,255,.6)}
+  .btn.ghost:hover{background:var(--primary-light)}
+  .sec{padding:74px 0}
+  .sec-h{text-align:center;max-width:680px;margin:0 auto 46px}
+  .sec-h .kicker{color:var(--primary);font-weight:800;font-size:14px;letter-spacing:.5px;display:inline-flex;align-items:center;gap:6px;background:var(--primary-light);padding:6px 14px;border-radius:30px;margin-bottom:14px}
+  .sec-h h2{font-size:30px;font-weight:800;margin:0 0 10px;line-height:1.35}
+  .sec-h p{color:var(--muted);margin:0;font-size:16px}
+
+  /* ===== top bar ===== */
+  .nav{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+  .nav .wrap{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;color:var(--text)}
+  .brand img{width:34px;height:34px;border-radius:8px}
+  .nav-links{display:flex;gap:26px;align-items:center}
+  .nav-links a{color:var(--muted);font-weight:600}
+  .nav-links a:hover{color:var(--primary)}
+  @media(max-width:760px){.nav-links{display:none}}
+
+  /* ===== hero ===== */
+  .hero{background:linear-gradient(135deg,#0d47a1 0%,#1565C0 55%,#2f86e0 100%);color:#fff;overflow:hidden;position:relative}
+  .hero .wrap{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;align-items:center;padding:72px 20px 84px}
+  .hero h1{font-size:42px;font-weight:800;line-height:1.25;margin:0 0 18px}
+  .hero p{font-size:18px;color:#dbeafe;margin:0 0 28px;max-width:520px}
+  .hero .cta{display:flex;gap:14px;flex-wrap:wrap}
+  .hero .pills{display:flex;gap:10px;flex-wrap:wrap;margin-top:26px}
+  .pill{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);padding:7px 14px;border-radius:30px;font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+  .hero-shot{display:flex;justify-content:center}
+  .hero-shot img{width:260px;max-width:80%;border-radius:26px;box-shadow:0 24px 60px rgba(0,0,0,.4);border:6px solid rgba(255,255,255,.16)}
+  @media(max-width:860px){.hero .wrap{grid-template-columns:1fr;text-align:center;padding:56px 20px}.hero p{margin-inline:auto}.hero .cta,.hero .pills{justify-content:center}.hero h1{font-size:32px}}
+
+  /* ===== features ===== */
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  @media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:560px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:24px}
+  .feat .ic{width:50px;height:50px;border-radius:13px;background:var(--primary-light);color:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+  .feat .ic .msi{font-size:28px}
+  .feat h3{margin:0 0 7px;font-size:18px;font-weight:800}
+  .feat p{margin:0;color:var(--muted);font-size:14.5px}
+
+  /* ===== showcase rows ===== */
+  .show{display:grid;grid-template-columns:1fr 1fr;gap:46px;align-items:center;margin-bottom:64px}
+  .show:last-child{margin-bottom:0}
+  .show.alt{direction:ltr}
+  .show.alt>*{direction:rtl}
+  .show .txt h3{font-size:24px;font-weight:800;margin:0 0 12px}
+  .show .txt p{color:var(--muted);font-size:16px;margin:0 0 16px}
+  .show .txt li{margin-bottom:9px;display:flex;gap:10px;align-items:flex-start;color:var(--text)}
+  .show .txt li .msi{color:var(--success);font-size:21px;margin-top:2px}
+  .show ul{list-style:none;padding:0;margin:0}
+  .show .shot{display:flex;justify-content:center}
+  .show .shot img{width:250px;max-width:78%;border-radius:22px;box-shadow:var(--shadow-lg);border:1px solid var(--border)}
+  @media(max-width:780px){.show{grid-template-columns:1fr;gap:24px}}
+
+  /* ===== steps ===== */
+  .steps{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+  @media(max-width:680px){.steps{grid-template-columns:1fr}}
+  .step{display:flex;gap:16px;align-items:flex-start;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px}
+  .step .n{flex:0 0 auto;width:42px;height:42px;border-radius:50%;background:var(--primary);color:#fff;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center}
+  .step h4{margin:0 0 4px;font-size:17px;font-weight:800;display:flex;align-items:center;gap:8px}
+  .step h4 .msi{color:var(--primary);font-size:21px}
+  .step p{margin:0;color:var(--muted);font-size:14.5px}
+
+  /* ===== plans ===== */
+  .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:22px;align-items:stretch}
+  .plan{background:var(--surface);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:28px 24px;display:flex;flex-direction:column}
+  .plan.feat-plan{border:2px solid var(--primary);box-shadow:var(--shadow-lg);position:relative}
+  .plan .tag{position:absolute;top:-13px;inset-inline-start:24px;background:var(--primary);color:#fff;font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px}
+  .plan h3{margin:0 0 4px;font-size:21px;font-weight:800}
+  .plan .desc{color:var(--muted);font-size:13.5px;min-height:20px;margin-bottom:14px}
+  .plan .price{font-size:34px;font-weight:800;color:var(--primary);line-height:1}
+  .plan .price small{font-size:14px;color:var(--muted);font-weight:600}
+  .plan .meta{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
+  .plan .chip{background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:5px 11px;font-size:12.5px;font-weight:600;color:var(--muted);display:inline-flex;gap:5px;align-items:center}
+  .plan ul{list-style:none;padding:0;margin:0 0 20px}
+  .plan li{display:flex;gap:9px;align-items:center;margin-bottom:9px;font-size:14px}
+  .plan li .msi{font-size:19px}
+  .plan li.on .msi{color:var(--success)}
+  .plan li.off{color:#b0b8c5}
+  .plan li.off .msi{color:#d3d8e0}
+  .plan .foot{margin-top:auto}
+  #plansNote{text-align:center;color:var(--muted);grid-column:1/-1;padding:20px}
+
+  /* ===== gallery ===== */
+  .gal{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  @media(max-width:780px){.gal{grid-template-columns:repeat(2,1fr)}}
+  .gal img{width:100%;border-radius:16px;box-shadow:var(--shadow);border:1px solid var(--border);background:#fff}
+
+  /* ===== cta band + footer ===== */
+  .band{background:linear-gradient(135deg,#0d47a1,#1565C0);color:#fff;text-align:center;border-radius:22px;padding:50px 24px;margin:0 20px}
+  .band h2{font-size:28px;font-weight:800;margin:0 0 10px}
+  .band p{color:#dbeafe;margin:0 0 22px;font-size:16px}
+  footer{background:#0f1b2d;color:#9fb0c7;padding:40px 0;margin-top:74px;text-align:center}
+  footer .brand{color:#fff;justify-content:center;margin-bottom:10px}
+  footer small{display:block;color:#6b7c93;margin-top:8px}
+</style>
+</head>
+<body>
+
+<!-- nav -->
+<div class="nav"><div class="wrap">
+  <div class="brand"><img src="blue.png" alt="Flash" />Flash</div>
+  <div class="nav-links">
+    <a href="#features">المزايا</a>
+    <a href="#how">طريقة الاستخدام</a>
+    <a href="#plans">الخطط</a>
+    <a href="#screens">لقطات</a>
+    <a class="btn" style="padding:9px 18px" href="/admin">لوحة التحكم</a>
+  </div>
+</div></div>
+
+<!-- hero -->
+<header class="hero"><div class="wrap">
+  <div>
+    <h1>نظام متكامل لإدارة اشتراكات المولدات الكهربائية</h1>
+    <p>أدِر المشتركين واللوحات والجوزات، والفوترة الشهرية بالأمبير، والمصروفات، واطبع الإيصالات على طابعة بلوتوث — مع عمل كامل بدون إنترنت ومزامنة تلقائية مع الخادم.</p>
+    <div class="cta">
+      <a class="btn ghost" href="#plans"><span class="msi">sell</span> عرض الخطط</a>
+      <a class="btn ghost" href="#how"><span class="msi">menu_book</span> طريقة الاستخدام</a>
+    </div>
+    <div class="pills">
+      <span class="pill"><span class="msi">wifi_off</span> يعمل بدون إنترنت</span>
+      <span class="pill"><span class="msi">cloud_done</span> مزامنة تلقائية</span>
+      <span class="pill"><span class="msi">print</span> طباعة بلوتوث</span>
+      <span class="pill"><span class="msi">account_tree</span> تعدّد الفروع</span>
+    </div>
+  </div>
+  <div class="hero-shot"><img src="nova/home.jpg" alt="الشاشة الرئيسية" /></div>
+</div></header>
+
+<!-- features -->
+<section class="sec" id="features"><div class="wrap">
+  <div class="sec-h">
+    <span class="kicker"><span class="msi">bolt</span> المزايا</span>
+    <h2>كل ما تحتاجه لإدارة مولدتك في مكان واحد</h2>
+    <p>أدوات متكاملة مصمّمة خصيصًا لأعمال اشتراكات المولدات الكهربائية.</p>
+  </div>
+  <div class="grid">
+    <div class="card feat"><div class="ic"><span class="msi">groups</span></div><h3>المشتركون</h3><p>سجّل المشتركين بفئاتهم (ذهبي / عادي / تجاري) ووزّعهم على الجوزات، وتابع المسدّد وغير المسدّد لحظيًّا.</p></div>
+    <div class="card feat"><div class="ic"><span class="msi">grid_view</span></div><h3>اللوحات والجوزات</h3><p>نظّم شبكتك الكهربائية: أنشئ اللوحات ثم الجوزات داخل كل لوحة، واربط بها المشتركين.</p></div>
+    <div class="card feat"><div class="ic"><span class="msi">receipt_long</span></div><h3>الفوترة الشهرية</h3><p>احتساب المستحق تلقائيًّا حسب الأمبير والسعر الشهري لكل فئة، مع إمكانية الخصم عند الدفع الكامل.</p></div>
+    <div class="card feat"><div class="ic"><span class="msi">print</span></div><h3>طباعة الإيصالات</h3><p>اطبع إيصالات احترافية على طابعة حرارية عبر البلوتوث، أو صدّرها PDF مع رمز QR للتحقق.</p></div>
+    <div class="card feat"><div class="ic"><span class="msi">payments</span></div><h3>المصروفات</h3><p>سجّل مصروفات التشغيل (وقود، صيانة…) واحسب صافي الربح الشهري بدقة.</p></div>
+    <div class="card feat"><div class="ic"><span class="msi">bar_chart</span></div><h3>التقارير</h3><p>تقارير شهرية: المسدّدون وغير المسدّدين، المحصّل، المصروفات، صافي الربح — وحسب كل محاسب.</p></div>
+    <div class="card feat"><div class="ic"><span class="msi">account_tree</span></div><h3>تعدّد الفروع</h3><p>كل فرع مولّدة مستقلّة بخطته وبياناته، مع لوحة مالك للتنقّل بين الفروع.</p></div>
+    <div class="card feat"><div class="ic"><span class="msi">badge</span></div><h3>المحاسبون</h3><p>أنشئ حسابات محاسبين بصلاحيات محددة لتحصيل الاشتراكات، مع محفظة وطلبات تسوية.</p></div>
+    <div class="card feat"><div class="ic"><span class="msi">cloud_done</span></div><h3>بدون إنترنت + مزامنة</h3><p>يعمل التطبيق بالكامل دون إنترنت، ويزامن تلقائيًّا مع الخادم عند توفّر الاتصال، مع نسخ احتياطي سحابي.</p></div>
+  </div>
+</div></section>
+
+<!-- showcase (uses Nova screenshots) -->
+<section class="sec" style="background:#fff;border-block:1px solid var(--border)"><div class="wrap">
+  <div class="show">
+    <div class="txt">
+      <h3>لوحة تحكم واضحة لكل ما يجري</h3>
+      <p>تابِع نظرة عامة فورية على مولّدتك: عدد المشتركين، المسدّدون، الشهر الحالي، وحالة المزامنة.</p>
+      <ul>
+        <li><span class="msi">check_circle</span> إجمالي المشتركين والمسدّدون وغير المسدّدين</li>
+        <li><span class="msi">check_circle</span> الشهر المختار وحالة آخر رفع للبيانات</li>
+        <li><span class="msi">check_circle</span> أزرار مزامنة وتحديث فورية</li>
+      </ul>
+    </div>
+    <div class="shot"><img src="nova/home2.jpg" alt="لوحة التحكم" /></div>
+  </div>
+  <div class="show alt">
+    <div class="txt">
+      <h3>تسعير شهري مرن لكل فئة</h3>
+      <p>حدّد سعر الأمبير لكل شهر ولكل فئة (ذهبي / عادي / تجاري)، ويُحتسب المستحق تلقائيًّا لكل مشترك.</p>
+      <ul>
+        <li><span class="msi">check_circle</span> سعر مستقل لكل فئة وكل شهر</li>
+        <li><span class="msi">check_circle</span> احتساب المستحق = الأمبير × السعر</li>
+        <li><span class="msi">check_circle</span> تأكيد قبل حفظ الأسعار</li>
+      </ul>
+    </div>
+    <div class="shot"><img src="nova/price.jpg" alt="التسعير الشهري" /></div>
+  </div>
+  <div class="show">
+    <div class="txt">
+      <h3>مصروفات وأرباح تحت السيطرة</h3>
+      <p>سجّل كل المصروفات التشغيلية وصنّفها، وراقب صافي الربح الشهري في لمحة.</p>
+      <ul>
+        <li><span class="msi">check_circle</span> تصنيف المصروفات (وقود، صيانة…)</li>
+        <li><span class="msi">check_circle</span> صافي الربح = المحصّل − المصروفات</li>
+      </ul>
+    </div>
+    <div class="shot"><img src="nova/expenses.jpg" alt="المصروفات" /></div>
+  </div>
+  <div class="show alt">
+    <div class="txt">
+      <h3>إعدادات ومحاسبون وطباعة بلوتوث</h3>
+      <p>تحكّم كامل من الإعدادات: حسابات المحاسبين، النسخ الاحتياطي، وربط الطابعة الحرارية عبر البلوتوث.</p>
+      <ul>
+        <li><span class="msi">check_circle</span> إدارة المحاسبين والصلاحيات</li>
+        <li><span class="msi">check_circle</span> نسخ احتياطي واستعادة سحابية</li>
+        <li><span class="msi">check_circle</span> ربط وطباعة عبر طابعة البلوتوث</li>
+      </ul>
+    </div>
+    <div class="shot"><img src="nova/settings.jpg" alt="الإعدادات" /></div>
+  </div>
+</div></section>
+
+<!-- how to use -->
+<section class="sec" id="how"><div class="wrap">
+  <div class="sec-h">
+    <span class="kicker"><span class="msi">menu_book</span> طريقة الاستخدام</span>
+    <h2>ابدأ خلال خطوات بسيطة</h2>
+    <p>رتّب مولّدتك بالترتيب الصحيح، ثم ابدأ التحصيل وطباعة الإيصالات.</p>
+  </div>
+  <div class="steps">
+    <div class="step"><div class="n">1</div><div><h4><span class="msi">person_add</span> أنشئ حسابك واختر خطة</h4><p>سجّل حساب المولّدة باسمك، واختر الخطة المناسبة، وانتظر التفعيل من الإدارة.</p></div></div>
+    <div class="step"><div class="n">2</div><div><h4><span class="msi">grid_view</span> أضِف لوحة كهربائية</h4><p>من شاشة اللوحات، أنشئ لوحة جديدة وأعطِها اسمًا ورمزًا.</p></div></div>
+    <div class="step"><div class="n">3</div><div><h4><span class="msi">electrical_services</span> أضِف الجوزات</h4><p>افتح اللوحة وأضِف إليها الجوزات (الخطوط) التي يتفرّع منها المشتركون.</p></div></div>
+    <div class="step"><div class="n">4</div><div><h4><span class="msi">groups</span> أضِف المشتركين</h4><p>سجّل المشتركين مع الأمبير والفئة، ووزّعهم على الجوزات المناسبة.</p></div></div>
+    <div class="step"><div class="n">5</div><div><h4><span class="msi">price_change</span> حدّد السعر الشهري</h4><p>من التسعير الشهري، ضع سعر الأمبير لكل فئة للشهر الحالي.</p></div></div>
+    <div class="step"><div class="n">6</div><div><h4><span class="msi">badge</span> أضِف محاسبًا</h4><p>أنشئ حساب محاسب (اسم + هاتف + كلمة مرور) لتحصيل الاشتراكات نيابةً عنك.</p></div></div>
+    <div class="step"><div class="n">7</div><div><h4><span class="msi">receipt_long</span> حصّل واطبع الإيصال</h4><p>يحصّل المحاسب المبلغ من المشترك ويطبع الإيصال على طابعة البلوتوث فورًا.</p></div></div>
+    <div class="step"><div class="n">8</div><div><h4><span class="msi">insights</span> تابِع التقارير والمصروفات</h4><p>راجع التقارير الشهرية والمصروفات وصافي الربح، وزامِن بياناتك مع الخادم.</p></div></div>
+  </div>
+</div></section>
+
+<!-- plans (from real backend) -->
+<section class="sec" id="plans" style="background:#fff;border-block:1px solid var(--border)"><div class="wrap">
+  <div class="sec-h">
+    <span class="kicker"><span class="msi">sell</span> الخطط</span>
+    <h2>اختر الخطة المناسبة لك</h2>
+    <p>خطط الاشتراك المتاحة مباشرةً من الخادم.</p>
+  </div>
+  <div class="plans" id="plans"><div id="plansNote">جارٍ تحميل الخطط…</div></div>
+</div></section>
+
+<!-- screenshots gallery (all Nova images) -->
+<section class="sec" id="screens"><div class="wrap">
+  <div class="sec-h">
+    <span class="kicker"><span class="msi">photo_library</span> لقطات من التطبيق</span>
+    <h2>شاهد التطبيق أثناء العمل</h2>
+  </div>
+  <div class="gal">
+    <img src="nova/home.jpg" alt="الرئيسية" />
+    <img src="nova/home2.jpg" alt="لوحة التحكم" />
+    <img src="nova/price.jpg" alt="التسعير" />
+    <img src="nova/expenses.jpg" alt="المصروفات" />
+    <img src="nova/settings.jpg" alt="الإعدادات" />
+    <img src="nova/settings2.jpg" alt="الإعدادات" />
+    <img src="nova/bluetooth.png" alt="طابعة البلوتوث" />
+  </div>
+</div></section>
+
+<!-- cta band -->
+<section class="sec" style="padding-top:0"><div class="wrap">
+  <div class="band">
+    <h2>جاهز لإدارة مولّدتك باحترافية؟</h2>
+    <p>ابدأ الآن — أنشئ حسابك، اختر خطتك، ونظّم اشتراكاتك بسهولة.</p>
+    <a class="btn ghost" href="/admin"><span class="msi">login</span> الدخول إلى لوحة التحكم</a>
+  </div>
+</div></section>
+
+<footer>
+  <div class="wrap">
+    <div class="brand"><img src="blue.png" alt="Flash" style="width:30px;height:30px;border-radius:7px" /> Flash</div>
+    <div>نظام إدارة اشتراكات المولدات الكهربائية</div>
+    <small>© <span id="yr"></span> Flash — جميع الحقوق محفوظة</small>
+  </div>
+</footer>
+
+<script>
+  // current year
+  document.getElementById('yr').textContent = new Date().getFullYear();
+
+  // duration helper -> friendly Arabic label
+  function durLabel(days){
+    days = Number(days)||0;
+    if(days % 365 === 0 && days >= 365){ var y=days/365; return y===1?'سنة':(y+' سنوات'); }
+    if(days >= 360 && days <= 366) return 'سنة';
+    if(days % 30 === 0 && days >= 30){ var m=days/30; return m===1?'شهر':(m+' أشهر'); }
+    return days + ' يوم';
+  }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function featRow(on,label){
+    return '<li class="'+(on?'on':'off')+'"><span class="msi">'+(on?'check_circle':'cancel')+'</span>'+label+'</li>';
+  }
+
+  // Bring plans from the REAL backend (same origin: /api/subscription/plans).
+  fetch('/api/subscription/plans')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var plans = (data && data.plans) || [];
+      plans = plans.filter(function(p){ return p && p.active !== false; });
+      var box = document.getElementById('plans');
+      if(!plans.length){ box.innerHTML = '<div id="plansNote">لا توجد خطط متاحة حاليًّا.</div>'; return; }
+      // highlight the most feature-rich paid plan, else the longest one.
+      var hi = plans.reduce(function(a,b){ return ((b.price||0)>(a.price||0))?b:a; }, plans[0]);
+      box.innerHTML = plans.map(function(p){
+        var price = Number(p.price)||0;
+        var priceHtml = price>0 ? (price.toLocaleString('en-US')+' <small>د.ع</small>') : 'مجاني';
+        var isHi = (p.code===hi.code) && price>0;
+        return ''
+          + '<div class="plan'+(isHi?' feat-plan':'')+'">'
+          +   (isHi?'<span class="tag">الأكثر تكاملاً</span>':'')
+          +   '<h3>'+esc(p.name||p.code)+'</h3>'
+          +   '<div class="desc">'+esc(p.description||'')+'</div>'
+          +   '<div class="price">'+priceHtml+'</div>'
+          +   '<div class="meta">'
+          +     '<span class="chip"><span class="msi">schedule</span>'+durLabel(p.durationDays)+'</span>'
+          +     '<span class="chip"><span class="msi">devices</span>'+(Number(p.maxDevices)||1)+' جهاز</span>'
+          +   '</div>'
+          +   '<ul>'
+          +     featRow(p.syncEnabled,'المزامنة مع الخادم')
+          +     featRow(p.backupEnabled,'النسخ الاحتياطي السحابي')
+          +     featRow(p.ownerPanelEnabled,'لوحة المالك على الويب')
+          +     featRow(p.multiBranchEnabled,'تعدّد الفروع')
+          +   '</ul>'
+          +   '<div class="foot"><a class="btn" style="width:100%" href="/admin"><span class="msi">login</span> ابدأ الآن</a></div>'
+          + '</div>';
+      }).join('');
+    })
+    .catch(function(){
+      document.getElementById('plans').innerHTML = '<div id="plansNote">تعذّر تحميل الخطط حاليًّا. تحقّق من الاتصال وأعد المحاولة.</div>';
+    });
+</script>
+</body>
+</html>
