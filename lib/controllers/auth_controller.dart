@@ -481,11 +481,16 @@ class AuthController extends GetxController {
       // confirm deletes + logs out; cancel ABORTS the logout (stay signed in) so
       // the user neither loses data nor exposes it.
       final bool online = canSync && await _net.isOnline();
-      // Confirm first (ONLINE: "do you want to log out?"; OFFLINE: the wipe is
-      // unrecoverable → "local data will be deleted"). Cancel ABORTS the logout.
+      // v15 item 4: if there are PENDING unsynced records, warn explicitly that
+      // logout will permanently delete them (require explicit confirm). Else the
+      // usual confirm (ONLINE "log out?" / OFFLINE "local data will be deleted").
+      final int pending = sync.pendingCount.value;
+      final bool hasPending = pending > 0;
       final ok = await Get.defaultDialog<bool>(
-        title: 'logout'.tr,
-        middleText: online ? 'logout_confirm'.tr : 'logout_offline_wipe_msg'.tr,
+        title: hasPending ? 'warning'.tr : 'logout'.tr,
+        middleText: hasPending
+            ? 'logout_pending_warn'.trParams({'n': '$pending'})
+            : (online ? 'logout_confirm'.tr : 'logout_offline_wipe_msg'.tr),
         textConfirm: online ? 'logout'.tr : 'delete_local_data'.tr,
         textCancel: 'cancel'.tr,
         onConfirm: () => Get.back(result: true),

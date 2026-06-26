@@ -9,6 +9,7 @@ import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
+import 'package:generatormanagment/core/local_backup_service.dart';
 import 'package:generatormanagment/core/session_cache.dart';
 import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/account.dart';
@@ -337,6 +338,98 @@ class SettingsController extends GetxController {
       }
     } catch (e) {
       Get.snackbar('error'.tr, "${'import_failed'.tr}: $e");
+    }
+  }
+
+  // ==========================================================================
+  // v15 item 6 — SECURE local backup/restore of boards+circuits+subscribers
+  // (no history), encrypted with the OWNER PASSWORD, OWNER/ADMIN-ONLY, offline.
+  // ==========================================================================
+
+  /// Password prompt dialog (returns the entered password, or null on cancel).
+  Future<String?> _askBackupPassword(String titleKey) async {
+    final ctrl = TextEditingController();
+    return Get.dialog<String>(
+      AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(titleKey.tr),
+        content: TextField(
+          controller: ctrl,
+          obscureText: true,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: 'password'.tr,
+            prefixIcon: const Icon(Icons.lock_outline),
+          ),
+          onSubmitted: (v) => Get.back(result: v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
+          ElevatedButton(
+            onPressed: () => Get.back(result: ctrl.text),
+            child: Text('confirm'.tr),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Export boards+circuits+subscribers to `<GeneratorName>.backup` (encrypted
+  /// with the owner password) and share it. Owner/admin only.
+  Future<void> exportSubscriberBackup() async {
+    if (auth.isAccountant) {
+      Get.snackbar('error'.tr, 'no_permission'.tr);
+      return;
+    }
+    final pwd = await _askBackupPassword('backup_export');
+    if (pwd == null || pwd.isEmpty) return;
+    // The backup is encrypted with the OWNER password — verify it.
+    if (!await auth.verifyOwnerPassword(pwd)) {
+      Get.snackbar('error'.tr, 'wrong_password'.tr,
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
+      return;
+    }
+    isLoading.value = true;
+    try {
+      final gName = auth.account.value?.generatorName ?? 'Generator';
+      final path = await LocalBackupService()
+          .export(password: pwd, generatorName: gName);
+      await Share.shareXFiles([XFile(path)], text: 'Flash backup — $gName');
+    } catch (e) {
+      Get.snackbar('error'.tr, "${'export_failed'.tr}: $e");
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  /// Pick a `.backup` file + password and restore boards+circuits+subscribers.
+  /// Owner/admin only.
+  Future<void> importSubscriberBackup() async {
+    if (auth.isAccountant) {
+      Get.snackbar('error'.tr, 'no_permission'.tr);
+      return;
+    }
+    final res =
+        await FilePicker.platform.pickFiles(dialogTitle: 'select_backup_file'.tr);
+    final path = res?.files.single.path;
+    if (path == null) return;
+    final pwd = await _askBackupPassword('backup_import');
+    if (pwd == null || pwd.isEmpty) return;
+    isLoading.value = true;
+    try {
+      final counts = await LocalBackupService()
+          .import(file: File(path), password: pwd);
+      final total = counts.values.fold<int>(0, (a, b) => a + b);
+      SyncController.poke(); // the restore writes queue an upload
+      Get.snackbar('success'.tr, '${'backup_imported'.tr}: $total',
+          backgroundColor: Colors.green, colorText: Colors.white);
+    } on FormatException {
+      Get.snackbar('error'.tr, 'backup_wrong_password'.tr,
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
+    } catch (e) {
+      Get.snackbar('error'.tr, "${'import_failed'.tr}: $e");
+    } finally {
+      isLoading.value = false;
     }
   }
 

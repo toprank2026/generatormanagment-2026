@@ -8,18 +8,6 @@ import 'package:generatormanagment/views/widgets/shimmer_loading.dart';
 import 'package:generatormanagment/views/screens/subscribers_screen.dart';
 import 'package:generatormanagment/views/screens/boards_screen.dart';
 
-/// Compact plan label with the remaining plan time appended as
-/// `plan_Ndays` (e.g. `MONTHLY_29days`), or `plan_expired` once past the
-/// expiry. Returns just [base] when there is no expiry date.
-String _planWithDaysLeft(String base, String? expiresAt) {
-  if (expiresAt == null || expiresAt.isEmpty) return base;
-  final exp = DateTime.tryParse(expiresAt);
-  if (exp == null) return base;
-  final left = exp.difference(DateTime.now()).inDays;
-  if (left < 0) return '${base}_expired';
-  return '${base}_${left}days';
-}
-
 /// Compact "last pull" timestamp for the banner: `HH:mm` when it happened
 /// today, `d/M HH:mm` otherwise, or `never` when no pull has run yet.
 String _formatPullTime(String? iso) {
@@ -204,8 +192,19 @@ class DashboardScreen extends StatelessWidget {
                                     final base = (plan == null || plan.isEmpty)
                                         ? 'no_plan'.tr
                                         : plan.toUpperCase();
+                                    // v15: show SERVER-computed REMAINING days
+                                    // (not the total duration); never the local
+                                    // clock. Expired/0 -> expired label.
+                                    final rem = sub?.remainingDays;
+                                    final expired = sub?.status == 'expired' ||
+                                        (rem != null && rem <= 0);
+                                    final String label = expired
+                                        ? '$base • ${'subscription_expired'.tr}'
+                                        : (rem != null
+                                            ? '$base • $rem ${'days_left'.tr}'
+                                            : base);
                                     return Text(
-                                      _planWithDaysLeft(base, sub?.expiresAt),
+                                      label,
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 14,

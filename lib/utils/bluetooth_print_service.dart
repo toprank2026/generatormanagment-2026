@@ -9,6 +9,7 @@ import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/utils/printer_prefs.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'dart:ui' as ui;
 
 class BluetoothPrintService {
@@ -67,9 +68,13 @@ class BluetoothPrintService {
     for (int copy = 0; copy < 2; copy++) {
     bluetooth.write(" \n"); // Clear buffer / separate copies
 
-    // Header: generator/business name (set at sign-up)
-    await printArabicText(_generatorName(), "", fontSize: 30, textAlign: 1);
-    await Future.delayed(const Duration(milliseconds: 100));
+    // Header: generator/business name (set at sign-up). v15: never "TopRank";
+    // print nothing when there is no generator name.
+    final gName = _generatorName();
+    if (gName.isNotEmpty) {
+      await printArabicText(gName, "", fontSize: 30, textAlign: 1);
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
     await printArabicText("وصل استلام", "", fontSize: 20, textAlign: 1);
     await Future.delayed(const Duration(milliseconds: 120));
 
@@ -111,10 +116,47 @@ class BluetoothPrintService {
     await printArabicText("شكراً لكم!", "", fontSize: 20, textAlign: 1);
     await Future.delayed(const Duration(milliseconds: 100));
 
+    // v15: footer branding — "Powered by Flash" + logo + phone.
+    bluetooth.printNewLine();
+    await printArabicText("Powered by Flash", "", fontSize: 18, textAlign: 1);
+    await Future.delayed(const Duration(milliseconds: 80));
+    await _printLogo();
+    await Future.delayed(const Duration(milliseconds: 80));
+    await printArabicText("+964 770 821 6878", "", fontSize: 16, textAlign: 1);
+    await Future.delayed(const Duration(milliseconds: 80));
+
     bluetooth.printNewLine();
     bluetooth.printNewLine();
     bluetooth.printNewLine(); // Extra lines for tear-off
     } // end copy loop (two copies)
+  }
+
+  /// v15: prints the bundled blue.png logo, scaled to a thermal-friendly size
+  /// and centred (same reliable image path as the QR). Best-effort.
+  Future<void> _printLogo() async {
+    try {
+      final data = await rootBundle.load('images/blue.png');
+      final codec = await ui.instantiateImageCodec(
+        data.buffer.asUint8List(),
+        targetWidth: 140,
+      );
+      final src = (await codec.getNextFrame()).image;
+      final double paper = PrinterPrefs.pixelWidth;
+      final double w = src.width.toDouble();
+      final double h = src.height.toDouble();
+      final double off = (paper - w) / 2;
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.drawRect(
+          Rect.fromLTWH(0, 0, paper, h + 8), Paint()..color = Colors.white);
+      canvas.drawImage(src, Offset(off < 0 ? 0 : off, 4), Paint());
+      final picture = recorder.endRecording();
+      final img = await picture.toImage(paper.toInt(), (h + 8).toInt());
+      final png = await img.toByteData(format: ui.ImageByteFormat.png);
+      if (png != null) {
+        await bluetooth.printImageBytes(png.buffer.asUint8List());
+      }
+    } catch (_) {/* logo is best-effort; text branding still prints */}
   }
 
   /// The header printed on the receipt: the ACTIVE BRANCH name (the generator's
@@ -135,7 +177,8 @@ class BluetoothPrintService {
       }
       if (g != null && g.trim().isNotEmpty) return g.trim();
     } catch (_) {}
-    return 'TopRank';
+    // v15: never print the "TopRank" literal — generator name only.
+    return '';
   }
 
   /// URL the receipt QR encodes: opens the public receipt page (no login) in the

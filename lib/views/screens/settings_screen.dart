@@ -422,6 +422,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             }),
 
+            // v15 item 6: secure LOCAL backup (boards+circuits+subscribers,
+            // owner-password-encrypted). Owner/admin-only; works fully offline
+            // (no plan requirement). Tap -> export or import.
+            Obx(() {
+              if (!auth.isAdmin) return const SizedBox.shrink();
+              return Container(
+                margin: const EdgeInsets.only(top: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: ListTile(
+                  leading: const Icon(Icons.shield_outlined,
+                      color: Color(0xFF1565C0)),
+                  title: Text('local_backup'.tr),
+                  subtitle: Text('local_backup_subtitle'.tr),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Get.bottomSheet(
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(20)),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ListTile(
+                            leading: const Icon(Icons.upload_file,
+                                color: Color(0xFF1565C0)),
+                            title: Text('backup_export'.tr),
+                            onTap: () {
+                              Get.back();
+                              controller.exportSubscriberBackup();
+                            },
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.download,
+                                color: Color(0xFF1565C0)),
+                            title: Text('backup_import'.tr),
+                            onTap: () {
+                              Get.back();
+                              controller.importSubscriberBackup();
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+
             // Sync + Manage Devices (online account features)
             if (auth.isLoggedIn.value) ...[
               // Sync tile: owner-only, and only shown when the active plan

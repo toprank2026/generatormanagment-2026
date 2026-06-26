@@ -9,6 +9,12 @@ class Subscription {
   final String? startedAt;
   final String? expiresAt;
 
+  /// v15: SERVER-computed remaining days (expiresAt − server now), refreshed on
+  /// each online validation. Displayed instead of the total duration; never
+  /// recomputed from the local device clock (manipulation-proof). null = no
+  /// expiry / open-ended plan.
+  final int? remainingDays;
+
   /// Per-plan capability flags resolved from the account's active plan
   /// (sync / backup / ownerPanel). Each capability is enabled unless the map
   /// explicitly says `false`, so an absent/unknown flag stays TRUE for
@@ -20,6 +26,7 @@ class Subscription {
     this.planCode,
     this.startedAt,
     this.expiresAt,
+    this.remainingDays,
     Map<String, dynamic>? features,
   }) : features = features ?? const {};
 
@@ -42,6 +49,7 @@ class Subscription {
       planCode: (j['planCode'] ?? j['plan'])?.toString(),
       startedAt: j['startedAt'] as String?,
       expiresAt: j['expiresAt'] as String?,
+      remainingDays: (j['remainingDays'] as num?)?.toInt(),
       features: j['features'] is Map
           ? (j['features'] as Map).cast<String, dynamic>()
           : const {},
@@ -53,6 +61,7 @@ class Subscription {
         'planCode': planCode,
         'startedAt': startedAt,
         'expiresAt': expiresAt,
+        'remainingDays': remainingDays,
         'features': features,
       };
 }

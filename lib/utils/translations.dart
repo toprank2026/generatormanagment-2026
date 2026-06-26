@@ -355,8 +355,16 @@ class Messages extends Translations {
       'sync_failed': 'Sync failed',
       'all_synced': 'All data synced',
       'no_plan': 'No plan',
+      'days_left': 'days left',
       'backup': 'Backup',
       'backup_subtitle': 'Export, restore & cloud backup',
+      'local_backup': 'Local backup (subscribers)',
+      'local_backup_subtitle':
+          'Export/import boards, circuits & subscribers — encrypted with your password',
+      'backup_export': 'Export backup',
+      'backup_import': 'Import backup',
+      'backup_imported': 'Restored records',
+      'backup_wrong_password': 'Wrong password or the file is corrupted',
       'sync_subtitle': 'Status, pending changes & sync now',
       'generator_name': 'Generator name',
       'up_to_date': 'Up to date',
@@ -374,6 +382,8 @@ class Messages extends Translations {
       'delete_local_data': 'Delete local data',
       'logout_offline_wipe_msg':
           "You're offline — local data can't be re-downloaded. Delete it anyway, or cancel logout?",
+      'logout_pending_warn':
+          'You have @n unsynchronized record(s). Logging out will PERMANENTLY DELETE them. Please synchronize before logging out. Continue?',
       'delete_local_data_subtitle': "Clear this device's data (server copy kept)",
       'delete_local_data_confirm':
           'This clears all data on THIS device. The server copy is kept — use Update to restore it. Continue?',
@@ -786,8 +796,16 @@ class Messages extends Translations {
       'sync_failed': 'فشلت المزامنة',
       'all_synced': 'تمت مزامنة جميع البيانات',
       'no_plan': 'لا توجد خطة',
+      'days_left': 'يوم متبقٍّ',
       'backup': 'النسخ الاحتياطي',
       'backup_subtitle': 'تصدير واستعادة ونسخ سحابي',
+      'local_backup': 'نسخة احتياطية محلية (المشتركون)',
+      'local_backup_subtitle':
+          'تصدير/استيراد اللوحات والجوزات والمشتركين — مشفّرة بكلمة مرورك',
+      'backup_export': 'تصدير نسخة احتياطية',
+      'backup_import': 'استيراد نسخة احتياطية',
+      'backup_imported': 'السجلات المستعادة',
+      'backup_wrong_password': 'كلمة المرور غير صحيحة أو الملف تالف',
       'sync_subtitle': 'الحالة والتغييرات المعلّقة والمزامنة الآن',
       'generator_name': 'اسم المولدة',
       'up_to_date': 'محدّث',
@@ -805,6 +823,8 @@ class Messages extends Translations {
       'delete_local_data': 'حذف البيانات المحلية',
       'logout_offline_wipe_msg':
           'أنت غير متصل — لا يمكن إعادة تنزيل البيانات المحلية. هل تريد حذفها على أي حال أم إلغاء تسجيل الخروج؟',
+      'logout_pending_warn':
+          'لديك @n سجلّ غير متزامن. تسجيل الخروج سيحذفها نهائيًّا. يُرجى المزامنة قبل الخروج. هل تريد المتابعة؟',
       'delete_local_data_subtitle': 'مسح بيانات هذا الجهاز (تبقى نسخة الخادم)',
       'delete_local_data_confirm':
           'سيؤدي هذا إلى مسح كل البيانات على هذا الجهاز. تبقى نسخة الخادم — استخدم «تحديث» لاستعادتها. هل تريد المتابعة؟',
