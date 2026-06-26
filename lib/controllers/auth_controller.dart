@@ -484,6 +484,11 @@ class AuthController extends GetxController {
       // v15 item 4: if there are PENDING unsynced records, warn explicitly that
       // logout will permanently delete them (require explicit confirm). Else the
       // usual confirm (ONLINE "log out?" / OFFLINE "local data will be deleted").
+      // Refresh first so the count reflects the REAL outbox (not a stale
+      // heartbeat snapshot) — critical for the unrecoverable offline wipe.
+      try {
+        await sync.refreshPending();
+      } catch (_) {}
       final int pending = sync.pendingCount.value;
       final bool hasPending = pending > 0;
       final ok = await Get.defaultDialog<bool>(

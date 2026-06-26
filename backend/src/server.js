@@ -57,8 +57,15 @@ function buildApp() {
   app.use('/app-images', express.static(imagesDir));
 
   // Uploaded landing-page banner images (admin-uploaded, served publicly).
+  // nosniff so a mistyped/renamed upload can't be sniffed into an executable
+  // type (defence-in-depth; the upload filter already allows raster images only).
   fs.mkdirSync(env.UPLOADS_DIR, { recursive: true });
-  app.use('/uploads', express.static(env.UPLOADS_DIR));
+  app.use(
+    '/uploads',
+    express.static(env.UPLOADS_DIR, {
+      setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff'),
+    })
+  );
 
   // Admin single-page app at /admin (hash-routed; serve index.html for the
   // root and any sub-path so client routing works).

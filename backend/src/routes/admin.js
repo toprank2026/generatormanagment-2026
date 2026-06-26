@@ -33,8 +33,11 @@ const bannerUpload = multer({
   storage: bannerStorage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB cap
   fileFilter(req, file, cb) {
-    if (/^image\//.test(file.mimetype)) return cb(null, true);
-    return cb(new HttpError(400, 'Only image uploads are allowed', 'NOT_AN_IMAGE'));
+    // RASTER images only — exclude SVG (stored-XSS via inline <script> when the
+    // file is opened directly from /uploads). Banners are only ever shown via
+    // <img>, so a raster allowlist loses nothing.
+    if (/^image\/(png|jpe?g|webp|gif)$/.test(file.mimetype)) return cb(null, true);
+    return cb(new HttpError(400, 'Only PNG/JPG/WEBP/GIF images are allowed', 'NOT_AN_IMAGE'));
   },
 });
 
