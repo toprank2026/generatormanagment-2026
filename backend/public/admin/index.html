@@ -616,6 +616,13 @@ var API={
   upsertPlan:function(body){ return api("PUT","/api/admin/plans",body); },
   deletePlan:function(code){ return api("DELETE","/api/admin/plans/"+encodeURIComponent(code)); },
   recentData:function(limit,page){ return api("GET","/api/admin/recent-data?limit="+(limit||10)+"&page="+(page||1)); },
+  // Landing: advertisement banners (admin CRUD) + promo video (singleton).
+  banners:function(){ return api("GET","/api/admin/banners"); },
+  createBanner:function(form){ return api("POST","/api/admin/banners",form,true); },
+  updateBanner:function(id,form){ return api("PUT","/api/admin/banners/"+encodeURIComponent(id),form,true); },
+  deleteBanner:function(id){ return api("DELETE","/api/admin/banners/"+encodeURIComponent(id)); },
+  landingVideo:function(){ return api("GET","/api/admin/landing-video"); },
+  setLandingVideo:function(url,enabled){ return api("PUT","/api/admin/landing-video",{url:url,enabled:enabled}); },
   publicReceipt:function(uuid){ return api("GET","/api/public/receipt/"+encodeURIComponent(uuid)); },
   publicReceiptHistory:function(uuid){ return api("GET","/api/public/receipt/"+encodeURIComponent(uuid)+"/history"); }
 };
@@ -902,7 +909,8 @@ function shell(activeRoute,content){
   var nav=el("nav",[
     navLink("#/dashboard","لوحة التحكم",activeRoute),
     navLink("#/users","المستخدمون",activeRoute),
-    navLink("#/plans","الخطط",activeRoute)
+    navLink("#/plans","الخطط",activeRoute),
+    navLink("#/landing","اللافتات والفيديو",activeRoute)
   ]);
   var who=el("span",{class:"who",text:(me.name||me.username||"المدير")});
   var side=el("div",{class:"sidebar"},[
@@ -1037,7 +1045,8 @@ var routes=[
   {re:/^#\/users\/([^\/]+)\/data\/([^\/]+)$/, view:viewUserEntity},
   {re:/^#\/users\/([^\/]+)\/sub\/([^\/]+)$/, view:viewUserStatement},
   {re:/^#\/users\/([^\/]+)$/, view:viewUserDetail},
-  {re:/^#\/plans$/, view:viewPlans}
+  {re:/^#\/plans$/, view:viewPlans},
+  {re:/^#\/landing$/, view:viewLanding}
 ];
 // True when the current hash maps to a public (no-login) route — used so a
 // stale token's background /me 401 never bounces a public page to login.
@@ -3053,6 +3062,149 @@ function openPlanModal(existing,onDone){
         el("label",{class:"check",style:"margin-top:8px"},[ownerPanelChk,el("span",{text:"لوحة المالك"})]),
         el("label",{class:"check",style:"margin-top:8px"},[multiBranchChk,el("span",{text:"تعدّد الفروع (Multi-Branch)"})])
       ])
+    ]),
+    footer:[el("button",{class:"btn neutral",text:"إلغاء",onclick:closeModal}),saveBtn]
+  });
+}
+
+/* ============================================================
+   View: Landing banners & promo video (admin-only)
+   ============================================================ */
+function viewLanding(){
+  shell("#/landing",loadingBlock("جارٍ تحميل اللافتات…"));
+  Promise.all([
+    API.banners().catch(function(){ return {banners:[]}; }),
+    API.landingVideo().catch(function(){ return {video:{url:"",enabled:false}}; })
+  ]).then(function(res){
+    renderLanding(normalizeList(res[0],"banners"),(res[1]&&res[1].video)||{url:"",enabled:false});
+  }).catch(function(err){
+    if(err.status===401) return;
+    shell("#/landing",errorBlock(err,viewLanding));
+  });
+
+  function renderLanding(banners,video){
+    var content=el("div");
+    content.appendChild(pageHead("اللافتات والفيديو",[
+      el("button",{class:"btn",onclick:function(){ openBannerModal(null,viewLanding); }},["+ لافتة جديدة"])
+    ]));
+
+    // ---- Banners table ----
+    var card=el("div",{class:"card"});
+    var b=el("div",{class:"card-b flush"});
+    if(!banners.length){
+      b.className="card-b";
+      b.appendChild(el("div",{class:"empty"},[el("div",{class:"big"},[mi("image")]),"لا توجد لافتات بعد. أضِف لافتتك الأولى."]));
+    } else {
+      var tw=el("div",{class:"tbl-wrap"});
+      var tbl=el("table");
+      tbl.appendChild(el("thead",[el("tr",[th("الصورة"),th("النسبة"),th("الترتيب"),th("مفعّلة"),th("")])]));
+      var tb=el("tbody");
+      banners.forEach(function(bn){
+        var img=el("img",{src:bn.imageUrl||"",alt:"لافتة",style:"width:120px;height:auto;max-height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border);background:#f4f6fa;display:block"});
+        var toggle=el("input",{type:"checkbox"});
+        toggle.checked=bn.enabled!==false;
+        toggle.addEventListener("change",function(){
+          var form=new FormData(); form.append("enabled",toggle.checked?"true":"false");
+          API.updateBanner(bn.id,form).then(function(){ toast(toggle.checked?"تم تفعيل اللافتة":"تم تعطيل اللافتة","ok"); })
+            .catch(function(err){ toggle.checked=!toggle.checked; toast(err.message||"فشل التحديث","err"); });
+        });
+        tb.appendChild(el("tr",[
+          el("td",[img]),
+          el("td",[el("span",{class:"badge blue",text:bn.ratio||"2:1"})]),
+          el("td",{class:"muted",text:String(bn.order!=null?bn.order:0)}),
+          el("td",[el("label",{class:"check"},[toggle])]),
+          el("td",{class:"right"},[el("div",{class:"acts",style:"justify-content:flex-end"},[
+            el("button",{class:"btn sm ghost",onclick:function(){ openBannerModal(bn,viewLanding); }},["تعديل"]),
+            el("button",{class:"btn sm danger ghost",onclick:function(){ deleteBanner(bn); }},["حذف"])
+          ])])
+        ]));
+      });
+      tbl.appendChild(tb); tw.appendChild(tbl); b.appendChild(tw);
+    }
+    card.appendChild(b);
+    content.appendChild(card);
+
+    // ---- Promo video ----
+    content.appendChild(el("div",{class:"page-head",style:"margin-top:26px"},[el("h1",{text:"الفيديو الترويجي"})]));
+    var vCard=el("div",{class:"card"});
+    var vBody=el("div",{class:"card-b"});
+    var vErr=el("div");
+    var vUrl=el("input",{class:"input",type:"text",placeholder:"رابط يوتيوب / فيميو / فيديو مباشر",value:(video.url||"")});
+    var vEnabled=el("input",{type:"checkbox"});
+    vEnabled.checked=!!video.enabled;
+    var vSave=el("button",{class:"btn",text:"حفظ الفيديو",onclick:function(){
+      clear(vErr);
+      vSave.disabled=true; clear(vSave); vSave.appendChild(el("span",{class:"spin white"}));
+      API.setLandingVideo((vUrl.value||"").trim(),vEnabled.checked).then(function(){
+        toast("تم حفظ الفيديو","ok"); viewLanding();
+      }).catch(function(err){
+        vSave.disabled=false; clear(vSave); vSave.textContent="حفظ الفيديو";
+        vErr.appendChild(el("div",{class:"alert err",text:err.message||"فشل حفظ الفيديو"}));
+      });
+    }});
+    vBody.appendChild(vErr);
+    vBody.appendChild(el("div",{class:"field"},[el("label",{text:"رابط الفيديو"}),vUrl]));
+    vBody.appendChild(el("div",{class:"field"},[el("label",{class:"check"},[vEnabled,el("span",{text:"عرض الفيديو في صفحة الهبوط"})])]));
+    vBody.appendChild(el("p",{class:"muted",style:"margin:4px 0 14px",text:"اترك الرابط فارغًا لإخفاء/حذف الفيديو. يُكتشف النوع تلقائيًّا (يوتيوب / فيميو / مباشر)."}));
+    vBody.appendChild(vSave);
+    vCard.appendChild(vBody);
+    content.appendChild(vCard);
+
+    shell("#/landing",content);
+  }
+
+  function deleteBanner(bn){
+    confirmModal({
+      title:"حذف اللافتة", danger:true, confirmText:"حذف",
+      message:"هل تريد حذف هذه اللافتة نهائيًّا؟",
+      onConfirm:function(){ return API.deleteBanner(bn.id).then(function(){ toast("تم حذف اللافتة","ok"); viewLanding(); }); }
+    });
+  }
+}
+
+function openBannerModal(existing,onDone){
+  var isEdit=!!existing;
+  var bn=existing||{};
+  var errBox=el("div");
+  var fileIn=el("input",{class:"input",type:"file",accept:"image/*"});
+  var ratioSel=el("select",{class:"input"});
+  ["1:1","2:1","3:1"].forEach(function(r){
+    var o=el("option",{value:r,text:r}); if((bn.ratio||"2:1")===r) o.selected=true; ratioSel.appendChild(o);
+  });
+  var order=el("input",{class:"input",type:"number",placeholder:"0",value:(bn.order!=null?bn.order:"")});
+  var enabledChk=el("input",{type:"checkbox"});
+  enabledChk.checked=isEdit?(bn.enabled!==false):true;
+  var preview=isEdit&&bn.imageUrl?el("img",{src:bn.imageUrl,alt:"معاينة",style:"max-width:100%;max-height:180px;border-radius:10px;border:1px solid var(--border);margin-bottom:6px;display:block"}):null;
+
+  var saveBtn=el("button",{class:"btn",text:isEdit?"حفظ التغييرات":"إنشاء لافتة",onclick:function(){
+    clear(errBox);
+    if(!isEdit && (!fileIn.files||!fileIn.files[0])){ errBox.appendChild(el("div",{class:"alert err",text:"اختر صورة اللافتة."})); return; }
+    var form=new FormData();
+    if(fileIn.files&&fileIn.files[0]) form.append("image",fileIn.files[0]);
+    form.append("ratio",ratioSel.value);
+    form.append("enabled",enabledChk.checked?"true":"false");
+    if(order.value!=="") form.append("order",String(Number(order.value)));
+    saveBtn.disabled=true; clear(saveBtn); saveBtn.appendChild(el("span",{class:"spin white"}));
+    var p=isEdit?API.updateBanner(bn.id,form):API.createBanner(form);
+    p.then(function(){
+      toast(isEdit?"تم تحديث اللافتة":"تم إنشاء اللافتة","ok"); closeModal(); if(onDone) onDone();
+    }).catch(function(err){
+      saveBtn.disabled=false; clear(saveBtn); saveBtn.textContent=isEdit?"حفظ التغييرات":"إنشاء لافتة";
+      errBox.appendChild(el("div",{class:"alert err",text:err.message||"فشل الحفظ"}));
+    });
+  }});
+
+  modal({
+    title:isEdit?"تعديل اللافتة":"لافتة جديدة", wide:true,
+    body:el("div",[
+      errBox,
+      preview,
+      el("div",{class:"field"},[el("label",{text:isEdit?"استبدال الصورة (اختياري)":"صورة اللافتة"}),fileIn]),
+      el("div",{class:"row"},[
+        el("div",{class:"field"},[el("label",{text:"النسبة"}),ratioSel]),
+        el("div",{class:"field"},[el("label",{text:"الترتيب"}),order])
+      ]),
+      el("div",{class:"field"},[el("label",{class:"check"},[enabledChk,el("span",{text:"مفعّلة (تظهر في صفحة الهبوط)"})])])
     ]),
     footer:[el("button",{class:"btn neutral",text:"إلغاء",onclick:closeModal}),saveBtn]
   });

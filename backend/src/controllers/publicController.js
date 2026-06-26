@@ -3,6 +3,7 @@
 const User = require('../models/User');
 const SyncRecord = require('../models/SyncRecord');
 const asyncHandler = require('../utils/asyncHandler');
+const { buildLandingPayload } = require('./landingController');
 
 /**
  * Receipt fields exposed publicly (scan-a-QR view). Whitelisted so the public
@@ -160,4 +161,20 @@ const getPublicReceiptHistory = asyncHandler(async (req, res) => {
   res.status(200).json({ found: true, subscriberName, generatorName, receipts });
 });
 
-module.exports = { getPublicReceipt, getPublicReceiptHistory };
+/**
+ * GET /api/public/landing  (PUBLIC — no auth)
+ *
+ * Landing-page content: the ENABLED advertisement banners (sorted by order) and
+ * the ENABLED promo video (provider auto-detected). Always 200.
+ *
+ * Response: {
+ *   banners: [{ id, imageUrl, ratio, order }],
+ *   video: { url, provider } | null
+ * }
+ */
+const getPublicLanding = asyncHandler(async (req, res) => {
+  const payload = await buildLandingPayload();
+  res.status(200).json(payload);
+});
+
+module.exports = { getPublicReceipt, getPublicReceiptHistory, getPublicLanding };

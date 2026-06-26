@@ -39,11 +39,22 @@ function serializeSubscription(sub) {
   // active. Other statuses pass through unchanged.
   const status =
     s.status === 'active' && !isSubscriptionActive(s) ? 'expired' : s.status || 'none';
+  // Server-computed days left until expiry (clamped at 0; null when no expiry is
+  // set). Uses the server clock so clients don't have to trust device time. Once
+  // expired this is 0 (Math.max floor), matching the downgraded 'expired' status.
+  let remainingDays = null;
+  if (s.expiresAt) {
+    const exp = s.expiresAt instanceof Date ? s.expiresAt : new Date(s.expiresAt);
+    if (!Number.isNaN(exp.getTime())) {
+      remainingDays = Math.max(0, Math.ceil((exp.getTime() - Date.now()) / 86400000));
+    }
+  }
   return {
     planCode: s.planCode || null,
     status,
     startedAt: toIso(s.startedAt),
     expiresAt: toIso(s.expiresAt),
+    remainingDays,
   };
 }
 

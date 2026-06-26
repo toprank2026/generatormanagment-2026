@@ -50,6 +50,7 @@ backend/.env
 backend/.env.local
 backend/backups/
 backend/.backups/
+backend/uploads/
 backend/*.db
 
 # --- Local test / dev artifacts ---

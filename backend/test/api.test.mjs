@@ -174,6 +174,7 @@ test('register -> 201 { token, account } with bound device', async () => {
     status: 'none',
     startedAt: null,
     expiresAt: null,
+    remainingDays: null, // no expiresAt -> remainingDays null (server-computed)
     features: { sync: true, backup: true, ownerPanel: true, multiBranch: false },
   });
   // calling device is bound + marked current.
@@ -267,6 +268,7 @@ test('POST /api/subscription/request -> pending with null dates', async () => {
     status: 'pending',
     startedAt: null,
     expiresAt: null,
+    remainingDays: null, // no expiresAt -> remainingDays null (server-computed)
   });
 });
 

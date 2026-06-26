@@ -593,7 +593,35 @@ Errors: `400` missing `entity`, `404 code=BRANCH_NOT_FOUND`, `403 code=FORBIDDEN
 - `GET    /api/admin/plans`                          list all plans
 - `PUT    /api/admin/plans`                          upsert a plan (body = Plan)
 - `DELETE /api/admin/plans/:code`                    delete a plan
+- `GET    /api/admin/banners`                         list all landing banners (see below)
+- `POST   /api/admin/banners`                         create a banner (multipart: `image` file + `ratio` + `enabled` + `order`)
+- `PUT    /api/admin/banners/:id`                     edit `ratio`/`enabled`/`order` (+ optional new `image` file)
+- `DELETE /api/admin/banners/:id`                     delete a banner (+ its image file)
+- `GET    /api/admin/landing-video`                   current promo-video setting
+- `PUT    /api/admin/landing-video`                   body `{ "url": "...", "enabled": true|false }` (empty `url` disables)
 - `GET    /api/admin/events`                         Server-Sent Events stream (admin via `?token=`, see below)
+
+### Landing banners & promo video  (admin)
+
+Drive the public landing page (`/admin/landing.html`). **Banner images** are
+uploaded as `multipart/form-data` (field name `image`, images only, ≤10 MB),
+stored on disk under `UPLOADS_DIR` (default `backend/uploads/`), and served
+publicly at `/uploads/<file>`. `imageUrl` is that public path.
+
+```jsonc
+// Banner (admin shape)
+{ "id":"mongoid", "imagePath":"banner-….jpg", "imageUrl":"/uploads/banner-….jpg",
+  "ratio":"1:1|2:1|3:1", "enabled":true, "order":0, "createdAt":"ISO" }
+
+// GET  /api/admin/banners            -> { "banners": [ Banner, … ] }   // sorted by order, then createdAt
+// POST /api/admin/banners            (multipart) -> 201 { "banner": Banner }    // 400 NO_FILE / NOT_AN_IMAGE
+// PUT  /api/admin/banners/:id        (multipart, all fields optional) -> 200 { "banner": Banner }  // 404 BANNER_NOT_FOUND
+// DELETE /api/admin/banners/:id      -> 200 { "ok": true }             // 404 BANNER_NOT_FOUND
+
+// GET  /api/admin/landing-video      -> { "video": { "url":"", "enabled":false } }
+// PUT  /api/admin/landing-video      body { "url":"https://youtu.be/…", "enabled":true }
+//                                    -> { "video": { "url":"…", "enabled":true } }   // empty url => enabled forced false
+```
 
 The admin SPA (`backend/public/admin/index.html`) is a hash-routed single-file
 app driving exactly these endpoints with a Bearer JWT.
@@ -712,6 +740,23 @@ exists.
 The Flutter receipt QR encodes `${API_BASE_URL}/admin/#/r/<uuid>`; the admin SPA's
 `#/r/:uuid` route renders this standalone (no login / no nav).
 
+### GET `/api/public/landing`  (public)
+
+Landing-page content for `/admin/landing.html`: the **enabled** advertisement
+banners (sorted by `order`, then `createdAt`) and the **enabled** promo video.
+Always `200`.
+
+```jsonc
+{
+  "banners": [
+    { "id":"mongoid", "imageUrl":"/uploads/banner-….jpg", "ratio":"2:1", "order":0 }
+  ],
+  "video": { "url":"https://youtu.be/abc", "provider":"youtube" }  // null when disabled/empty
+}
+```
+`provider` is auto-detected from the video URL: `youtube`
+(`youtube.com`/`youtu.be`), `vimeo` (`vimeo.com`), else `direct`.
+
 ---
 
 ## Objects
@@ -749,6 +794,7 @@ for top-level owners, admins, and accountants.
   "status": "none|pending|active|rejected|expired",
   "startedAt": "ISO|null",
   "expiresAt": "ISO|null",
+  "remainingDays": 12,         // server-computed days left until expiry (clamped >=0); null when no expiresAt
   "features": {                // resolved LIVE from the active plan's flags
     "sync": true,              // online data sync (push/pull)
     "backup": true,            // cloud backup
@@ -756,6 +802,13 @@ for top-level owners, admins, and accountants.
   }
 }
 ```
+`remainingDays` is computed by `serializeSubscription` from the **server clock**
+and `expiresAt` (`Math.ceil((expiresAt - now)/86400000)`, floored at 0). It is
+`null` when no `expiresAt` is set, and `0` once expired (matching the downgraded
+`"expired"` status). It flows through every subscription-bearing response
+(`/auth/login`, `/auth/me`, `register`, `/api/subscription`, and accountant /
+branch inheritance).
+
 **Expiry enforcement.** A subscription is *effectively active* only when its
 stored `status` is `active` **and** it has not passed `expiresAt` (a null
 `expiresAt` means no expiry). Once the expiry passes, the served `status` is

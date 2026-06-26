@@ -56,6 +56,10 @@ function buildApp() {
   const imagesDir = path.join(__dirname, '..', 'images');
   app.use('/app-images', express.static(imagesDir));
 
+  // Uploaded landing-page banner images (admin-uploaded, served publicly).
+  fs.mkdirSync(env.UPLOADS_DIR, { recursive: true });
+  app.use('/uploads', express.static(env.UPLOADS_DIR));
+
   // Admin single-page app at /admin (hash-routed; serve index.html for the
   // root and any sub-path so client routing works).
   const adminDir = path.join(__dirname, '..', 'public', 'admin');

@@ -134,6 +134,23 @@
   @media(max-width:560px){.mtrack img{height:280px}}
   @media(prefers-reduced-motion:reduce){.mtrack{animation:none}}
 
+  /* ===== advertisement banners (top of page) ===== */
+  .banners{background:#fff;border-bottom:1px solid var(--border)}
+  .banners .wrap{padding:18px 20px}
+  .banner-slot{position:relative;width:100%;border-radius:16px;overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--border);background:#eef2f8}
+  .banner-slot.r-1x1{aspect-ratio:1/1}
+  .banner-slot.r-2x1{aspect-ratio:2/1}
+  .banner-slot.r-3x1{aspect-ratio:3/1}
+  .banner-slot>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s ease}
+  .banner-slot>img.show{opacity:1}
+  .banner-dots{display:flex;justify-content:center;gap:8px;margin-top:12px}
+  .banner-dots button{width:9px;height:9px;border-radius:50%;border:none;background:#c5cfde;cursor:pointer;padding:0;transition:.15s}
+  .banner-dots button.active{background:var(--primary);transform:scale(1.2)}
+
+  /* ===== promo video (near footer) ===== */
+  .video-frame{max-width:880px;margin:0 auto;border-radius:18px;overflow:hidden;box-shadow:var(--shadow-lg);border:1px solid var(--border);background:#000;aspect-ratio:16/9}
+  .video-frame iframe,.video-frame video{width:100%;height:100%;border:0;display:block;background:#000}
+
   /* ===== contact ===== */
   .contact-row{display:flex;gap:18px;justify-content:center;flex-wrap:wrap}
   .contact-card{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:18px 24px;min-width:280px;transition:.15s}
@@ -169,6 +186,9 @@
     <a href="#contact">تواصل</a>
   </div>
 </div></div>
+
+<!-- advertisement banners (populated from /api/public/landing; hidden if none) -->
+<section class="banners" id="bannersSection" style="display:none"><div class="wrap" id="bannersWrap"></div></section>
 
 <!-- hero -->
 <header class="hero"><div class="wrap">
@@ -315,6 +335,16 @@
   </div>
 </div></section>
 
+<!-- promo video (populated from /api/public/landing; hidden if none) -->
+<section class="sec" id="videoSection" style="display:none;background:#fff;border-block:1px solid var(--border)"><div class="wrap">
+  <div class="sec-h">
+    <span class="kicker"><span class="msi">play_circle</span> شاهد بالفيديو</span>
+    <h2>تعرّف على Flash في دقائق</h2>
+    <p>جولة سريعة على أهم مزايا النظام.</p>
+  </div>
+  <div class="video-frame" id="videoFrame"></div>
+</div></section>
+
 <footer>
   <div class="wrap">
     <div class="brand"><img src="blue.png" alt="Flash" style="width:30px;height:30px;border-radius:7px" /> Flash</div>
@@ -330,6 +360,75 @@
 <script>
   // current year
   document.getElementById('yr').textContent = new Date().getFullYear();
+
+  // ===== landing content: advertisement banners + promo video =====
+  function ratioClass(r){ return r==='1:1' ? 'r-1x1' : (r==='3:1' ? 'r-3x1' : 'r-2x1'); }
+
+  // Build an embeddable video player from a watch URL + detected provider.
+  function youtubeId(url){
+    var m = String(url).match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/|v\/))([\w-]{6,})/);
+    if(m) return m[1];
+    var q = String(url).match(/[?&]v=([\w-]{6,})/);
+    return q ? q[1] : null;
+  }
+  function vimeoId(url){ var m = String(url).match(/vimeo\.com\/(?:video\/)?(\d+)/); return m ? m[1] : null; }
+  function renderVideo(video){
+    var sec = document.getElementById('videoSection');
+    var frame = document.getElementById('videoFrame');
+    if(!video || !video.url){ sec.style.display='none'; return; }
+    var html = '';
+    if(video.provider==='youtube'){
+      var yid = youtubeId(video.url);
+      if(yid) html = '<iframe src="https://www.youtube.com/embed/'+encodeURIComponent(yid)+'" title="Flash" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen></iframe>';
+    } else if(video.provider==='vimeo'){
+      var vid = vimeoId(video.url);
+      if(vid) html = '<iframe src="https://player.vimeo.com/video/'+encodeURIComponent(vid)+'" title="Flash" allow="autoplay;fullscreen;picture-in-picture" allowfullscreen></iframe>';
+    } else {
+      html = '<video controls preload="metadata" src="'+esc(video.url)+'"></video>';
+    }
+    if(!html){ sec.style.display='none'; return; }
+    frame.innerHTML = html;
+    sec.style.display='';
+  }
+
+  function renderBanners(banners){
+    var sec = document.getElementById('bannersSection');
+    var wrap = document.getElementById('bannersWrap');
+    banners = (banners||[]).filter(function(b){ return b && b.imageUrl; });
+    if(!banners.length){ sec.style.display='none'; return; }
+    var first = banners[0];
+    var slot = '<div class="banner-slot '+ratioClass(first.ratio)+'">'
+      + banners.map(function(b,i){ return '<img class="'+(i===0?'show':'')+'" src="'+esc(b.imageUrl)+'" alt="إعلان" loading="lazy" />'; }).join('')
+      + '</div>';
+    var dots = banners.length>1
+      ? '<div class="banner-dots">'+banners.map(function(b,i){ return '<button class="'+(i===0?'active':'')+'" data-i="'+i+'" aria-label="لافتة '+(i+1)+'"></button>'; }).join('')+'</div>'
+      : '';
+    wrap.innerHTML = slot + dots;
+    sec.style.display='';
+
+    if(banners.length>1){
+      var imgs = wrap.querySelectorAll('.banner-slot img');
+      var dotEls = wrap.querySelectorAll('.banner-dots button');
+      var cur = 0;
+      function show(i){
+        cur = (i+banners.length)%banners.length;
+        for(var k=0;k<imgs.length;k++){ imgs[k].classList.toggle('show',k===cur); }
+        for(var d=0;d<dotEls.length;d++){ dotEls[d].classList.toggle('active',d===cur); }
+      }
+      for(var d=0;d<dotEls.length;d++){ (function(el){ el.addEventListener('click',function(){ show(Number(el.getAttribute('data-i'))); }); })(dotEls[d]); }
+      var timer = setInterval(function(){ show(cur+1); }, 5000);
+      wrap.addEventListener('mouseenter',function(){ clearInterval(timer); });
+    }
+  }
+
+  fetch('/api/public/landing')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      data = data || {};
+      try{ renderBanners(data.banners); }catch(e){}
+      try{ renderVideo(data.video); }catch(e){}
+    })
+    .catch(function(){ /* landing extras are optional; ignore failures */ });
 
   // duration helper -> friendly Arabic label
   function durLabel(days){

@@ -9,5 +9,7 @@ const router = express.Router();
 router.get('/receipt/:uuid', ctrl.getPublicReceipt);
 // PUBLIC — the same subscriber's other invoices (history) for a scanned receipt.
 router.get('/receipt/:uuid/history', ctrl.getPublicReceiptHistory);
+// PUBLIC — landing-page content (enabled banners + enabled promo video).
+router.get('/landing', ctrl.getPublicLanding);
 
 module.exports = router;

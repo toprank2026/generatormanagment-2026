@@ -4,6 +4,7 @@ node_modules
 /backups
 /.backups
 /.smoke_backups
+/uploads
 *.db
 .smoke_test.mjs
 npm-debug.log*

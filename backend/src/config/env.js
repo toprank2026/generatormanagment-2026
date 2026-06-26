@@ -17,6 +17,9 @@ function int(value, fallback) {
 }
 
 const BACKUP_DIR_RAW = process.env.BACKUP_DIR || './backups';
+// Directory holding admin-uploaded landing assets (banner images). Served
+// publicly at /uploads (see server.js). Resolved to an absolute path below.
+const UPLOADS_DIR_RAW = process.env.UPLOADS_DIR || './uploads';
 
 // Insecure defaults that MUST NOT survive into production. The dev defaults are
 // kept (so local/test runs work with zero config), but `validateSecrets()` —
@@ -40,6 +43,11 @@ const env = {
   BACKUP_DIR: path.isAbsolute(BACKUP_DIR_RAW)
     ? BACKUP_DIR_RAW
     : path.resolve(__dirname, '..', '..', BACKUP_DIR_RAW),
+
+  // Resolve the uploads dir to an absolute path rooted at the backend folder.
+  UPLOADS_DIR: path.isAbsolute(UPLOADS_DIR_RAW)
+    ? UPLOADS_DIR_RAW
+    : path.resolve(__dirname, '..', '..', UPLOADS_DIR_RAW),
 
   MAX_BACKUPS: int(process.env.MAX_BACKUPS, 10),
 
