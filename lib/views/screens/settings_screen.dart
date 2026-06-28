@@ -6,6 +6,7 @@ import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/views/screens/subscription_screen.dart';
 import 'package:generatormanagment/views/screens/backup_screen.dart';
+import 'package:generatormanagment/views/screens/accountant_settlements_screen.dart';
 import 'package:generatormanagment/views/screens/sync_screen.dart';
 import 'package:generatormanagment/views/screens/user_switch_screen.dart';
 import 'package:generatormanagment/views/screens/accountants_screen.dart';
@@ -67,7 +68,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         elevation: 0,
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
+      body: SafeArea(
+          child: SingleChildScrollView(
         controller: _scrollController,
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -243,6 +245,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: Text('manage_accountants_subtitle'.tr),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => Get.to(() => const AccountantsScreen()),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // v16 item 7: in-app accountant settlement approval (Admin-only).
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: ListTile(
+                      leading: const Icon(Icons.fact_check,
+                          color: Color(0xFF1565C0)),
+                      title: Text('accountant_settlements'.tr),
+                      subtitle: Text('accountant_settlements_subtitle'.tr),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () =>
+                          Get.to(() => const AccountantSettlementsScreen()),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -591,7 +610,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

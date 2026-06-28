@@ -60,7 +60,7 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
               )
             : const SizedBox.shrink(),
       ),
-      body: Obx(() {
+      body: SafeArea(child: Obx(() {
         if (controller.isLoading.value)
           return const Center(child: CircularProgressIndicator());
         if (controller.circuits.isEmpty)
@@ -97,7 +97,7 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
             );
           },
         );
-      }),
+      })),
     );
   }
 

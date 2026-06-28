@@ -61,7 +61,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         elevation: 0,
         centerTitle: true,
       ),
-      body: Column(
+      body: SafeArea(child: Column(
         children: [
           _buildMonthPicker(controller),
           // Owner-only: filter every figure on this screen by accountant, and a
@@ -259,7 +259,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 

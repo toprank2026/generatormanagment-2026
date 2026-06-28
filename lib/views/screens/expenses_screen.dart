@@ -54,7 +54,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         elevation: 0,
         centerTitle: true,
       ),
-      body: Column(
+      body: SafeArea(child: Column(
         children: [
           // Header: Total & Date
           Container(
@@ -306,7 +306,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             ),
           ),
         ],
-      ),
+      )),
       floatingActionButton: Obx(
         () => auth.can(Perm.expenses)
             ? FloatingActionButton(

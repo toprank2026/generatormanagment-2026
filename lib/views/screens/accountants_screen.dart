@@ -45,7 +45,7 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
         centerTitle: true,
       ),
       // Owner-only: an accountant acting on this device must not manage staff.
-      body: Obx(() {
+      body: SafeArea(child: Obx(() {
         if (!auth.isAdmin) {
           return Center(
             child: Padding(
@@ -73,7 +73,7 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
           separatorBuilder: (_, __) => const SizedBox(height: 12),
           itemBuilder: (context, i) => _buildAccountantTile(list[i]),
         );
-      }),
+      })),
       floatingActionButton: Obx(() {
         if (!auth.isAdmin) return const SizedBox.shrink();
         return FloatingActionButton.extended(

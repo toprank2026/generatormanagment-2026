@@ -72,7 +72,7 @@ class _PlanSelectionScreenState extends State<PlanSelectionScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
+      body: SafeArea(child: RefreshIndicator(
         onRefresh: () async {
           await controller.loadPlans();
           await auth.refreshSubscription();
@@ -144,7 +144,7 @@ class _PlanSelectionScreenState extends State<PlanSelectionScreen> {
             ],
           );
         }),
-      ),
+      )),
     );
   }
 

@@ -85,6 +85,16 @@ class MyApp extends StatelessWidget {
           elevation: 0,
         ),
       ),
+      // v16 item 2: fixed app-wide font size — text must NOT scale with the
+      // device's font-size setting (clamp the textScaler to 1.0 everywhere).
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.noScaling,
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       initialBinding: AppBinding(),
       home: const RootHandler(),
       getPages: [

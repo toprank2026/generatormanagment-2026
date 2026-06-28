@@ -21,7 +21,7 @@ class SyncScreen extends StatelessWidget {
         ),
         elevation: 0,
       ),
-      body: SingleChildScrollView(
+      body: SafeArea(child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Container(
           decoration: BoxDecoration(
@@ -144,7 +144,7 @@ class SyncScreen extends StatelessWidget {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 

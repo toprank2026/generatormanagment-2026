@@ -52,7 +52,7 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
         elevation: 0,
         centerTitle: true,
       ),
-      body: Obx(() {
+      body: SafeArea(child: Obx(() {
         if (c.isLoading.value && c.history.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -105,7 +105,7 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
             ],
           ),
         );
-      }),
+      })),
     );
   }
 

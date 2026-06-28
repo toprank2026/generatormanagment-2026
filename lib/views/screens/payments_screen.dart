@@ -58,7 +58,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
           ],
         ),
       ),
-      body: Obx(() {
+      body: SafeArea(child: Obx(() {
         return RefreshIndicator(
           onRefresh: () => controller.loadReport(),
           child: controller.receipts.isEmpty
@@ -89,7 +89,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                   },
                 ),
         );
-      }),
+      })),
     );
   }
 

@@ -46,7 +46,8 @@ class DashboardScreen extends StatelessWidget {
         ),
         elevation: 0,
       ),
-      body: RefreshIndicator(
+      body: SafeArea(
+          child: RefreshIndicator(
         // Pull-to-refresh (online): re-validate the account/subscription with
         // the server first — if blocked / expired / plan changed, the user is
         // signed out to the login screen with a warning. Otherwise reload stats.
@@ -382,80 +383,118 @@ class DashboardScreen extends StatelessWidget {
                 }
 
                 return GetBuilder<DashboardController>(
-                  builder: (ctrl) => GridView.count(
-                    crossAxisCount: 2,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    childAspectRatio: 1.3,
-                    children: [
-                      _buildStatCard(
-                        icon: Icons.people,
-                        color: Colors.blue,
-                        label: 'total_subscribers'.tr,
-                        value: ctrl.totalSubscribers.value.toString(),
-                        onTap: () => Get.to(() => const SubscribersScreen()),
-                      ),
-                      _buildStatCard(
-                        icon: Icons.check_circle,
-                        color: Colors.green,
-                        label: 'paid_subscribers'.tr,
-                        value: ctrl.paidCount.value.toString(),
-                        onTap: () => Get.to(
-                          () => const SubscribersScreen(filter: 'paid'),
+                  builder: (ctrl) {
+                    // v16: responsive sizing by screen width (tablet vs phone);
+                    // card height adapts (no fixed 1.3 ratio) + numbers are
+                    // FittedBox-safe, so big numbers never get clipped.
+                    final double w = MediaQuery.of(context).size.width;
+                    final bool isTablet = w >= 600;
+                    final double iconSize = isTablet ? 30 : 24;
+                    final double aspect = isTablet ? 1.5 : 1.08;
+                    final double fullCardH = isTablet ? 130 : 110;
+                    return Column(
+                      children: [
+                        GridView.count(
+                          crossAxisCount: 2,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 16,
+                          childAspectRatio: aspect,
+                          children: [
+                            _buildStatCard(
+                              icon: Icons.people,
+                              color: Colors.blue,
+                              label: 'total_subscribers'.tr,
+                              value: ctrl.totalSubscribers.value.toString(),
+                              iconSize: iconSize,
+                              onTap: () =>
+                                  Get.to(() => const SubscribersScreen()),
+                            ),
+                            _buildStatCard(
+                              icon: Icons.check_circle,
+                              color: Colors.green,
+                              label: 'paid_subscribers'.tr,
+                              value: ctrl.paidCount.value.toString(),
+                              iconSize: iconSize,
+                              onTap: () => Get.to(
+                                () => const SubscribersScreen(filter: 'paid'),
+                              ),
+                            ),
+                            _buildStatCard(
+                              icon: Icons.pending_actions,
+                              color: Colors.redAccent,
+                              label: 'unpaid_subscribers'.tr,
+                              value: ctrl.unpaidCount.value.toString(),
+                              iconSize: iconSize,
+                              onTap: () => Get.to(
+                                () => const SubscribersScreen(filter: 'unpaid'),
+                              ),
+                            ),
+                            _buildStatCard(
+                              icon: Icons.grid_view,
+                              color: Colors.indigo,
+                              label: 'total_boards'.tr,
+                              value: ctrl.boardsCount.value.toString(),
+                              iconSize: iconSize,
+                              onTap: () => Get.to(() => const BoardsScreen()),
+                            ),
+                            _buildStatCard(
+                              icon: Icons.settings_input_component,
+                              color: Colors.cyan,
+                              label: 'total_circuits'.tr,
+                              value: ctrl.circuitsCount.value.toString(),
+                              iconSize: iconSize,
+                              onTap: () => Get.to(
+                                  () => const BoardsScreen(forCircuits: true)),
+                            ),
+                            _buildStatCard(
+                              icon: Icons.electric_bolt,
+                              color: Colors.orange,
+                              label: 'amps'.tr,
+                              value: ctrl.totalAmps.value.toStringAsFixed(1),
+                              iconSize: iconSize,
+                            ),
+                          ],
                         ),
-                      ),
-                      _buildStatCard(
-                        icon: Icons.pending_actions,
-                        color: Colors.redAccent,
-                        label: 'unpaid_subscribers'.tr,
-                        value: ctrl.unpaidCount.value.toString(),
-                        onTap: () => Get.to(
-                          () => const SubscribersScreen(filter: 'unpaid'),
+                        const SizedBox(height: 16),
+                        // v16 item 4/5: Collected + Remaining span the FULL row
+                        // (only these two) so large amounts show clearly.
+                        SizedBox(
+                          width: double.infinity,
+                          height: fullCardH,
+                          child: _buildStatCard(
+                            icon: Icons.account_balance_wallet,
+                            color: Colors.green,
+                            label: 'monthly_revenue'.tr,
+                            value:
+                                ctrl.totalCollected.value.toStringAsFixed(0),
+                            iconSize: iconSize,
+                            valueFontSize: isTablet ? 36 : 30,
+                          ),
                         ),
-                      ),
-                      _buildStatCard(
-                        icon: Icons.grid_view,
-                        color: Colors.indigo,
-                        label: 'total_boards'.tr,
-                        value: ctrl.boardsCount.value.toString(),
-                        onTap: () => Get.to(() => const BoardsScreen()),
-                      ),
-                      _buildStatCard(
-                        icon: Icons.settings_input_component,
-                        color: Colors.cyan,
-                        label: 'total_circuits'.tr,
-                        value: ctrl.circuitsCount.value.toString(),
-                        onTap: () =>
-                            Get.to(() => const BoardsScreen(forCircuits: true)),
-                      ),
-                      _buildStatCard(
-                        icon: Icons.electric_bolt,
-                        color: Colors.orange,
-                        label: 'amps'.tr,
-                        value: ctrl.totalAmps.value.toStringAsFixed(1),
-                      ),
-                      _buildStatCard(
-                        icon: Icons.account_balance_wallet,
-                        color: Colors.green,
-                        label: 'monthly_revenue'.tr,
-                        value: ctrl.totalCollected.value.toStringAsFixed(0),
-                      ),
-                      _buildStatCard(
-                        icon: Icons.monetization_on,
-                        color: Colors.redAccent,
-                        label: 'monthly_remaining'.tr,
-                        value: ctrl.totalDue.value.toStringAsFixed(0),
-                      ),
-                    ],
-                  ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          height: fullCardH,
+                          child: _buildStatCard(
+                            icon: Icons.monetization_on,
+                            color: Colors.redAccent,
+                            label: 'monthly_remaining'.tr,
+                            value: ctrl.totalDue.value.toStringAsFixed(0),
+                            iconSize: iconSize,
+                            valueFontSize: isTablet ? 36 : 30,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 );
               }),
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 
@@ -566,6 +605,8 @@ class DashboardScreen extends StatelessWidget {
     required String label,
     required String value,
     VoidCallback? onTap,
+    double iconSize = 24, // v16: responsive (tablet vs phone)
+    double valueFontSize = 23, // v16: bigger on the full-width money cards
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -595,7 +636,7 @@ class DashboardScreen extends StatelessWidget {
                   color: color.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(icon, color: color),
+                child: Icon(icon, color: color, size: iconSize),
               ),
               const SizedBox(height: 8),
               Flexible(
@@ -603,19 +644,26 @@ class DashboardScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // v16: bigger + overflow-SAFE number — FittedBox shrinks big
+                    // numbers to fit so they are never clipped on small phones.
                     Flexible(
-                      child: Text(
-                        value,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          value,
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontSize: valueFontSize,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     Text(
                       label,
-                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                      style: const TextStyle(color: Colors.grey, fontSize: 13),
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],

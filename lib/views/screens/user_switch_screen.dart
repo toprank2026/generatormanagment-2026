@@ -152,7 +152,8 @@ class _UserSwitchScreenState extends State<UserSwitchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('switch_user'.tr)),
-      body: _loading
+      body: SafeArea(
+        child: _loading
           ? const Center(child: CircularProgressIndicator())
           : Obx(() {
               final actingId = auth.currentUser.value?.id;
@@ -176,7 +177,7 @@ class _UserSwitchScreenState extends State<UserSwitchScreen> {
                       )),
                 ],
               );
-            }),
+            })),
     );
   }
 

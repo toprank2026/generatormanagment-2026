@@ -411,6 +411,56 @@ test('a blocked (active:false) accountant cannot log in -> 403', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Flash v16 item 9: an accountant has no generatorName of its own, so its
+// receipts must print the OWNER's generator name. Both /auth/login and
+// /auth/me must return account.generatorName === the owner's generatorName.
+// ---------------------------------------------------------------------------
+test('accountant login + /me return the OWNER generatorName (receipt header)', async () => {
+  const username = uniqueUsername('genowner');
+  const reg = await api('POST', '/api/auth/register', {
+    body: {
+      name: 'Owner Name',
+      generatorName: 'North Power Generator',
+      phone: username,
+      username,
+      password: 'secret1',
+      device: makeDevice(),
+    },
+  });
+  assert.equal(reg.status, 201, `register should 201, got ${reg.status} ${JSON.stringify(reg.data)}`);
+  assert.equal(reg.data.account.generatorName, 'North Power Generator');
+
+  const uname = uniqueUsername('acct');
+  const created = await api('POST', '/api/account/accountants', {
+    token: reg.data.token,
+    body: { name: 'Acct', username: uname, password: 'secret1' },
+  });
+  assert.equal(created.status, 201);
+
+  // login: accountant inherits the owner's generatorName (its own is null).
+  const login = await api('POST', '/api/auth/login', {
+    body: { username: uname, password: 'secret1' },
+  });
+  assert.equal(login.status, 200, `accountant login should 200, got ${login.status} ${JSON.stringify(login.data)}`);
+  assert.equal(login.data.account.role, 'accountant');
+  assert.equal(
+    login.data.account.generatorName,
+    'North Power Generator',
+    'accountant login must print the OWNER generator name'
+  );
+
+  // /me applies the same inheritance.
+  const me = await api('GET', '/api/auth/me', { token: login.data.token });
+  assert.equal(me.status, 200);
+  assert.equal(me.data.account.role, 'accountant');
+  assert.equal(
+    me.data.account.generatorName,
+    'North Power Generator',
+    'accountant /me must print the OWNER generator name'
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Effective-owner scoping: accountant sync push/pull + stats hit owner mirror.
 // ---------------------------------------------------------------------------
 test('accountant sync push lands in the OWNER mirror; pull + stats resolve to it', async () => {

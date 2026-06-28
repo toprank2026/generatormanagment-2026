@@ -144,7 +144,7 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
         elevation: 0,
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
+      body: SafeArea(child: SingleChildScrollView(
         padding: const EdgeInsets.all(20.0),
         child: Column(
           children: [
@@ -463,7 +463,7 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
             }),
           ],
         ),
-      ),
+      )),
     );
   }
 }

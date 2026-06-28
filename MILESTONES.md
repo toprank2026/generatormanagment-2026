@@ -98,6 +98,17 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Reports** — owner-panel reports match the app (gauge/donut/bars/cards/prices + per-tariff PAID counts) and now re-scope to the selected accountant.
 - ✅ Spec-kit + read-only mapping + adversarial review; Flutter 90, backend 131; Tikrit release APK.
 
+## Flash v16 (Home UI polish + in-app settlement + accountant receipt name)
+- ✅ **Home cards standardized & overflow-safe** — card numbers slightly larger and wrapped in `FittedBox(scaleDown)` so big amounts never clip on small phones; card **height is responsive** (screen-width-based aspect ratio, not the old fixed `1.3`).
+- ✅ **Responsive Home-card icons** — icon size scales by screen width (tablet 30 / phone 24).
+- ✅ **Full-width money cards** — only **Collected** (إيراد الشهر) and **Remaining** (المتبقي) span the full row for large-number clarity (bigger value font 30/36); the other six cards stay in the 2-up grid.
+- ✅ **Fixed app-wide fonts** — `GetMaterialApp.builder` clamps `MediaQuery.textScaler` to `TextScaler.noScaling`, so text never changes with the device font-size setting.
+- ✅ **SafeArea on every list screen** — ~21 screens' Scaffold bodies wrapped in `SafeArea` (lists no longer clipped by notches/gesture bars); FAB/bottom-nav slots untouched.
+- ✅ **In-app accountant settlement (Admin-only)** — a new `AccountantSettlementsScreen` in Settings lists settlement requests (pending first) with approve/reject; offline-first decision updates the local `settlements` row (`SettlementRepository.decide`) → `poke()` → mirror → accountant pulls it (mirrors the Owner Panel; no new endpoint).
+- ✅ **Account-switch wipe made explicit** — switching to an owner/accountant already deletes ALL local SQLite data like logout (then re-pulls); the confirm popup now spells that out (subscribers/boards/circuits/receipts/expenses/wallet).
+- ✅ **Accountant receipt header** — an accountant's serialized account now inherits the **owner's `generatorName`** (backend `authController` login + `/me`), so a receipt printed under an accountant shows the generator name at the top (Bluetooth + PDF).
+- ✅ Spec-kit + read-only mapping + adversarial review (0 findings); Flutter 90, backend 146; analyze 0 errors/0 warnings; Flash-API release APK.
+
 ## Backlog
 - ⬜ Localize backend plan names/descriptions (currently English server data).
 - ⬜ DB migration path (schema v1, `onCreate` only); index on `expenses.date`.

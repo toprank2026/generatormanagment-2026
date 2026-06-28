@@ -44,7 +44,7 @@ class _BackupScreenState extends State<BackupScreen> {
         ),
         elevation: 0,
       ),
-      body: SingleChildScrollView(
+      body: SafeArea(child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -85,7 +85,7 @@ class _BackupScreenState extends State<BackupScreen> {
             ],
           ],
         ),
-      ),
+      )),
     );
   }
 

@@ -204,7 +204,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
               onPressed: _showCollectDialog,
             )
           : null,
-      body: _loading
+      body: SafeArea(child: _loading
           ? const Center(child: CircularProgressIndicator())
           : _items.isEmpty
               ? Center(
@@ -307,7 +307,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                       );
                     },
                   ),
-                ),
+                )),
     );
   }
 }

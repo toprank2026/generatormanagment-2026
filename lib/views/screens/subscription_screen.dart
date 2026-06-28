@@ -65,7 +65,7 @@ class SubscriptionScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Obx(() {
+      body: SafeArea(child: Obx(() {
         final sub = auth.subscription;
         final status = sub?.status ?? 'none';
         final color = _statusColor(status);
@@ -129,7 +129,7 @@ class SubscriptionScreen extends StatelessWidget {
             ),
           ],
         );
-      }),
+      })),
     );
   }
 

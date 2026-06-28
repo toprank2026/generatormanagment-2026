@@ -91,6 +91,9 @@ const login = asyncHandler(async (req, res) => {
     }
     const token = signToken(user);
     const account = serializeAccount(user);
+    // An accountant has no generatorName of its own; print receipts under the
+    // OWNER's generator name (the Flutter receipt header reads account.generatorName).
+    account.generatorName = owner.generatorName || null;
     account.subscription = serializeSubscription(owner.subscription);
     account.subscription.features = await featuresForUser(owner);
     res.status(200).json({ token, account });
@@ -224,6 +227,8 @@ const me = asyncHandler(async (req, res) => {
     if (!owner || owner.blocked) {
       throw new HttpError(403, 'Account blocked', 'BLOCKED');
     }
+    // An accountant prints receipts under the OWNER's generator name (see login).
+    account.generatorName = owner.generatorName || null;
     account.subscription = serializeSubscription(owner.subscription);
     account.subscription.features = await featuresForUser(owner);
     res.status(200).json({ account });

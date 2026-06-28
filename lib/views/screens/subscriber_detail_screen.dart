@@ -133,7 +133,7 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
+      body: SafeArea(child: SingleChildScrollView(
         controller: _scrollController,
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -315,7 +315,7 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

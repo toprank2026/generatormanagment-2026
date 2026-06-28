@@ -86,7 +86,7 @@ class _BoardsScreenState extends State<BoardsScreen> {
                     )
                   : const SizedBox.shrink(),
             ),
-      body: GetBuilder<CoreController>(
+      body: SafeArea(child: GetBuilder<CoreController>(
         builder: (ctrl) {
           if (ctrl.isLoading.value) {
             return const Center(child: CircularProgressIndicator());
@@ -225,7 +225,7 @@ class _BoardsScreenState extends State<BoardsScreen> {
             },
           );
         },
-      ),
+      )),
     );
   }
 

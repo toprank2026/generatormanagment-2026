@@ -67,6 +67,9 @@ sub-account created via `POST /api/account/accountants`):
 - the returned `subscription` (incl. `features`) is **inherited from the OWNER
   account** (`ownerId`), so an accountant is never `subscriptionBlocked` on its
   own (empty) subscription;
+- the returned `generatorName` is **inherited from the OWNER account** (an
+  accountant has none of its own), so receipts an accountant prints carry the
+  owner's generator name in the header;
 - the returned account carries `role:"accountant"`, `ownerId`, `branchId`,
   `permissions`, `localId` (see the **Account** object).
 

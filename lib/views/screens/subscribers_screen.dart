@@ -192,7 +192,7 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                   : const SizedBox.shrink(),
             )
           : null,
-      body: GetBuilder<CoreController>(
+      body: SafeArea(child: GetBuilder<CoreController>(
         builder: (ctrl) {
           if (ctrl.isLoading.value) {
             return const Center(child: CircularProgressIndicator());
@@ -321,7 +321,7 @@ class _SubscribersScreenState extends State<SubscribersScreen>
             ],
           );
         },
-      ),
+      )),
     );
   }
 

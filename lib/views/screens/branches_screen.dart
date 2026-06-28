@@ -81,7 +81,7 @@ class _BranchesScreenState extends State<BranchesScreen> {
               onPressed: _showAddBranchAccountDialog,
             )
           : null,
-      body: _body(),
+      body: SafeArea(child: _body()),
     );
   }
 
