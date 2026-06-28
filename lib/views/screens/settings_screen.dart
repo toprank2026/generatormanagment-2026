@@ -8,7 +8,6 @@ import 'package:generatormanagment/views/screens/subscription_screen.dart';
 import 'package:generatormanagment/views/screens/backup_screen.dart';
 import 'package:generatormanagment/views/screens/accountant_settlements_screen.dart';
 import 'package:generatormanagment/views/screens/sync_screen.dart';
-import 'package:generatormanagment/views/screens/user_switch_screen.dart';
 import 'package:generatormanagment/views/screens/accountants_screen.dart';
 import 'package:generatormanagment/views/screens/my_wallet_screen.dart';
 import 'package:generatormanagment/views/screens/branches_screen.dart';
@@ -142,23 +141,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 24),
 
-            // Switch user (owner <-> accountant). Always visible so an
-            // accountant can hand the device back to the owner.
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: ListTile(
-                leading: const Icon(Icons.switch_account,
-                    color: Color(0xFF1565C0)),
-                title: Text('switch_user'.tr),
-                subtitle: Obx(() => Text(auth.actingUserName)),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                onTap: () => Get.to(() => const UserSwitchScreen()),
-              ),
-            ),
-            const SizedBox(height: 24),
+            // v16: the in-app account SWITCH (owner <-> accountant) was removed
+            // here — it left the session in a flaky state (token/secure-storage)
+            // so sync could be rejected. Use logout + login to change accounts,
+            // which establishes a clean session every time.
 
             // Subscription Section (owner-only). Obx so it reacts to a
             // user switch (an accountant acting on this device must not see it).
