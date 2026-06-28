@@ -355,6 +355,13 @@ test('accountant login -> role accountant + ownerId + INHERITED active subscript
   assert.equal(acc.subscription.status, 'active', 'subscription inherited from owner');
   assert.equal(acc.subscription.planCode, 'yearly');
   assert.ok(acc.subscription.features && typeof acc.subscription.features === 'object');
+  // The accountant must inherit the OWNER plan's CAPABILITY FLAGS — a yearly
+  // owner has sync/backup/ownerPanel enabled, so the accountant does too (this
+  // is what drives the app's canSync/canBackup; a false sync here would put the
+  // accountant in offline-only mode).
+  assert.equal(acc.subscription.features.sync, true, 'accountant must inherit owner sync=true');
+  assert.equal(acc.subscription.features.backup, true, 'accountant must inherit owner backup=true');
+  assert.equal(acc.subscription.features.ownerPanel, true, 'accountant must inherit owner ownerPanel=true');
 
   // /me applies the same inheritance.
   const me = await api('GET', '/api/auth/me', { token: login.data.token });
@@ -362,6 +369,7 @@ test('accountant login -> role accountant + ownerId + INHERITED active subscript
   assert.equal(me.data.account.role, 'accountant');
   assert.equal(me.data.account.ownerId, owner.account.id);
   assert.equal(me.data.account.subscription.status, 'active');
+  assert.equal(me.data.account.subscription.features.sync, true, '/me accountant inherits sync=true');
 });
 
 test('accountant login WITH a new device does NOT trip DEVICE_LIMIT', async () => {
