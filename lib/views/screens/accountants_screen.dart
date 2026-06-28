@@ -236,14 +236,26 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
                           return;
                         }
                         setLocalState(() => busy = true);
-                        await controller.createAccountant(
+                        final ok = await controller.createAccountant(
                           name,
                           username,
                           password,
                           permissions: selected,
                           branchId: selectedBranchId,
                         );
+                        if (!ok) {
+                          // Failure: clear the spinner so the owner can fix/
+                          // retry (the controller already showed the error);
+                          // the dialog stays open with their input.
+                          setLocalState(() => busy = false);
+                          return;
+                        }
+                        // Success: CLOSE the dialog FIRST, THEN snackbar — a
+                        // snackbar shown before close flips Get.isDialogOpen to
+                        // false and blocks Get.back(), which left the spinner
+                        // stuck open. This is the fix for that.
                         if (Get.isDialogOpen ?? false) Get.back();
+                        Get.snackbar('success'.tr, 'add_accountant'.tr);
                       },
                 child: busy
                     ? const SizedBox(

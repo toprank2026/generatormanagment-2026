@@ -150,13 +150,17 @@ class SettingsController extends GetxController {
   /// REQUIRES the network. We register the backend account first (source of
   /// truth for login), then mirror the local identity/credential rows (same id)
   /// for the synced admin-panel identity and the offline owner profile-switch.
-  Future<void> createAccountant(
+  /// Returns true on success. NOTE: this intentionally does NOT show the
+  /// success snackbar — the caller dialog must CLOSE first, then snackbar
+  /// (a snackbar shown before close flips Get.isDialogOpen to false and blocks
+  /// the dialog's Get.back(), which left the add spinner stuck — see gotchas).
+  Future<bool> createAccountant(
       String name, String username, String password,
       {Iterable<String> permissions = const [], String? branchId}) async {
     if (!await _net.isOnline()) {
       Get.snackbar('error'.tr, 'accountant_needs_internet'.tr,
           backgroundColor: Colors.redAccent, colorText: Colors.white);
-      return;
+      return false;
     }
     final id = const Uuid().v4();
     final branch = (branchId != null && branchId.isNotEmpty)
@@ -192,7 +196,8 @@ class SettingsController extends GetxController {
       }
       SyncController.poke(); // item 3: sync the new accountant identity row
       await loadAccountants();
-      Get.snackbar('success'.tr, 'add_accountant'.tr);
+      update();
+      return true; // caller closes the dialog, THEN shows the success snackbar
     } on ApiException catch (e) {
       final msg = e.statusCode == 409
           ? 'username_taken'.tr
@@ -203,6 +208,7 @@ class SettingsController extends GetxController {
       Get.snackbar('error'.tr, "${'add_accountant'.tr}: $e");
     }
     update();
+    return false;
   }
 
   /// Update an accountant (R8). A disable (active:false), password reset, or
