@@ -9,6 +9,7 @@ import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
+import 'package:generatormanagment/core/device_rebind.dart';
 import 'package:generatormanagment/core/local_backup_service.dart';
 import 'package:generatormanagment/core/session_cache.dart';
 import 'package:generatormanagment/data/db_helper.dart';
@@ -162,6 +163,10 @@ class SettingsController extends GetxController {
           backgroundColor: Colors.redAccent, colorText: Colors.white);
       return false;
     }
+    // v18 item 1: confirm + unbind/rebind THIS device before linking a new
+    // accountant so it can use the device without tripping DEVICE_LIMIT. Cancel
+    // aborts the creation (no rows written).
+    if (!await DeviceRebind.confirmAndApply(rebind: true)) return false;
     final id = const Uuid().v4();
     final branch = (branchId != null && branchId.isNotEmpty)
         ? branchId

@@ -398,6 +398,9 @@ class Messages extends Translations {
       'logout_sync_running':
           'Synchronization is in progress. Please wait until it finishes before logging out.',
       'ok': 'OK',
+      'device_binding': 'Device binding',
+      'device_rebind_confirm':
+          'This device is currently linked to another account. To allow a different account, branch, or accountant to use this device, the current device binding must be removed and recreated. Do you want to continue?',
       'delete_local_data_subtitle': "Clear this device's data (server copy kept)",
       'delete_local_data_confirm':
           'This clears all data on THIS device. The server copy is kept — use Update to restore it. Continue?',
@@ -853,6 +856,9 @@ class Messages extends Translations {
       'logout_sync_running':
           'تجري عملية المزامنة الآن. يُرجى الانتظار حتى تكتمل قبل تسجيل الخروج.',
       'ok': 'حسنًا',
+      'device_binding': 'ربط الجهاز',
+      'device_rebind_confirm':
+          'هذا الجهاز مرتبط حاليًا بحساب آخر. للسماح لحساب أو فرع أو محاسب مختلف باستخدام هذا الجهاز، يجب إزالة ربط الجهاز الحالي وإعادة إنشائه. هل تريد المتابعة؟',
       'delete_local_data_subtitle': 'مسح بيانات هذا الجهاز (تبقى نسخة الخادم)',
       'delete_local_data_confirm':
           'سيؤدي هذا إلى مسح كل البيانات على هذا الجهاز. تبقى نسخة الخادم — استخدم «تحديث» لاستعادتها. هل تريد المتابعة؟',

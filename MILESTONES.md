@@ -115,6 +115,13 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ Removed the in-app account SWITCH from Settings (owner/admin + accountant) — it left a flaky token/secure-storage state; logout+login is the reliable path.
 - ✅ Spec + direct edit + adversarial review (1 HIGH fixed); analyze 0/0; Flutter 90; no backend/panel change needed; Flash-API release APK.
 
+## Flash v18 (device rebind confirm + dialog dispose + branch count + sync settings)
+- ✅ **Device unbind/rebind confirmation** — before Logout / Create branch / Create accountant the user confirms that THIS device's binding will be removed + recreated so another account can use it (avoids DEVICE_LIMIT). Reuses the existing self endpoints (`DeviceRepository.unbind`+`bindCurrent`, new `rebindCurrent`) + `SecureStore.clearInstallId`; logout integrates the note into its existing confirm and unbinds (rebind on next login), create-branch/accountant confirm-then-rebind before creating. Best-effort + online-gated + never throws.
+- ✅ **Loading-dialog dispose audit** — verified create-circuit/board/branch/accountant/logout/sync all close overlays on success AND failure (try/finally, snackbar AFTER close, no stacking — SyncProgress is latch-guarded); new device dialogs follow the same pattern. No leak found.
+- ✅ **Owner-panel branch count fix** — `getMyStats.counts.branches` now counts branch SUB-ACCOUNTS (`User.countDocuments({parentOwner})`, the authoritative source the branch switcher uses) instead of the synced `branches` mirror rows (which stuck at ~1).
+- ✅ **Simplified Settings sync section** — removed the cloud Backup tile, the Sync screen tile, and the delete-local-data tile; kept only the local **Export/Import** (subscriber backup) + Manage Devices.
+- ✅ Spec + read-only mapping (4 agents) + coupled edits + adversarial review (clean); analyze 0/0; Flutter 90; backend 146; Flash-API release APK.
+
 ## Backlog
 - ⬜ Localize backend plan names/descriptions (currently English server data).
 - ⬜ DB migration path (schema v1, `onCreate` only); index on `expenses.date`.

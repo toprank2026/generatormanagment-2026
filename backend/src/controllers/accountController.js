@@ -275,13 +275,21 @@ const getMyStats = asyncHandler(async (req, res) => {
     counts.accountants = await User.countDocuments({ owner: ownerId, role: 'accountant', branchId });
     // branches: the count of branch definitions (the switcher itself), not
     // branch-scoped — keep the full count so the card stays meaningful.
-    counts.branches = await SyncRecord.countDocuments({ user: ownerId, entity: 'branches', deleted: false });
+    // v18 fix: count the actual branch SUB-ACCOUNTS (independent generators
+    // created under this owner — User docs with parentOwner == owner), the same
+    // authoritative source the owner-panel branch switcher uses (listBranches),
+    // NOT the synced `branches` mirror rows (which only reflected what one device
+    // pushed and stuck at ~1).
+    counts.branches = await User.countDocuments({ parentOwner: ownerId });
   } else {
     const rows = await SyncRecord.aggregate([
       { $match: { user: ownerId, deleted: false } },
       { $group: { _id: '$entity', count: { $sum: 1 } } },
     ]);
     for (const row of rows) counts[row._id] = row.count;
+    // v18 fix: override the mirror-based branches count with the authoritative
+    // branch sub-account count (see branchId path above).
+    counts.branches = await User.countDocuments({ parentOwner: ownerId });
   }
 
   const dashboard = await buildDashboard(ownerId, counts, month, accId, branchId);

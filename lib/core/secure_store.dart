@@ -22,6 +22,11 @@ class SecureStore {
       _storage.write(key: _kToken, value: token);
   Future<void> clearToken() => _storage.delete(key: _kToken);
 
+  /// v18 item 1: clear the persistent install-id so the next [installId] call
+  /// generates a fresh one (used by the device unbind/rebind flow to "clear the
+  /// local device binding data"). The OS-stable deviceId is unaffected.
+  Future<void> clearInstallId() => _storage.delete(key: _kInstallId);
+
   /// Returns the persistent install-id, generating + storing one on first call.
   Future<String> installId() async {
     var value = await _storage.read(key: _kInstallId);

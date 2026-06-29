@@ -6,6 +6,7 @@ import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/core/logger.dart';
 import 'package:generatormanagment/core/secure_store.dart';
 import 'package:generatormanagment/core/session_cache.dart';
+import 'package:generatormanagment/core/device_rebind.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
@@ -519,10 +520,13 @@ class AuthController extends GetxController {
         }
       }
       // 5) Sync-disabled plan, or no unsynced data → confirm, then safely wipe
-      //    ALL local data (every table). Only finish logout AFTER it completes.
+      //    ALL local data (every table). v18 item 1: the same confirm also covers
+      //    DEVICE UNBINDING (this device is linked to the account; it is unbound
+      //    so another account can use it — the next login re-runs binding).
       final ok = await Get.defaultDialog<bool>(
         title: 'logout'.tr,
-        middleText: online ? 'logout_confirm'.tr : 'logout_offline_wipe_msg'.tr,
+        middleText:
+            '${online ? 'logout_confirm'.tr : 'logout_offline_wipe_msg'.tr}\n\n${'device_rebind_confirm'.tr}',
         textConfirm: online ? 'logout'.tr : 'delete_local_data'.tr,
         textCancel: 'cancel'.tr,
         onConfirm: () => Get.back(result: true),
@@ -531,6 +535,10 @@ class AuthController extends GetxController {
       if (ok != true) return; // cancel → abort the logout entirely
       SyncProgress.show('logging_out'.tr);
       try {
+        // v18 item 1: unbind this device + clear local install-id (no immediate
+        // rebind — the next login's fresh-registration flow rebinds). Online-
+        // gated + best-effort, so it never blocks the wipe/logout.
+        await DeviceRebind.apply(rebind: false);
         await sync.deleteAllLocalData();
       } catch (e) {
         Log.w('logout local wipe failed: $e');

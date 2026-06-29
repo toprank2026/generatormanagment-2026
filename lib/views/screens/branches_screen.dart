@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
+import 'package:generatormanagment/core/device_rebind.dart';
 import 'package:generatormanagment/data/repositories/auth_repository.dart';
 import 'package:generatormanagment/data/repositories/subscription_repository.dart';
 import 'package:generatormanagment/data/models/plan.dart';
@@ -239,6 +240,12 @@ class _BranchesScreenState extends State<BranchesScreen> {
                         }
                         if (!await ConnectivityService().isOnline()) {
                           Get.snackbar('error'.tr, 'online_only'.tr);
+                          return;
+                        }
+                        // v18 item 1: confirm + unbind/rebind THIS device before
+                        // creating a branch (so it can use the device without
+                        // tripping DEVICE_LIMIT). Cancel aborts the creation.
+                        if (!await DeviceRebind.confirmAndApply(rebind: true)) {
                           return;
                         }
                         busy.value = true;

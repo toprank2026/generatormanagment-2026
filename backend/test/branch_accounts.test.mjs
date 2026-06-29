@@ -186,6 +186,13 @@ test('owner creates a branch -> 201 + persisted + listed under the parent', asyn
   assert.equal(listed.status, 200);
   assert.ok(Array.isArray(listed.data.branches));
   assert.ok(listed.data.branches.some((x) => x.id === b.id && x.phone === b.phone));
+
+  // v18 item 3: the owner-panel "branches" stat counts branch SUB-ACCOUNTS
+  // (parentOwner) — the same authoritative source as the switcher above — so a
+  // fresh owner with exactly one created branch reports counts.branches === 1.
+  const stats = await api('GET', '/api/account/stats', { token: owner.token });
+  assert.equal(stats.status, 200);
+  assert.equal(Number(stats.data.counts.branches), 1, 'branch count = sub-accounts under the owner');
 });
 
 test('duplicate branch phone -> 409 PHONE_TAKEN; missing fields -> 400 VALIDATION', async () => {

@@ -173,9 +173,13 @@ test('stats with no branchId is consolidated (whole account)', async () => {
   assert.equal(Number(d.expensesTotal), 4000, '3000 + 1000');
   assert.equal(Number(d.boards), 2, 'both branches');
 
-  // The new branches entity is counted.
+  // v18 item 3: counts.branches now reflects branch SUB-ACCOUNTS (User docs with
+  // parentOwner == owner — the authoritative source the owner-panel switcher
+  // uses), NOT the synced `branches` MIRROR rows. This owner pushed two LOCAL
+  // branch definitions to the mirror but created NO branch sub-accounts, so the
+  // count is 0. (See branch_accounts.test.mjs for the positive case.)
   const counts = r.data.counts;
-  assert.equal(Number(counts.branches), 2, 'two branch identities were pushed');
+  assert.equal(Number(counts.branches), 0, 'no branch sub-accounts created (mirror rows are not counted)');
 });
 
 test('data?entity=...&branchId scopes mirror lists to one branch (owner panel)', async () => {

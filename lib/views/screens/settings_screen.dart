@@ -2,12 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
-import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/views/screens/subscription_screen.dart';
-import 'package:generatormanagment/views/screens/backup_screen.dart';
 import 'package:generatormanagment/views/screens/accountant_settlements_screen.dart';
-import 'package:generatormanagment/views/screens/sync_screen.dart';
 import 'package:generatormanagment/views/screens/accountants_screen.dart';
 import 'package:generatormanagment/views/screens/my_wallet_screen.dart';
 import 'package:generatormanagment/views/screens/branches_screen.dart';
@@ -389,43 +386,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
 
-            // Backup section: owner-only, and only shown when the active plan
-            // enables cloud backup (Obx so it reacts if the plan changes).
-            Obx(() {
-              if (!auth.isAdmin) return const SizedBox.shrink();
-              if (!auth.canBackup) return const SizedBox.shrink();
-              return Column(
-                children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 8, bottom: 8),
-                      child: Text(
-                        'backup'.tr,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blueGrey,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: ListTile(
-                      leading:
-                          const Icon(Icons.backup, color: Color(0xFF1565C0)),
-                      title: Text('backup'.tr),
-                      subtitle: Text('backup_subtitle'.tr),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Get.to(() => const BackupScreen()),
-                    ),
-                  ),
-                ],
-              );
-            }),
+            // v18 item 4: the cloud Backup tile was removed from Settings — the
+            // sync section now exposes ONLY the local Export/Import below.
 
             // v15 item 6: secure LOCAL backup (boards+circuits+subscribers,
             // owner-password-encrypted). Owner/admin-only; works fully offline
@@ -483,46 +445,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             // Sync + Manage Devices (online account features)
             if (auth.isLoggedIn.value) ...[
-              // Sync tile: owner-only, and only shown when the active plan
-              // enables sync. Hidden in "offline-only" mode (Obx so it reacts
-              // to plan changes). Manage Devices / delete-local stay regardless.
-              Obx(() {
-                if (!auth.isAdmin) return const SizedBox.shrink();
-                if (!auth.canSync) return const SizedBox.shrink();
-                return Column(
-                  children: [
-                    const SizedBox(height: 24),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 8, bottom: 8),
-                        child: Text(
-                          'sync'.tr,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blueGrey,
-                          ),
-                        ),
-                      ),
-                    ),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: ListTile(
-                        leading:
-                            const Icon(Icons.sync, color: Color(0xFF1565C0)),
-                        title: Text('sync'.tr),
-                        subtitle: Text('sync_subtitle'.tr),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => Get.to(() => const SyncScreen()),
-                      ),
-                    ),
-                  ],
-                );
-              }),
-              // Manage devices + delete-local are owner-only (an accountant
+              // v18 item 4: the Sync screen tile (sync status / sync-now /
+              // pull-latest) was removed from Settings — auto-sync still runs in
+              // the background; the only sync UI here is local Export/Import.
+
+              // Manage devices is owner-only (an accountant
               // must not unbind devices or wipe the shared local data). Obx so
               // it reacts to a profile switch.
               Obx(() {
@@ -531,36 +458,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     const SizedBox(height: 24),
                     _buildManageDevicesSection(),
-                    const SizedBox(height: 24),
-                    // Delete local data
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 8, bottom: 8),
-                        child: Text(
-                          'delete_local_data'.tr,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blueGrey,
-                          ),
-                        ),
-                      ),
-                    ),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: ListTile(
-                        leading: const Icon(
-                          Icons.delete_forever,
-                          color: Colors.redAccent,
-                        ),
-                        title: Text('delete_local_data'.tr),
-                        subtitle: Text('delete_local_data_subtitle'.tr),
-                        onTap: _confirmDeleteLocalData,
-                      ),
-                    ),
+                    // v18 item 4: the "delete local data" tile was removed from
+                    // Settings (a sync-data action); local Export/Import remains.
                   ],
                 );
               }),
@@ -744,21 +643,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Get.back(); // close dialog
           Get.snackbar('error'.tr, "${'manage_devices'.tr}: $e");
         }
-      },
-    );
-  }
-
-  void _confirmDeleteLocalData() {
-    Get.defaultDialog(
-      title: 'delete_local_data'.tr,
-      middleText: 'delete_local_data_confirm'.tr,
-      textConfirm: 'delete'.tr,
-      textCancel: 'cancel'.tr,
-      confirmTextColor: Colors.white,
-      buttonColor: Colors.red,
-      onConfirm: () {
-        Get.back();
-        Get.find<SyncController>().deleteLocalData();
       },
     );
   }
