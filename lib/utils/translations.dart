@@ -393,6 +393,11 @@ class Messages extends Translations {
           "You're offline — local data can't be re-downloaded. Delete it anyway, or cancel logout?",
       'logout_pending_warn':
           'You have @n unsynchronized record(s). Logging out will PERMANENTLY DELETE them. Please synchronize before logging out. Continue?',
+      'logout_blocked_unsynced':
+          'Logout is not allowed because there are unsynchronized data waiting to be uploaded. Please connect to the internet and complete synchronization first to avoid data loss.',
+      'logout_sync_running':
+          'Synchronization is in progress. Please wait until it finishes before logging out.',
+      'ok': 'OK',
       'delete_local_data_subtitle': "Clear this device's data (server copy kept)",
       'delete_local_data_confirm':
           'This clears all data on THIS device. The server copy is kept — use Update to restore it. Continue?',
@@ -843,6 +848,11 @@ class Messages extends Translations {
           'أنت غير متصل — لا يمكن إعادة تنزيل البيانات المحلية. هل تريد حذفها على أي حال أم إلغاء تسجيل الخروج؟',
       'logout_pending_warn':
           'لديك @n سجلّ غير متزامن. تسجيل الخروج سيحذفها نهائيًّا. يُرجى المزامنة قبل الخروج. هل تريد المتابعة؟',
+      'logout_blocked_unsynced':
+          'لا يمكن تسجيل الخروج لوجود بيانات غير متزامنة بانتظار الرفع. يُرجى الاتصال بالإنترنت وإكمال المزامنة أولًا لتجنّب فقدان البيانات.',
+      'logout_sync_running':
+          'تجري عملية المزامنة الآن. يُرجى الانتظار حتى تكتمل قبل تسجيل الخروج.',
+      'ok': 'حسنًا',
       'delete_local_data_subtitle': 'مسح بيانات هذا الجهاز (تبقى نسخة الخادم)',
       'delete_local_data_confirm':
           'سيؤدي هذا إلى مسح كل البيانات على هذا الجهاز. تبقى نسخة الخادم — استخدم «تحديث» لاستعادتها. هل تريد المتابعة؟',

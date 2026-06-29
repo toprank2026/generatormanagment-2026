@@ -109,6 +109,12 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Accountant receipt header** — an accountant's serialized account now inherits the **owner's `generatorName`** (backend `authController` login + `/me`), so a receipt printed under an accountant shows the generator name at the top (Bluetooth + PDF).
 - ✅ Spec-kit + read-only mapping + adversarial review (0 findings); Flutter 90, backend 146; analyze 0 errors/0 warnings; Flash-API release APK.
 
+## Flash v17 (logout data-loss guard)
+- ✅ **Block logout when unsynced data exists** — a user-initiated logout (`wipeLocal:true`, Home + Settings) now REFUSES to wipe local SQLite + end the session while there are unsynced records (`sync_outbox` / `pendingCount>0`). Order (before any delete/teardown, all roles): sync running → disable logout (`logout_sync_running`); online → best-effort push first; re-check outbox; still unsynced → BLOCK with `logout_blocked_unsynced` and keep ALL data; only `pendingCount==0` → confirm + wipe + clear session (unchanged).
+- ✅ **Sync-disabled-plan safe** — the guard only applies when the plan enables sync (`canSync`); offline-only plans (whose outbox can never reach the server) fall through to the existing offline confirm+wipe instead of being locked out of logout forever (adversarial-review HIGH fix).
+- ✅ Removed the in-app account SWITCH from Settings (owner/admin + accountant) — it left a flaky token/secure-storage state; logout+login is the reliable path.
+- ✅ Spec + direct edit + adversarial review (1 HIGH fixed); analyze 0/0; Flutter 90; no backend/panel change needed; Flash-API release APK.
+
 ## Backlog
 - ⬜ Localize backend plan names/descriptions (currently English server data).
 - ⬜ DB migration path (schema v1, `onCreate` only); index on `expenses.date`.

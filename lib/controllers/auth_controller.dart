@@ -474,45 +474,63 @@ class AuthController extends GetxController {
     // auto-pulls the account's data fresh from the backend.
     if (wipeLocal && Get.isRegistered<SyncController>()) {
       final sync = Get.find<SyncController>();
-      // Flash item 2: ONLINE + sync-enabled → push pending (best effort) then
-      // ALWAYS wipe local data, so the next account on this device can't see
-      // this one's data (synced rows are safe on the server mirror, re-pulled on
-      // next login). OFFLINE or sync-disabled → wiping is UNRECOVERABLE, so ASK:
-      // confirm deletes + logs out; cancel ABORTS the logout (stay signed in) so
-      // the user neither loses data nor exposes it.
       final bool online = canSync && await _net.isOnline();
-      // v15 item 4: if there are PENDING unsynced records, warn explicitly that
-      // logout will permanently delete them (require explicit confirm). Else the
-      // usual confirm (ONLINE "log out?" / OFFLINE "local data will be deleted").
-      // Refresh first so the count reflects the REAL outbox (not a stale
-      // heartbeat snapshot) — critical for the unrecoverable offline wipe.
-      try {
-        await sync.refreshPending();
-      } catch (_) {}
-      final int pending = sync.pendingCount.value;
-      final bool hasPending = pending > 0;
+      // Flash v17 — DATA-LOSS GUARD (ALL roles: owner/admin/accountant): NEVER
+      // wipe local data while UNSYNCED records remain (rows in sync_outbox, i.e.
+      // is_synced=0/pending_sync). This runs BEFORE any delete or session
+      // teardown, and ONLY when the plan ENABLES sync (canSync): on a sync-
+      // DISABLED ("offline-only") plan the outbox can never reach the server, so
+      // blocking on it would lock the user out of logout forever — those accounts
+      // fall through to the offline confirm+wipe below (unrecoverable, so it asks
+      // first, exactly as before v17).
+      if (canSync) {
+        // 1) A sync is currently running → temporarily disable logout until it
+        //    completes (don't race the wipe against an in-flight push/pull).
+        if (sync.isSyncing.value || sync.isPulling.value) {
+          Get.snackbar('logout'.tr, 'logout_sync_running'.tr,
+              snackPosition: SnackPosition.BOTTOM);
+          return;
+        }
+        // 2) ONLINE → push pending first (upload ONLY; never deletes) so a normal
+        //    online logout still completes with no manual step.
+        if (online) {
+          SyncProgress.show('sync_uploading'.tr);
+          try {
+            // showOverlay:false — we own the overlay here.
+            await sync.syncNow(silent: true, showOverlay: false);
+          } catch (_) {} finally {
+            SyncProgress.hide();
+          }
+        }
+        // 3) Re-read the REAL outbox AFTER the push attempt (not a stale snapshot).
+        try {
+          await sync.refreshPending();
+        } catch (_) {}
+        // 4) STILL unsynced (offline, or the push failed) → BLOCK the logout and
+        //    keep ALL local data intact. The user must sync before logging out.
+        if (sync.pendingCount.value > 0) {
+          await Get.defaultDialog<void>(
+            title: 'warning'.tr,
+            middleText: 'logout_blocked_unsynced'.tr,
+            textConfirm: 'ok'.tr,
+            onConfirm: () => Get.back(),
+          );
+          return; // do NOT delete local data or end the session
+        }
+      }
+      // 5) Sync-disabled plan, or no unsynced data → confirm, then safely wipe
+      //    ALL local data (every table). Only finish logout AFTER it completes.
       final ok = await Get.defaultDialog<bool>(
-        title: hasPending ? 'warning'.tr : 'logout'.tr,
-        middleText: hasPending
-            ? 'logout_pending_warn'.trParams({'n': '$pending'})
-            : (online ? 'logout_confirm'.tr : 'logout_offline_wipe_msg'.tr),
+        title: 'logout'.tr,
+        middleText: online ? 'logout_confirm'.tr : 'logout_offline_wipe_msg'.tr,
         textConfirm: online ? 'logout'.tr : 'delete_local_data'.tr,
         textCancel: 'cancel'.tr,
         onConfirm: () => Get.back(result: true),
         onCancel: () {},
       );
       if (ok != true) return; // cancel → abort the logout entirely
-      // Flash item 4: show a loading indicator and delete ALL local data
-      // (every table, not just the synced ones); only finish logout AFTER the
-      // wipe completes. Online: push pending first so nothing unsynced is lost.
       SyncProgress.show('logging_out'.tr);
       try {
-        if (online) {
-          try {
-            // showOverlay:false — logout already owns the SyncProgress overlay.
-            await sync.syncNow(silent: true, showOverlay: false);
-          } catch (_) {}
-        }
         await sync.deleteAllLocalData();
       } catch (e) {
         Log.w('logout local wipe failed: $e');
