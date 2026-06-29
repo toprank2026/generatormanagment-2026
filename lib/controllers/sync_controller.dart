@@ -186,11 +186,26 @@ class SyncController extends GetxController {
       lastSyncError.value = null; // success clears any prior error
     } on ApiException catch (e) {
       Log.e('sync failed', e);
-      if (e.isAuthError) {
-        // 401/403 (e.g. FEATURE_DISABLED / plan/subscription) — NOT transient.
-        // Retrying every 30s won't help; tell the user why uploads are stuck.
+      final code =
+          (e.body is Map) ? ((e.body as Map)['code']?.toString() ?? '') : '';
+      if (e.statusCode == 403 && code == 'FEATURE_DISABLED') {
+        // The OWNER's ACTIVE plan genuinely disables sync — not transient.
         lastSyncError.value = 'plan';
         if (!silent) Get.snackbar('sync'.tr, 'sync_disabled_plan'.tr);
+      } else if (e.isAuthError) {
+        // v18: a 401 (stale/invalid token) or a 403 BLOCKED means the SESSION
+        // is dead — NOT a plan limit. This is what wrongly showed "sync not
+        // available in your plan" and left the user stuck. Recover via the auth
+        // recheck, which signs out to the login screen (involuntary logout: it
+        // KEEPS local data + the outbox), so a fresh token is issued and the
+        // pending changes push after re-login.
+        lastSyncError.value = 'auth';
+        if (!silent) Get.snackbar('sync'.tr, 'session_expired_relogin'.tr);
+        try {
+          if (Get.isRegistered<AuthController>()) {
+            await Get.find<AuthController>().recheckSession();
+          }
+        } catch (_) {/* best-effort recovery */}
       } else {
         // Network/timeout (statusCode==0) or server hiccup — keep quiet and
         // retry on the next tick (offline-first); record the reason.

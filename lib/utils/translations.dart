@@ -130,6 +130,8 @@ class Messages extends Translations {
       'pricing_start_date': 'Start date',
       // P3 — sync upload error reason
       'sync_disabled_plan': 'Sync is not available on your current plan',
+      'session_expired_relogin':
+          'Your session has expired. Please sign in again to sync your data.',
       'paid_subscribers': 'Paid Subscribers',
       'unpaid_subscribers': 'Unpaid Subscribers',
       'total_boards': 'Total Boards',
@@ -590,6 +592,8 @@ class Messages extends Translations {
       'pricing_start_date': 'تاريخ البدء',
       // P3 — سبب فشل رفع المزامنة
       'sync_disabled_plan': 'المزامنة غير متاحة في خطتك الحالية',
+      'session_expired_relogin':
+          'انتهت جلستك. يُرجى تسجيل الدخول مرة أخرى لمزامنة بياناتك.',
       'paid_subscribers': 'المشتركين المسددين',
       'unpaid_subscribers': 'المشتركين غير المسددين',
       'total_boards': 'إجمالي البوردات',
