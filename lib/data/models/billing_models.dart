@@ -1,3 +1,5 @@
+import 'package:generatormanagment/utils/money.dart';
+
 class MonthlyPrice {
   String month; // YYYY-MM
   double pricePerAmp;
@@ -168,9 +170,9 @@ String receiptDiscountText(Receipt r) {
   if (r.discountType == 'ampere') {
     final a = r.discountAmps;
     final amps = a == null ? '' : ' (${_fmtNum(a)} أمبير)';
-    return '${_fmtNum(r.discountValue)} د.ع$amps';
+    return '${fmtAmount(r.discountValue)} د.ع$amps';
   }
-  return '${_fmtNum(r.discountValue)} د.ع';
+  return '${fmtAmount(r.discountValue)} د.ع';
 }
 
 /// Arabic payment-method label for a PRINTED receipt (v11): 'card' -> بطاقة,

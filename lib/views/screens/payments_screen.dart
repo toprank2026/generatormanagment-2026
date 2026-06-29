@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/reports_controller.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
+import 'package:generatormanagment/utils/money.dart';
 
 const Color _kBlue = Color(0xFF1565C0);
 
@@ -18,7 +19,6 @@ class PaymentsScreen extends StatefulWidget {
 class _PaymentsScreenState extends State<PaymentsScreen> {
   final ReportsController controller = Get.find<ReportsController>();
   final ScrollController _scroll = ScrollController();
-  final NumberFormat _money = NumberFormat.decimalPattern();
 
   @override
   void initState() {
@@ -117,7 +117,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         trailing: Text(
-          _money.format(r.paidAmount),
+          fmtAmount(r.paidAmount),
           style: const TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 16,

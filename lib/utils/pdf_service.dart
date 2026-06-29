@@ -9,6 +9,7 @@ import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/core/api_config.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/utils/printer_prefs.dart';
 
 class PdfService {
@@ -38,18 +39,18 @@ class PdfService {
       ['المشترك', sub.name],
       ['الشهر', receipt.month],
       ['الأمبيرات', '${receipt.ampsSnapshot}'],
-      ['سعر الأمبير', '${receipt.priceSnapshot}'],
+      ['سعر الأمبير', fmtAmount(receipt.priceSnapshot)],
       // The tariff type the ampere price belongs to (gold / standard / commercial).
       [
         'نوع الاشتراك',
         SubscriberCategory.arabicLabel(receipt.categorySnapshot ?? sub.category)
       ],
-      ['المدفوع', '${receipt.paidAmount} د.ع'],
+      ['المدفوع', '${fmtAmount(receipt.paidAmount)} د.ع'],
       // v11: payment method (cash / card).
       ['طريقة الدفع', receiptPaymentMethodText(receipt)],
       // P5: Discount section — type + value, or "no discount".
       ['الخصم', receiptDiscountText(receipt)],
-      ['المتبقي', '${receipt.remainingAfter} د.ع'],
+      ['المتبقي', '${fmtAmount(receipt.remainingAfter)} د.ع'],
       // The accountant this invoice belongs to (omitted for owner-owned).
       if (accountantName.trim().isNotEmpty) ['المحاسب', accountantName.trim()],
     ];

@@ -6,6 +6,7 @@ import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/core/api_config.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/utils/printer_prefs.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
@@ -86,18 +87,18 @@ class BluetoothPrintService {
       ["المشترك", sub.name],
       ["الشهر", receipt.month],
       ["الأمبيرات", receipt.ampsSnapshot.toString()],
-      ["سعر الأمبير", receipt.priceSnapshot.toString()],
+      ["سعر الأمبير", fmtAmount(receipt.priceSnapshot)],
       // The tariff type the ampere price belongs to (gold / standard / commercial).
       [
         "نوع الاشتراك",
         SubscriberCategory.arabicLabel(receipt.categorySnapshot ?? sub.category)
       ],
-      ["المدفوع", "${receipt.paidAmount} د.ع"],
+      ["المدفوع", "${fmtAmount(receipt.paidAmount)} د.ع"],
       // v11: payment method (cash / card).
       ["طريقة الدفع", receiptPaymentMethodText(receipt)],
       // P5: Discount section — type + value, or "no discount".
       ["الخصم", receiptDiscountText(receipt)],
-      ["المتبقي", "${receipt.remainingAfter} د.ع"],
+      ["المتبقي", "${fmtAmount(receipt.remainingAfter)} د.ع"],
     ];
     if (accountantName.isNotEmpty) rows.add(["المحاسب", accountantName]);
     await printArabicTable(rows);

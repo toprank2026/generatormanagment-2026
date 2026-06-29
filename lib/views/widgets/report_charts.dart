@@ -9,7 +9,11 @@ import 'package:intl/intl.dart' hide TextDirection;
 
 const Color _kTrackColor = Color(0xFFECEFF4);
 
-String _formatNumber(num value) => NumberFormat.decimalPattern().format(value);
+// v19: force comma grouping ('en_US') so chart values (incl. money in the
+// compare bars) match the app-wide thousands-separated format, independent of
+// the active locale.
+String _formatNumber(num value) =>
+    NumberFormat.decimalPattern('en_US').format(value);
 
 // ---------------------------------------------------------------------------
 // GaugeChart — semi-circular (180°) gauge: grey track + colored value arc.

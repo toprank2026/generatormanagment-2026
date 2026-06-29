@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
+import 'package:generatormanagment/utils/money.dart';
 
 const Color _kBlue = Color(0xFF1565C0);
 
@@ -43,9 +44,6 @@ Future<Receipt?> showCollectPaymentDialog({
     return d;
   }
 
-  String money(double v) =>
-      v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(0);
-
   return Get.dialog<Receipt?>(
     StatefulBuilder(
       builder: (context, setLocal) {
@@ -76,7 +74,7 @@ Future<Receipt?> showCollectPaymentDialog({
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    "${'billing_month'.tr}: ${controller.selectedMonth.value}\n${'remaining_fees'.tr}: ${money(due)} ${'iqd'.tr}",
+                    "${'billing_month'.tr}: ${controller.selectedMonth.value}\n${'remaining_fees'.tr}: ${fmtAmount(due)} ${'iqd'.tr}",
                     style: const TextStyle(
                         color: _kBlue, fontWeight: FontWeight.bold),
                   ),
@@ -177,7 +175,7 @@ Future<Receipt?> showCollectPaymentDialog({
                       decoration: InputDecoration(
                         labelText: 'amps_to_discount'.tr,
                         helperText:
-                            '${'receipt_price_per_amp'.tr}: ${money(pricePerAmp)}',
+                            '${'receipt_price_per_amp'.tr}: ${fmtAmount(pricePerAmp)}',
                         border: const OutlineInputBorder(),
                       ),
                       onChanged: (_) => setLocal(() {}),
@@ -198,11 +196,11 @@ Future<Receipt?> showCollectPaymentDialog({
                   ],
                   const SizedBox(height: 16),
                   if (discount > 0)
-                    Text('${'discount'.tr}: ${money(discount)} ${'iqd'.tr}',
+                    Text('${'discount'.tr}: ${fmtAmount(discount)} ${'iqd'.tr}',
                         style: const TextStyle(
                             color: Color(0xFF43A047),
                             fontWeight: FontWeight.bold)),
-                  Text('${'amount_to_pay'.tr}: ${money(toPay)} ${'iqd'.tr}',
+                  Text('${'amount_to_pay'.tr}: ${fmtAmount(toPay)} ${'iqd'.tr}',
                       style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,

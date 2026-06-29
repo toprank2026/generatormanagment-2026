@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/expense_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
+import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/views/widgets/date_field.dart';
 
 class ExpensesScreen extends StatefulWidget {
@@ -91,10 +92,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 const SizedBox(height: 8),
                 Obx(
                   () => Text(
-                    NumberFormat.currency(
-                      symbol: "IQD ",
-                      decimalDigits: 0,
-                    ).format(controller.totalExpenses.value),
+                    "IQD ${fmtAmount(controller.totalExpenses.value)}",
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 36,
@@ -265,7 +263,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    "- ${NumberFormat.decimalPattern().format(ex.amount)}",
+                                    "- ${fmtAmount(ex.amount)}",
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 16,

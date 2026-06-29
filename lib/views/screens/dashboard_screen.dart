@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
+import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
@@ -387,19 +388,42 @@ class DashboardScreen extends StatelessWidget {
                     // v16: responsive sizing by screen width (tablet vs phone);
                     // card height adapts (no fixed 1.3 ratio) + numbers are
                     // FittedBox-safe, so big numbers never get clipped.
+                    // v19: PHONES (<600) keep the EXACT current sizing; only
+                    // TABLETS / large landscape screens adapt — more columns +
+                    // bigger icons/text/padding + a height derived from a target
+                    // so cards never balloon with tiny content.
                     final double w = MediaQuery.of(context).size.width;
                     final bool isTablet = w >= 600;
-                    final double iconSize = isTablet ? 30 : 24;
-                    final double aspect = isTablet ? 1.5 : 1.08;
-                    final double fullCardH = isTablet ? 130 : 110;
+                    final bool isLarge = w >= 1000;
+                    final int columns = isLarge ? 4 : (isTablet ? 3 : 2);
+                    final double iconSize = isLarge ? 36 : (isTablet ? 32 : 24);
+                    final double gridValueFont =
+                        isLarge ? 30 : (isTablet ? 27 : 23);
+                    final double labelFont = isLarge ? 16 : (isTablet ? 15 : 13);
+                    final double cardPad = isLarge ? 18 : (isTablet ? 16 : 12);
+                    final double spacing = isTablet ? 18 : 16;
+                    // Phone keeps the exact 1.08 ratio; tablets derive the ratio
+                    // from a TARGET card height so cards stay compact as the
+                    // column count grows (32 = the scroll view's 16px side pad).
+                    double aspect = 1.08;
+                    if (isTablet) {
+                      final double avail = w - 32 - (columns - 1) * spacing;
+                      final double cardW = avail / columns;
+                      final double targetH = isLarge ? 150 : 140;
+                      aspect = cardW / targetH;
+                    }
+                    final double fullCardH =
+                        isLarge ? 160 : (isTablet ? 140 : 110);
+                    final double moneyValueFont =
+                        isLarge ? 46 : (isTablet ? 40 : 30);
                     return Column(
                       children: [
                         GridView.count(
-                          crossAxisCount: 2,
+                          crossAxisCount: columns,
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
-                          mainAxisSpacing: 16,
-                          crossAxisSpacing: 16,
+                          mainAxisSpacing: spacing,
+                          crossAxisSpacing: spacing,
                           childAspectRatio: aspect,
                           children: [
                             _buildStatCard(
@@ -408,6 +432,9 @@ class DashboardScreen extends StatelessWidget {
                               label: 'total_subscribers'.tr,
                               value: ctrl.totalSubscribers.value.toString(),
                               iconSize: iconSize,
+                              valueFontSize: gridValueFont,
+                              labelFontSize: labelFont,
+                              padding: cardPad,
                               onTap: () =>
                                   Get.to(() => const SubscribersScreen()),
                             ),
@@ -417,6 +444,9 @@ class DashboardScreen extends StatelessWidget {
                               label: 'paid_subscribers'.tr,
                               value: ctrl.paidCount.value.toString(),
                               iconSize: iconSize,
+                              valueFontSize: gridValueFont,
+                              labelFontSize: labelFont,
+                              padding: cardPad,
                               onTap: () => Get.to(
                                 () => const SubscribersScreen(filter: 'paid'),
                               ),
@@ -427,6 +457,9 @@ class DashboardScreen extends StatelessWidget {
                               label: 'unpaid_subscribers'.tr,
                               value: ctrl.unpaidCount.value.toString(),
                               iconSize: iconSize,
+                              valueFontSize: gridValueFont,
+                              labelFontSize: labelFont,
+                              padding: cardPad,
                               onTap: () => Get.to(
                                 () => const SubscribersScreen(filter: 'unpaid'),
                               ),
@@ -437,6 +470,9 @@ class DashboardScreen extends StatelessWidget {
                               label: 'total_boards'.tr,
                               value: ctrl.boardsCount.value.toString(),
                               iconSize: iconSize,
+                              valueFontSize: gridValueFont,
+                              labelFontSize: labelFont,
+                              padding: cardPad,
                               onTap: () => Get.to(() => const BoardsScreen()),
                             ),
                             _buildStatCard(
@@ -445,6 +481,9 @@ class DashboardScreen extends StatelessWidget {
                               label: 'total_circuits'.tr,
                               value: ctrl.circuitsCount.value.toString(),
                               iconSize: iconSize,
+                              valueFontSize: gridValueFont,
+                              labelFontSize: labelFont,
+                              padding: cardPad,
                               onTap: () => Get.to(
                                   () => const BoardsScreen(forCircuits: true)),
                             ),
@@ -454,12 +493,16 @@ class DashboardScreen extends StatelessWidget {
                               label: 'amps'.tr,
                               value: ctrl.totalAmps.value.toStringAsFixed(1),
                               iconSize: iconSize,
+                              valueFontSize: gridValueFont,
+                              labelFontSize: labelFont,
+                              padding: cardPad,
                             ),
                           ],
                         ),
                         const SizedBox(height: 16),
                         // v16 item 4/5: Collected + Remaining span the FULL row
                         // (only these two) so large amounts show clearly.
+                        // v19: amounts use thousands separators (fmtAmount).
                         SizedBox(
                           width: double.infinity,
                           height: fullCardH,
@@ -467,10 +510,11 @@ class DashboardScreen extends StatelessWidget {
                             icon: Icons.account_balance_wallet,
                             color: Colors.green,
                             label: 'monthly_revenue'.tr,
-                            value:
-                                ctrl.totalCollected.value.toStringAsFixed(0),
+                            value: fmtAmount(ctrl.totalCollected.value),
                             iconSize: iconSize,
-                            valueFontSize: isTablet ? 36 : 30,
+                            valueFontSize: moneyValueFont,
+                            labelFontSize: labelFont,
+                            padding: cardPad,
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -481,9 +525,11 @@ class DashboardScreen extends StatelessWidget {
                             icon: Icons.monetization_on,
                             color: Colors.redAccent,
                             label: 'monthly_remaining'.tr,
-                            value: ctrl.totalDue.value.toStringAsFixed(0),
+                            value: fmtAmount(ctrl.totalDue.value),
                             iconSize: iconSize,
-                            valueFontSize: isTablet ? 36 : 30,
+                            valueFontSize: moneyValueFont,
+                            labelFontSize: labelFont,
+                            padding: cardPad,
                           ),
                         ),
                       ],
@@ -607,6 +653,8 @@ class DashboardScreen extends StatelessWidget {
     VoidCallback? onTap,
     double iconSize = 24, // v16: responsive (tablet vs phone)
     double valueFontSize = 23, // v16: bigger on the full-width money cards
+    double labelFontSize = 13, // v19: responsive (phone default 13)
+    double padding = 12, // v19: responsive (phone default 12)
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -625,7 +673,7 @@ class DashboardScreen extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(12.0),
+          padding: EdgeInsets.all(padding),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -662,7 +710,8 @@ class DashboardScreen extends StatelessWidget {
                     ),
                     Text(
                       label,
-                      style: const TextStyle(color: Colors.grey, fontSize: 13),
+                      style: TextStyle(
+                          color: Colors.grey, fontSize: labelFontSize),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

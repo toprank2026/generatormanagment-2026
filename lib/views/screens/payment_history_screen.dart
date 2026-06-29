@@ -8,6 +8,7 @@ import 'package:generatormanagment/data/repositories/accountant_repository.dart'
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
+import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/utils/pdf_service.dart';
 import 'package:generatormanagment/utils/bluetooth_print_service.dart';
 import 'package:generatormanagment/views/widgets/collect_payment_dialog.dart';
@@ -161,7 +162,6 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final currency = NumberFormat.decimalPattern();
     return Scaffold(
       backgroundColor: const Color(0xFFE3F2FD),
       appBar: AppBar(
@@ -277,7 +277,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Text(
-                                    "${currency.format(r.paidAmount)} ${'iqd'.tr}",
+                                    "${fmtAmount(r.paidAmount)} ${'iqd'.tr}",
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 15,

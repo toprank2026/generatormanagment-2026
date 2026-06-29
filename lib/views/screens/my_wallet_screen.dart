@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/settlement_controller.dart';
 import 'package:generatormanagment/data/models/settlement_model.dart';
+import 'package:generatormanagment/utils/money.dart';
 
 const Color _kBlue = Color(0xFF1565C0);
 const Color _kTeal = Color(0xFF00897B);
@@ -20,7 +21,6 @@ class MyWalletScreen extends StatefulWidget {
 class _MyWalletScreenState extends State<MyWalletScreen> {
   final SettlementController c = Get.find<SettlementController>();
   final ScrollController _scroll = ScrollController();
-  final NumberFormat _money = NumberFormat.decimalPattern();
 
   @override
   void initState() {
@@ -137,7 +137,7 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          Text('${_money.format(balance)} ${'iqd'.tr}',
+          Text('${fmtAmount(balance)} ${'iqd'.tr}',
               style: const TextStyle(
                   color: Colors.white,
                   fontSize: 28,
@@ -182,7 +182,7 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
 
   Widget _miniStat(String label, double v) => Column(
         children: [
-          Text(_money.format(v),
+          Text(fmtAmount(v),
               style: const TextStyle(
                   color: Colors.white, fontWeight: FontWeight.bold)),
           Text(label,
@@ -208,7 +208,7 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
             child: Icon(
                 s.method == 'card' ? Icons.credit_card : Icons.payments,
                 color: color)),
-        title: Text('${_money.format(s.amount)} ${'iqd'.tr} · $methodLabel',
+        title: Text('${fmtAmount(s.amount)} ${'iqd'.tr} · $methodLabel',
             style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text(s.requestedAt == null
             ? ''

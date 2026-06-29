@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/reports_controller.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
+import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/views/widgets/report_charts.dart';
 import 'package:generatormanagment/views/screens/payments_screen.dart';
 
@@ -80,7 +80,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final money = NumberFormat.decimalPattern();
                 final double expected = controller.expectedTotal.value;
                 final double collected = controller.collectedTotal.value;
                 final double net = controller.netProfit.value;
@@ -183,25 +182,25 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             icon: Icons.request_quote,
                             color: Colors.indigo,
                             label: 'expected_total'.tr,
-                            value: money.format(expected),
+                            value: fmtAmount(expected),
                           ),
                           _buildStatCard(
                             icon: Icons.account_balance_wallet,
                             color: Colors.green,
                             label: 'collected_revenue'.tr,
-                            value: money.format(collected),
+                            value: fmtAmount(collected),
                           ),
                           _buildStatCard(
                             icon: Icons.monetization_on,
                             color: Colors.redAccent,
                             label: 'remaining_fees'.tr,
-                            value: money.format(controller.remainingTotal.value),
+                            value: fmtAmount(controller.remainingTotal.value),
                           ),
                           _buildStatCard(
                             icon: Icons.receipt_long,
                             color: Colors.orange,
                             label: 'total_expenses'.tr,
-                            value: money.format(controller.expensesTotal.value),
+                            value: fmtAmount(controller.expensesTotal.value),
                           ),
                           _buildStatCard(
                             icon: net >= 0
@@ -209,7 +208,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                 : Icons.trending_down,
                             color: netColor,
                             label: 'net_profit'.tr,
-                            value: money.format(net),
+                            value: fmtAmount(net),
                             valueColor: netColor,
                           ),
                           // item 1: COUNT of PAID subscribers per tariff (gold /

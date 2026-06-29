@@ -122,6 +122,11 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Simplified Settings sync section** — removed the cloud Backup tile, the Sync screen tile, and the delete-local-data tile; kept only the local **Export/Import** (subscriber backup) + Manage Devices.
 - ✅ Spec + read-only mapping (4 agents) + coupled edits + adversarial review (clean); analyze 0/0; Flutter 90; backend 146; Flash-API release APK.
 
+## Flash v19 (responsive Home cards + app-wide IQD money formatting)
+- ✅ **Responsive Home cards** — phones (<600px) keep the EXACT prior sizing; tablets/landscape now adapt: columns 2→3 (≥600) → 4 (≥1000), bigger icon/value/label fonts + padding, and the grid aspect ratio derived from a TARGET card height so cards never balloon. Money cards stay full-width with a larger responsive value font.
+- ✅ **Thousands-separator IQD formatting app-wide** — new `lib/utils/money.dart` `fmtAmount(num)` ('#,##0', en_US → "1,000,000"); applied to every displayed monetary value (dashboard Collected/Remaining, reports, payments, payment history, subscriber due, collect-payment dialog, expenses, wallet, settlements, printed Bluetooth + PDF receipts, report bars). Editable amount fields left raw (parse-safe); amps/counts/dates untouched. Currency unit ('iqd'.tr) append preserved for RTL.
+- ✅ Read-only mapping + per-file format workflow + adversarial review (clean); analyze 0/0; Flutter 90; Flash-API release APK.
+
 ## Backlog
 - ⬜ Localize backend plan names/descriptions (currently English server data).
 - ⬜ DB migration path (schema v1, `onCreate` only); index on `expenses.date`.

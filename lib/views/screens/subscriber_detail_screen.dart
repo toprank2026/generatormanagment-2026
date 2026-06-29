@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:intl/intl.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
@@ -260,10 +260,7 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
                       );
                     }
                     return Text(
-                      NumberFormat.currency(
-                        symbol: 'iqd'.tr,
-                        decimalDigits: 0,
-                      ).format(dueAmount > 0 ? dueAmount : 0),
+                      '${'iqd'.tr} ${fmtAmount(dueAmount > 0 ? dueAmount : 0)}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 32,

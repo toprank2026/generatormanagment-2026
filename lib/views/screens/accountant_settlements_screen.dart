@@ -6,6 +6,7 @@ import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/data/models/settlement_model.dart';
 import 'package:generatormanagment/data/repositories/settlement_repository.dart';
+import 'package:generatormanagment/utils/money.dart';
 
 const Color _kBlue = Color(0xFF1565C0);
 
@@ -29,7 +30,6 @@ class _AccountantSettlementsScreenState
   final SettlementRepository _repo = SettlementRepository();
   final AuthController _auth = Get.find();
   final ConnectivityService _net = ConnectivityService();
-  final NumberFormat _money = NumberFormat.decimalPattern();
 
   List<({Settlement settlement, String accountantName})> _rows = [];
   bool _loading = true;
@@ -190,7 +190,7 @@ class _AccountantSettlementsScreenState
                         fit: BoxFit.scaleDown,
                         alignment: AlignmentDirectional.centerStart,
                         child: Text(
-                          '${_money.format(s.amount)} ${'iqd'.tr} · $methodLabel',
+                          '${fmtAmount(s.amount)} ${'iqd'.tr} · $methodLabel',
                           style: const TextStyle(
                               fontSize: 15, fontWeight: FontWeight.w600),
                         ),
