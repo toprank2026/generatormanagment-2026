@@ -127,6 +127,13 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Thousands-separator IQD formatting app-wide** — new `lib/utils/money.dart` `fmtAmount(num)` ('#,##0', en_US → "1,000,000"); applied to every displayed monetary value (dashboard Collected/Remaining, reports, payments, payment history, subscriber due, collect-payment dialog, expenses, wallet, settlements, printed Bluetooth + PDF receipts, report bars). Editable amount fields left raw (parse-safe); amps/counts/dates untouched. Currency unit ('iqd'.tr) append preserved for RTL.
 - ✅ Read-only mapping + per-file format workflow + adversarial review (clean); analyze 0/0; Flutter 90; Flash-API release APK.
 
+## Flash v20 (ordering, receipt print, account editing, printer stability)
+- ✅ **Board + circuit ordering** — boards and circuits (الجوزات) now always list in CREATION order (oldest→newest), stable for Arabic names: `ORDER BY created_at ASC, rowid ASC` (replaces the unstable `name ASC`), and `created_at` is stamped on insert. Board cards are smaller + responsive (`SliverGridDelegateWithMaxCrossAxisExtent` → more columns on tablets/landscape).
+- ✅ **Receipt printing trimmed** (Bluetooth + PDF) — removed the app logo + the phone number, cut blank tear-off lines, slightly smaller QR (BT 240→190, PDF 95→75), and a new **copies-per-receipt** setting (1 or 2; default 2) wired through `PrinterPrefs.copies` + a Settings toggle.
+- ✅ **Owner/Admin account editing** — new `PUT /api/account/profile` (`updateMyProfile`: bcrypt password + tokenVersion bump + **re-signed fresh token** so the session survives, username/phone uniqueness → 409, accountant rejected 403) + a Flutter Edit-account screen in Settings (owner/admin only). A password change also rotates the offline owner-credential hash.
+- ✅ **Printer connection stability** — `printReceipt` now `_ensureConnected()`: reconnects to the saved printer (1 retry) before sending and THROWS on failure, so both print screens surface a real "print failed" instead of a false "sent" (no app restart needed).
+- ✅ Spec + read-only mapping (4 agents) + coupled edits + parallel disjoint agents + adversarial review (3 findings fixed: offline-hash rotation, 409 message, payment-history try/catch); analyze 0/0; Flutter 90; backend tests pass; Flash-API release APK.
+
 ## Backlog
 - ⬜ Localize backend plan names/descriptions (currently English server data).
 - ⬜ DB migration path (schema v1, `onCreate` only); index on `expenses.date`.

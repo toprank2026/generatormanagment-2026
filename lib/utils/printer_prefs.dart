@@ -19,6 +19,15 @@ class PrinterPrefs {
   /// Cached paper width in millimetres (58 or 80). Synchronous-friendly.
   static int _widthMm = defaultWidthMm;
 
+  /// v20 item 3: how many COPIES of each receipt to print (1 or 2). Default 2
+  /// preserves the prior behaviour (customer copy + keep copy); the user can
+  /// switch to a single copy from the printer settings.
+  static const String keyCopies = 'printer_copies';
+  static int _copies = 2;
+
+  /// Number of copies to print per receipt (clamped to 1 or 2).
+  static int get copies => _copies == 1 ? 1 : 2;
+
   /// The currently selected paper width in millimetres (58 or 80).
   static int get widthMm => _widthMm;
 
@@ -33,10 +42,11 @@ class PrinterPrefs {
   static PdfPageFormat get pdfPageFormat =>
       is80mm ? PdfPageFormat.roll80 : PdfPageFormat.roll57;
 
-  /// Loads the persisted width into the cache (call once on app start).
+  /// Loads the persisted width + copies into the cache (call once on app start).
   static Future<int> load() async {
     final prefs = await SharedPreferences.getInstance();
     _widthMm = _normalize(prefs.getInt(keyPaperWidth) ?? defaultWidthMm);
+    _copies = (prefs.getInt(keyCopies) ?? 2) == 1 ? 1 : 2;
     return _widthMm;
   }
 
@@ -45,6 +55,13 @@ class PrinterPrefs {
     _widthMm = _normalize(mm);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(keyPaperWidth, _widthMm);
+  }
+
+  /// v20 item 3: persists the copies-per-receipt setting (1 or 2).
+  static Future<void> setCopies(int n) async {
+    _copies = n == 1 ? 1 : 2;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(keyCopies, _copies);
   }
 
   static int _normalize(int mm) => mm == 80 ? 80 : 58;

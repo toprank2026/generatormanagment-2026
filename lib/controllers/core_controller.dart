@@ -147,6 +147,9 @@ class CoreController extends GetxController {
       code: code,
       accountantId: accountantId ?? _auth.scopeAccountantId, // item 5: link to creator
       branchId: branch,
+      // v20: stamp creation time so boards sort in true creation order (the
+      // list orders by created_at; without this the column would be NULL).
+      createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     await _boardRepo.insert(b);
     loadBoards();
@@ -239,6 +242,8 @@ class CoreController extends GetxController {
       phase: phase,
       accountantId: accountantId ?? _auth.scopeAccountantId, // item 5: link to creator
       branchId: branch,
+      // v20: stamp creation time so circuits sort in true creation order.
+      createdAt: DateTime.now().toUtc().toIso8601String(),
     );
     await _circuitRepo.insert(c);
     loadCircuits(boardId);

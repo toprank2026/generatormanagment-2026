@@ -68,6 +68,28 @@ class AuthRepository {
 
   Future<void> logout() => _store.clearToken();
 
+  /// v20: owner/admin edits their OWN account (username / password / name /
+  /// phone / generatorName). The backend bumps tokenVersion on a password change
+  /// and returns a FRESH token so THIS device's session survives — [_parseAuth]
+  /// writes it. Only the provided (non-null) fields are sent. Throws
+  /// [ApiException] on 409 (USERNAME_TAKEN / PHONE_TAKEN) or other failures.
+  Future<AuthResult> updateProfile({
+    String? username,
+    String? password,
+    String? name,
+    String? phone,
+    String? generatorName,
+  }) async {
+    final body = <String, dynamic>{};
+    if (username != null) body['username'] = username;
+    if (password != null && password.isNotEmpty) body['password'] = password;
+    if (name != null) body['name'] = name;
+    if (phone != null) body['phone'] = phone;
+    if (generatorName != null) body['generatorName'] = generatorName;
+    final res = await _api.put(ApiConfig.accountProfile, body: body);
+    return _parseAuth(res);
+  }
+
   /// R8: register an accountant as a real BACKEND sub-account tied to a branch.
   /// The owner/admin (current session) calls this; the server creates a User
   /// with role 'accountant', owner = caller, the given branch + permissions, and

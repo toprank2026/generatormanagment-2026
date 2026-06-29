@@ -365,6 +365,47 @@ class AuthController extends GetxController {
     }
   }
 
+  /// v20: owner/admin edits their OWN account (username/password/name/phone/
+  /// generatorName). Online-only. The backend returns a FRESH token (so this
+  /// device's session survives a password change) + the updated account, which
+  /// we cache + apply so the UI reflects it immediately. Returns
+  /// {success:bool, statusCode?, message?}.
+  Future<Map<String, dynamic>> updateProfile({
+    String? username,
+    String? password,
+    String? name,
+    String? phone,
+    String? generatorName,
+  }) async {
+    try {
+      if (!await _net.isOnline()) {
+        return {'success': false, 'message': 'online_only'.tr};
+      }
+      final result = await _auth.updateProfile(
+        username: username,
+        password: password,
+        name: name,
+        phone: phone,
+        generatorName: generatorName,
+      );
+      await _cache.saveAccount(result.account.toJson());
+      _setAccount(result.account, online: true);
+      // v20: a password change rotates the OFFLINE owner-credential hash too, so
+      // the offline gates that compare against it (encrypted-backup restore,
+      // the pre-switch/pre-wipe confirm, switchToOwner) accept the NEW password
+      // instead of the old one.
+      if (password != null && password.isNotEmpty) {
+        await _persistOwnerCredential(result.account.username, password);
+      }
+      update();
+      return {'success': true};
+    } on ApiException catch (e) {
+      return {'success': false, 'statusCode': e.statusCode, 'message': e.message};
+    } catch (e) {
+      return {'success': false, 'message': 'Error: $e'};
+    }
+  }
+
   /// Re-check subscription/plan status (online only). Used after requesting a
   /// plan and on returning online.
   Future<void> refreshSubscription() async {

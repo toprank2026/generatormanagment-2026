@@ -45,6 +45,8 @@ class SettingsController extends GetxController {
   var printerAddress = "".obs;
   // Thermal paper width in mm (58 or 80); default 58.
   var paperWidthMm = PrinterPrefs.defaultWidthMm.obs;
+  // v20 item 3: copies printed per receipt (1 or 2); default 2.
+  var printCopies = 2.obs;
 
   // Persistence Keys
   static const String _keyLang = 'lang_code';
@@ -106,7 +108,8 @@ class SettingsController extends GetxController {
     final prefs = await SharedPreferences.getInstance();
     printerName.value = prefs.getString(_keyPrinterName) ?? "";
     printerAddress.value = prefs.getString(_keyPrinterAddress) ?? "";
-    paperWidthMm.value = await PrinterPrefs.load();
+    paperWidthMm.value = await PrinterPrefs.load(); // also loads copies
+    printCopies.value = PrinterPrefs.copies;
     update();
   }
 
@@ -124,6 +127,13 @@ class SettingsController extends GetxController {
   Future<void> savePaperWidth(int mm) async {
     await PrinterPrefs.setWidth(mm);
     paperWidthMm.value = PrinterPrefs.widthMm;
+    update();
+  }
+
+  /// v20 item 3: persists copies-per-receipt (1 or 2).
+  Future<void> savePrintCopies(int n) async {
+    await PrinterPrefs.setCopies(n);
+    printCopies.value = PrinterPrefs.copies;
     update();
   }
 

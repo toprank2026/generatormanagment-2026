@@ -6,6 +6,7 @@ import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/views/screens/subscription_screen.dart';
 import 'package:generatormanagment/views/screens/accountant_settlements_screen.dart';
 import 'package:generatormanagment/views/screens/accountants_screen.dart';
+import 'package:generatormanagment/views/screens/edit_account_screen.dart';
 import 'package:generatormanagment/views/screens/my_wallet_screen.dart';
 import 'package:generatormanagment/views/screens/branches_screen.dart';
 import 'package:generatormanagment/data/models/account.dart';
@@ -209,6 +210,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             }),
 
+            // v20 item 4: edit OWN account (owner/admin only — accountants edit
+            // via the owner). Opens the self-edit screen.
+            Obx(() {
+              if (!auth.isAdmin) return const SizedBox.shrink();
+              return Column(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: ListTile(
+                      leading: const Icon(Icons.manage_accounts,
+                          color: Color(0xFF1565C0)),
+                      title: Text('edit_account'.tr),
+                      subtitle: Text('edit_account_subtitle'.tr),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Get.to(() => const EditAccountScreen()),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              );
+            }),
+
             // Accountants (owner-only). Opens the dedicated management screen.
             // Obx so it reacts to a user switch (hidden while an accountant
             // is acting on this device).
@@ -378,6 +404,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         children: [
                           Text('paper_58'.tr),
                           Text('paper_80'.tr),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  // v20 item 3: copies-per-receipt (1 or 2).
+                  ListTile(
+                    leading: const Icon(
+                      Icons.copy_all,
+                      color: Color(0xFF1565C0),
+                    ),
+                    title: Text('print_copies'.tr),
+                    trailing: Obx(
+                      () => ToggleButtons(
+                        borderRadius: BorderRadius.circular(8),
+                        constraints: const BoxConstraints(
+                          minHeight: 36,
+                          minWidth: 64,
+                        ),
+                        isSelected: [
+                          controller.printCopies.value == 1,
+                          controller.printCopies.value == 2,
+                        ],
+                        onPressed: (index) =>
+                            controller.savePrintCopies(index == 0 ? 1 : 2),
+                        children: const [
+                          Text('1'),
+                          Text('2'),
                         ],
                       ),
                     ),

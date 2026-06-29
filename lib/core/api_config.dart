@@ -33,6 +33,9 @@ class ApiConfig {
   // --- Accountant wallet (v11): server-authoritative balance (all-time). ---
   static const String accountWallet = '/api/account/wallet';
 
+  // --- v20: owner/admin self-edit of their own login/account details. ---
+  static const String accountProfile = '/api/account/profile';
+
   // --- Subscription ---
   static const String plans = '/api/subscription/plans';
   static const String subscription = '/api/subscription';

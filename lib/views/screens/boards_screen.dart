@@ -113,11 +113,11 @@ class _BoardsScreenState extends State<BoardsScreen> {
             // wrapper to the last board (R3).
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              childAspectRatio: 0.9,
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 180,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 1.0,
             ),
             itemCount:
                 ctrl.boards.length + (ctrl.isBoardsMoreLoading.value ? 1 : 0),
@@ -148,13 +148,13 @@ class _BoardsScreenState extends State<BoardsScreen> {
                       },
                       borderRadius: BorderRadius.circular(16),
                       child: Padding(
-                        padding: const EdgeInsets.all(16.0),
+                        padding: const EdgeInsets.all(10.0),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             const Icon(
                               Icons.grid_view,
-                              size: 48,
+                              size: 34,
                               color: Color(0xFF1565C0),
                             ),
                             const SizedBox(height: 12),
@@ -162,7 +162,7 @@ class _BoardsScreenState extends State<BoardsScreen> {
                               board.name,
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                                fontSize: 14,
                               ),
                               textAlign: TextAlign.center,
                               maxLines: 1,
@@ -173,7 +173,7 @@ class _BoardsScreenState extends State<BoardsScreen> {
                                 board.code!,
                                 style: const TextStyle(
                                   color: Colors.grey,
-                                  fontSize: 12,
+                                  fontSize: 11,
                                 ),
                               ),
                           ],

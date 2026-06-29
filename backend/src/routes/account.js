@@ -36,6 +36,11 @@ function requireOwner(req, res, next) {
   return next();
 }
 
+// SELF account update (owner|admin): change own username/password/name/phone/
+// generatorName. Owner/admin only (accountants are managed by their owner).
+// Registered BEFORE the ownerPanel feature gate so it never depends on that flag.
+router.put('/profile', requireOwnerOrAdmin, ctrl.updateMyProfile);
+
 // Accountant sub-account management (owner|admin). Registered BEFORE the
 // ownerPanel feature gate so it does not depend on that capability flag.
 router.post('/accountants', requireOwnerOrAdmin, accountantCtrl.createAccountant);

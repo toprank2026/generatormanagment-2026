@@ -106,7 +106,12 @@ class BoardRepository {
       'boards',
       where: clauses.isEmpty ? null : clauses.join(' AND '),
       whereArgs: args.isEmpty ? null : args,
-      orderBy: 'name ASC',
+      // v20: ALWAYS show boards in CREATION order (oldest→newest), stable for
+      // Arabic names. created_at (set on insert) is the primary key; rowid
+      // (insertion order) breaks ties + orders legacy rows whose created_at is
+      // still NULL. Replaces the old 'name ASC' which reordered with renames /
+      // non-ASCII collation.
+      orderBy: 'created_at ASC, rowid ASC',
       limit: limit < 0 ? null : limit,
       offset: limit < 0 ? null : offset,
     );
@@ -229,7 +234,10 @@ class CircuitRepository {
       'circuits',
       where: clauses.join(' AND '),
       whereArgs: args,
-      orderBy: 'name ASC',
+      // v20: circuits (الجوزات) ALWAYS in CREATION order (oldest→newest), stable
+      // across languages — created_at (set on insert), rowid tiebreaker for
+      // legacy NULL rows. Replaces the unstable 'name ASC'.
+      orderBy: 'created_at ASC, rowid ASC',
       limit: limit < 0 ? null : limit,
       offset: limit < 0 ? null : offset,
     );

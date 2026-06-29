@@ -130,33 +130,39 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
   /// detail screen (Bluetooth thermal printer when configured, else PDF).
   void _handlePrint(Receipt receipt) async {
     final settings = Get.find<SettingsController>();
+    try {
+      // The accountant this invoice belongs to (owning accountant), resolved
+      // from the synced identity. Empty for owner-owned receipts.
+      String accountantName = "";
+      if (receipt.accountantId != null && receipt.accountantId!.isNotEmpty) {
+        final a = await AccountantRepository().getById(receipt.accountantId!);
+        accountantName = a?.displayName ?? "";
+      }
 
-    // The accountant this invoice belongs to (owning accountant), resolved from
-    // the synced identity. Empty for owner-owned receipts.
-    String accountantName = "";
-    if (receipt.accountantId != null && receipt.accountantId!.isNotEmpty) {
-      final a = await AccountantRepository().getById(receipt.accountantId!);
-      accountantName = a?.displayName ?? "";
-    }
-
-    if (settings.printerAddress.value.isNotEmpty) {
-      Get.snackbar(
-        'printing'.tr,
-        "${'sending_to'.tr} ${settings.printerName.value}...",
-        duration: const Duration(seconds: 2),
-      );
-      final bluetoothService = BluetoothPrintService();
-      // Ensure connected
-      await bluetoothService.connectByAddress(settings.printerAddress.value);
-      await bluetoothService.printReceipt(
-        receipt,
-        widget.subscriber,
-        accountantName,
-      );
-    } else {
-      // Fallback to standard PDF printing
-      await PdfService()
-          .printReceipt(receipt, widget.subscriber, accountantName: accountantName);
+      if (settings.printerAddress.value.isNotEmpty) {
+        Get.snackbar(
+          'printing'.tr,
+          "${'sending_to'.tr} ${settings.printerName.value}...",
+          duration: const Duration(seconds: 2),
+        );
+        final bluetoothService = BluetoothPrintService();
+        // Ensure connected
+        await bluetoothService.connectByAddress(settings.printerAddress.value);
+        await bluetoothService.printReceipt(
+          receipt,
+          widget.subscriber,
+          accountantName,
+        );
+      } else {
+        // Fallback to standard PDF printing
+        await PdfService().printReceipt(receipt, widget.subscriber,
+            accountantName: accountantName);
+      }
+    } catch (e) {
+      // v20: a print/connection failure must NOT be silent (the receipt is
+      // already saved) — report it instead of a false "sent".
+      Get.snackbar('error'.tr, '${'print_failed'.tr}: $e',
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
     }
   }
 

@@ -26,13 +26,6 @@ class PdfService {
     final gName = _generatorName();
     final qrData = _receiptQrUrl(receipt);
 
-    // v15: footer branding logo (blue.png) — bundled asset.
-    pw.MemoryImage? logoImg;
-    try {
-      final logoBytes = await rootBundle.load('images/blue.png');
-      logoImg = pw.MemoryImage(logoBytes.buffer.asUint8List());
-    } catch (_) {}
-
     final rows = <List<String>>[
       ['رقم الوصل', '${receipt.receiptNo}'],
       ['التاريخ', receipt.issuedAt],
@@ -66,8 +59,8 @@ class PdfService {
           ),
         );
 
-    // v11: two copies (two pages) in one print operation.
-    for (int copy = 0; copy < 2; copy++) {
+    // v11: copies (configurable) in one print operation.
+    for (int copy = 0; copy < PrinterPrefs.copies; copy++) {
     pdf.addPage(
       pw.Page(
         // Thermal printer width — roll57 for 58mm, roll80 for 80mm (setting).
@@ -111,32 +104,24 @@ class PdfService {
                       )
                       .toList(),
                 ),
-                pw.SizedBox(height: 12),
+                pw.SizedBox(height: 8),
                 pw.Center(
                   child: pw.BarcodeWidget(
                     data: qrData,
-                    width: 95,
-                    height: 95,
+                    width: 75,
+                    height: 75,
                     barcode: pw.Barcode.qrCode(),
                   ),
                 ),
-                pw.SizedBox(height: 8),
+                pw.SizedBox(height: 6),
                 pw.Center(child: pw.Text('شكراً لكم')),
-                // v15: footer branding — Powered by Flash + logo + phone.
-                pw.SizedBox(height: 8),
+                // v15: footer branding — Powered by Flash.
+                pw.SizedBox(height: 6),
                 pw.Divider(thickness: 0.5),
                 pw.Center(
                   child: pw.Text('Powered by Flash',
                       style: pw.TextStyle(
                           fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                ),
-                if (logoImg != null) pw.SizedBox(height: 3),
-                if (logoImg != null)
-                  pw.Center(child: pw.Image(logoImg, width: 34, height: 34)),
-                pw.SizedBox(height: 3),
-                pw.Center(
-                  child: pw.Text('+964 770 821 6878',
-                      style: const pw.TextStyle(fontSize: 9)),
                 ),
               ],
             ),

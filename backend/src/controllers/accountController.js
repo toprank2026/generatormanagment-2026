@@ -1,10 +1,15 @@
 'use strict';
 
+const bcrypt = require('bcryptjs');
 const SyncRecord = require('../models/SyncRecord');
 const User = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
 const { listUserData, labelFor } = require('./adminController');
 const { effectiveOwnerId } = require('../utils/effectiveOwner');
+const { signToken } = require('../utils/token');
+const { serializeAccount } = require('../utils/serialize');
+const { featuresForUser } = require('../utils/planFeatures');
+const { HttpError } = require('../middleware/error');
 
 /** Entities getMyStats always reports a count for (missing in mirror = 0). */
 const STAT_ENTITIES = [
@@ -387,11 +392,75 @@ const getWallet = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * PUT /api/account/profile (requireAuth; owner|admin — accountants rejected)
+ *
+ * SELF account update: lets the logged-in owner/admin change their OWN
+ * username / password / name / phone / generatorName. Mirrors the field-by-field
+ * guarded assignment of updateAccountant; for username/phone it pre-checks
+ * uniqueness (excluding self) and mirrors register's 409 codes. A password change
+ * bumps tokenVersion (invalidating every previously-issued JWT) — so we RE-SIGN a
+ * fresh token here and return it, keeping the editing device's session alive.
+ * Returns { token, account } in the same shape as the auth endpoints.
+ */
+const updateMyProfile = asyncHandler(async (req, res) => {
+  // Accountants have their own management surface (PUT /accountants/:id by the
+  // owner); the self-profile endpoint is owner/admin only.
+  if (req.user.role === 'accountant') {
+    throw new HttpError(403, 'Owner or admin access required', 'FORBIDDEN');
+  }
+
+  const user = req.user;
+  const { name, phone, generatorName, username, password } = req.body || {};
+
+  if (name !== undefined) user.name = String(name).trim();
+  if (generatorName !== undefined) {
+    user.generatorName = generatorName ? String(generatorName).trim() : null;
+  }
+
+  if (phone !== undefined) {
+    const phoneVal = phone ? String(phone).trim() : null;
+    if (phoneVal) {
+      // Phone numbers are unique account identifiers (mirror register's PHONE_TAKEN).
+      const phoneTaken = await User.findOne({ phone: phoneVal, _id: { $ne: user._id } });
+      if (phoneTaken) {
+        throw new HttpError(409, 'Phone number already registered', 'PHONE_TAKEN');
+      }
+    }
+    user.phone = phoneVal;
+  }
+
+  if (username !== undefined && String(username).trim()) {
+    const uname = String(username).toLowerCase().trim();
+    // Username uniqueness, excluding self (mirror register's USERNAME_TAKEN).
+    const taken = await User.findOne({ username: uname, _id: { $ne: user._id } });
+    if (taken) {
+      throw new HttpError(409, 'Username already taken', 'USERNAME_TAKEN');
+    }
+    user.username = uname;
+  }
+
+  if (password !== undefined && password) {
+    user.passwordHash = await bcrypt.hash(String(password), 10);
+    // Invalidate all previously-issued JWTs (old tokens become TOKEN_STALE).
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+  }
+
+  await user.save();
+
+  // Re-sign so the editing device's session survives the tokenVersion bump.
+  const token = signToken(user);
+  const account = serializeAccount(user);
+  account.subscription.features = await featuresForUser(user);
+  res.status(200).json({ token, account });
+});
+
 module.exports = {
   getMyData,
   getMyStats,
   getMyRecent,
   getWallet,
+  updateMyProfile,
   // Exported so the per-branch owner-panel endpoints can reuse the exact same
   // dashboard math + stat-entity list, scoped to a branch user's mirror.
   buildDashboard,

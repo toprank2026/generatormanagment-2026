@@ -10,7 +10,7 @@ import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/utils/printer_prefs.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui' as ui;
 
 class BluetoothPrintService {
@@ -61,12 +61,18 @@ class BluetoothPrintService {
     Subscriber sub,
     String accountantName,
   ) async {
-    bool? isConnected = await bluetooth.isConnected;
-    if (isConnected != true) return;
+    // v20 item 5: ENSURE the saved printer is connected before sending — if the
+    // link dropped, reconnect to the saved address (short retry) so we never
+    // report a false "sent". Throws when it truly can't connect; the caller
+    // (subscriber_detail / payment_history) catches it and shows "print_failed".
+    if (!await _ensureConnected()) {
+      throw Exception('printer_not_connected');
+    }
 
-    // v11: print TWO copies in the same operation (one for the subscriber, one
-    // to keep). Each iteration emits a full receipt with its own tear-off feed.
-    for (int copy = 0; copy < 2; copy++) {
+    // v20 item 3: print 1 OR 2 copies, from the printer settings (was hard-coded
+    // 2). Each iteration emits a full receipt with its own tear-off feed.
+    final int copies = PrinterPrefs.copies;
+    for (int copy = 0; copy < copies; copy++) {
     bluetooth.write(" \n"); // Clear buffer / separate copies
 
     // Header: generator/business name (set at sign-up). v15: never "TopRank";
@@ -117,47 +123,41 @@ class BluetoothPrintService {
     await printArabicText("شكراً لكم!", "", fontSize: 20, textAlign: 1);
     await Future.delayed(const Duration(milliseconds: 100));
 
-    // v15: footer branding — "Powered by Flash" + logo + phone.
-    bluetooth.printNewLine();
+    // v20 item 3: footer branding trimmed — "Powered by Flash" only (the logo
+    // and phone number were removed; the extra blank tear-off lines reduced to
+    // one) to shorten the receipt.
     await printArabicText("Powered by Flash", "", fontSize: 18, textAlign: 1);
     await Future.delayed(const Duration(milliseconds: 80));
-    await _printLogo();
-    await Future.delayed(const Duration(milliseconds: 80));
-    await printArabicText("+964 770 821 6878", "", fontSize: 16, textAlign: 1);
-    await Future.delayed(const Duration(milliseconds: 80));
-
-    bluetooth.printNewLine();
-    bluetooth.printNewLine();
-    bluetooth.printNewLine(); // Extra lines for tear-off
-    } // end copy loop (two copies)
+    bluetooth.printNewLine(); // single tear-off feed
+    } // end copy loop
   }
 
-  /// v15: prints the bundled blue.png logo, scaled to a thermal-friendly size
-  /// and centred (same reliable image path as the QR). Best-effort.
-  Future<void> _printLogo() async {
-    try {
-      final data = await rootBundle.load('images/blue.png');
-      final codec = await ui.instantiateImageCodec(
-        data.buffer.asUint8List(),
-        targetWidth: 140,
-      );
-      final src = (await codec.getNextFrame()).image;
-      final double paper = PrinterPrefs.pixelWidth;
-      final double w = src.width.toDouble();
-      final double h = src.height.toDouble();
-      final double off = (paper - w) / 2;
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-      canvas.drawRect(
-          Rect.fromLTWH(0, 0, paper, h + 8), Paint()..color = Colors.white);
-      canvas.drawImage(src, Offset(off < 0 ? 0 : off, 4), Paint());
-      final picture = recorder.endRecording();
-      final img = await picture.toImage(paper.toInt(), (h + 8).toInt());
-      final png = await img.toByteData(format: ui.ImageByteFormat.png);
-      if (png != null) {
-        await bluetooth.printImageBytes(png.buffer.asUint8List());
-      }
-    } catch (_) {/* logo is best-effort; text branding still prints */}
+  /// v20 item 5: guarantee a live connection to the SAVED printer before
+  /// printing. Returns true only when actually connected; reconnects (1 retry)
+  /// to the persisted address if the link dropped. Never reports a false "sent".
+  Future<bool> _ensureConnected() async {
+    if (await bluetooth.isConnected == true) return true;
+    final prefs = await SharedPreferences.getInstance();
+    final address = prefs.getString('printer_address') ?? '';
+    if (address.isEmpty) return false;
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final devices = await bluetooth.getBondedDevices();
+        BluetoothDevice? device;
+        try {
+          device = devices.firstWhere((d) => d.address == address);
+        } catch (_) {
+          device = null;
+        }
+        if (device != null && device.address != null) {
+          await bluetooth.connect(device);
+          await Future.delayed(const Duration(milliseconds: 600));
+        }
+      } catch (_) {/* retry below */}
+      if (await bluetooth.isConnected == true) return true;
+      await Future.delayed(const Duration(milliseconds: 400));
+    }
+    return await bluetooth.isConnected == true;
   }
 
   /// The header printed on the receipt: the ACTIVE BRANCH name (the generator's
@@ -198,7 +198,7 @@ class BluetoothPrintService {
   /// Image path is reliable for long URLs where the native QR command garbles.
   Future<void> _printQrImage(String data) async {
     final double paper = PrinterPrefs.pixelWidth;
-    const double qr = 240;
+    const double qr = 190; // v20 item 3: slightly smaller QR
     final double off = (paper - qr) / 2;
     final code = bc.Barcode.qrCode(
       errorCorrectLevel: bc.BarcodeQRCorrectionLevel.medium,
