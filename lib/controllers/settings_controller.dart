@@ -47,6 +47,13 @@ class SettingsController extends GetxController {
   var paperWidthMm = PrinterPrefs.defaultWidthMm.obs;
   // v20 item 3: copies printed per receipt (1 or 2); default 2.
   var printCopies = 2.obs;
+  // v21 item 1: printer transport ('bluetooth' | 'usb') + the selected USB
+  // device. The Bluetooth printer fields above are untouched.
+  var printerType = 'bluetooth'.obs;
+  var usbDeviceName = ''.obs;
+  var usbDeviceId = ''.obs;
+  static const String _keyUsbName = 'usb_device_name';
+  static const String _keyUsbId = 'usb_device_id';
 
   // Persistence Keys
   static const String _keyLang = 'lang_code';
@@ -108,8 +115,28 @@ class SettingsController extends GetxController {
     final prefs = await SharedPreferences.getInstance();
     printerName.value = prefs.getString(_keyPrinterName) ?? "";
     printerAddress.value = prefs.getString(_keyPrinterAddress) ?? "";
-    paperWidthMm.value = await PrinterPrefs.load(); // also loads copies
+    paperWidthMm.value = await PrinterPrefs.load(); // also loads copies + type
     printCopies.value = PrinterPrefs.copies;
+    printerType.value = PrinterPrefs.printerType;
+    usbDeviceName.value = prefs.getString(_keyUsbName) ?? "";
+    usbDeviceId.value = prefs.getString(_keyUsbId) ?? "";
+    update();
+  }
+
+  /// v21: persist the printer transport ('bluetooth' | 'usb').
+  Future<void> savePrinterType(String t) async {
+    await PrinterPrefs.setPrinterType(t);
+    printerType.value = PrinterPrefs.printerType;
+    update();
+  }
+
+  /// v21: persist the selected USB printer device.
+  Future<void> saveUsbDevice(String name, String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyUsbName, name);
+    await prefs.setString(_keyUsbId, id);
+    usbDeviceName.value = name;
+    usbDeviceId.value = id;
     update();
   }
 
@@ -442,6 +469,13 @@ class SettingsController extends GetxController {
           .import(file: File(path), password: pwd);
       final total = counts.values.fold<int>(0, (a, b) => a + b);
       SyncController.poke(); // the restore writes queue an upload
+      // v21 item 3: refresh the in-app lists + dashboard so the imported
+      // boards/circuits/subscribers appear immediately (no app restart).
+      try {
+        if (Get.isRegistered<SyncController>()) {
+          await Get.find<SyncController>().reloadAppData();
+        }
+      } catch (_) {}
       Get.snackbar('success'.tr, '${'backup_imported'.tr}: $total',
           backgroundColor: Colors.green, colorText: Colors.white);
     } on FormatException {

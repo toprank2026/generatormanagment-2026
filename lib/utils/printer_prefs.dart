@@ -28,6 +28,13 @@ class PrinterPrefs {
   /// Number of copies to print per receipt (clamped to 1 or 2).
   static int get copies => _copies == 1 ? 1 : 2;
 
+  /// v21 item 1: which transport to print on — 'bluetooth' (default, unchanged)
+  /// or 'usb' (direct USB thermal). The Bluetooth path/settings are untouched.
+  static const String keyPrinterType = 'printer_type';
+  static String _printerType = 'bluetooth';
+  static String get printerType => _printerType == 'usb' ? 'usb' : 'bluetooth';
+  static bool get isUsb => _printerType == 'usb';
+
   /// The currently selected paper width in millimetres (58 or 80).
   static int get widthMm => _widthMm;
 
@@ -47,7 +54,15 @@ class PrinterPrefs {
     final prefs = await SharedPreferences.getInstance();
     _widthMm = _normalize(prefs.getInt(keyPaperWidth) ?? defaultWidthMm);
     _copies = (prefs.getInt(keyCopies) ?? 2) == 1 ? 1 : 2;
+    _printerType = prefs.getString(keyPrinterType) == 'usb' ? 'usb' : 'bluetooth';
     return _widthMm;
+  }
+
+  /// v21: persists the printer transport ('bluetooth' | 'usb').
+  static Future<void> setPrinterType(String t) async {
+    _printerType = t == 'usb' ? 'usb' : 'bluetooth';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(keyPrinterType, _printerType);
   }
 
   /// Persists [mm] (58 or 80) and updates the cache.

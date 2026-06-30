@@ -134,6 +134,13 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Printer connection stability** — `printReceipt` now `_ensureConnected()`: reconnects to the saved printer (1 retry) before sending and THROWS on failure, so both print screens surface a real "print failed" instead of a false "sent" (no app restart needed).
 - ✅ Spec + read-only mapping (4 agents) + coupled edits + parallel disjoint agents + adversarial review (3 findings fixed: offline-hash rotation, 409 message, payment-history try/catch); analyze 0/0; Flutter 90; backend tests pass; Flash-API release APK.
 
+## Flash v21 (USB thermal printing + circuit grid + import/export + test data)
+- ✅ **USB thermal printing (native, printer-CLASS)** — a second print transport alongside Bluetooth, selectable in Settings (Bluetooth | USB toggle + a USB device picker). Implemented **natively** in `MainActivity.kt` (`moldati/usb` channel: `listUsbDevices` + `printBytes`) — raw USB **bulk transfer** to a printer-class ESC/POS device with the **FLAG_IMMUTABLE** permission flow Android 12+ requires (no third-party USB plugin; `usb_serial`/`flutter_usb_printer` both rejected — serial-only and an Android-12 PendingIntent crash respectively). `UsbPrintService` renders the SAME components the Bluetooth service prints (centered header, bordered 2-column table incl. payment-method + discount rows, QR, footer) so the USB receipt is **shape-identical** to the Bluetooth one; honours paper width, copies, auto-cut. **Bluetooth code untouched.**
+- ✅ **Circuit list → grid** — the circuit-breaker (جوزة) list is now a board-style grid (`SliverGridDelegateWithMaxCrossAxisExtent`), creation order preserved (stable for Arabic).
+- ✅ **Import/Export** — verified the encrypted local backup export/import; import now **refreshes the in-app lists + dashboard immediately** (`SyncController.reloadAppData()`), so imported boards/circuits/subscribers appear without an app restart.
+- ✅ **~1000-subscriber test data** — `tools/gen_test_backup.js` produces `tools/TestData.backup` (20 boards, 60 circuits, 1000 subscribers, Arabic names; password `1234`) importable via Settings → Local backup → Import, replicating LocalBackupService's SHA256-CTR format exactly.
+- ✅ Spec + native+Dart coupled edits + adversarial review workflow (8 raised, **7 confirmed & fixed**: bulk-transfer short-write data loss, permission watchdog/no-hang, in-flight guard, robust device resolution); analyze 0/0; Flutter 90; Flash-API release APK.
+
 ## Backlog
 - ⬜ Localize backend plan names/descriptions (currently English server data).
 - ⬜ DB migration path (schema v1, `onCreate` only); index on `expenses.date`.

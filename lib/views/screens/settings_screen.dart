@@ -12,6 +12,7 @@ import 'package:generatormanagment/views/screens/branches_screen.dart';
 import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/repositories/device_repository.dart';
 import 'package:generatormanagment/utils/bluetooth_print_service.dart';
+import 'package:generatormanagment/utils/usb_print_service.dart';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -353,7 +354,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               child: Column(
                 children: [
+                  // v21 item 1: choose the printer transport (Bluetooth | USB).
+                  ListTile(
+                    leading:
+                        const Icon(Icons.cable, color: Color(0xFF1565C0)),
+                    title: Text('printer_type'.tr),
+                    trailing: Obx(
+                      () => ToggleButtons(
+                        borderRadius: BorderRadius.circular(8),
+                        constraints: const BoxConstraints(
+                            minHeight: 36, minWidth: 56),
+                        isSelected: [
+                          controller.printerType.value != 'usb',
+                          controller.printerType.value == 'usb',
+                        ],
+                        onPressed: (i) => controller
+                            .savePrinterType(i == 0 ? 'bluetooth' : 'usb'),
+                        children: const [
+                          Icon(Icons.bluetooth, size: 20),
+                          Icon(Icons.usb, size: 20),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  // USB printer picker (only when USB is selected).
                   Obx(() {
+                    if (controller.printerType.value != 'usb') {
+                      return const SizedBox.shrink();
+                    }
+                    final has = controller.usbDeviceName.value.isNotEmpty;
+                    return Column(
+                      children: [
+                        ListTile(
+                          leading: Icon(Icons.usb,
+                              color: has ? Colors.green : Colors.grey),
+                          title: Text(has
+                              ? controller.usbDeviceName.value
+                              : 'select_usb_printer'.tr),
+                          trailing: const Icon(Icons.search, color: Colors.blue),
+                          onTap: () => _showUsbSelection(controller),
+                        ),
+                        const Divider(height: 1),
+                      ],
+                    );
+                  }),
+                  // Bluetooth printer tile (hidden when USB is selected — the
+                  // Bluetooth flow itself is unchanged).
+                  Obx(() {
+                    if (controller.printerType.value == 'usb') {
+                      return const SizedBox.shrink();
+                    }
                     final hasPrinter =
                         controller.printerAddress.value.isNotEmpty;
                     return ListTile(
@@ -698,6 +749,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Get.snackbar('error'.tr, "${'manage_devices'.tr}: $e");
         }
       },
+    );
+  }
+
+  /// v21 item 1: pick a connected USB thermal printer.
+  void _showUsbSelection(SettingsController controller) async {
+    List<Map<String, dynamic>> devices = const [];
+    try {
+      devices = await UsbPrintService().listDevices();
+    } catch (_) {}
+    Get.bottomSheet(
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Text('select_usb_printer'.tr,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+            if (devices.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text('no_usb_printer'.tr,
+                    style: TextStyle(color: Colors.grey.shade600)),
+              )
+            else
+              ...devices.map((d) {
+                final name =
+                    (d['productName'] ?? d['manufacturer'] ?? 'USB').toString();
+                return ListTile(
+                  leading: const Icon(Icons.usb, color: Color(0xFF1565C0)),
+                  title: Text(name),
+                  subtitle: Text('${d['vendorId']}:${d['productId']}'),
+                  onTap: () {
+                    controller.saveUsbDevice(name, UsbPrintService.idOf(d));
+                    Get.back();
+                  },
+                );
+              }),
+          ],
+        ),
+      ),
     );
   }
 

@@ -364,6 +364,10 @@ class SyncController extends GetxController {
     }
   }
 
+  /// v21: public refresh of the in-app lists/dashboard (used after a local
+  /// backup IMPORT so the imported boards/circuits/subscribers appear at once).
+  Future<void> reloadAppData() => _reloadAppData();
+
   /// Refresh the in-memory app state after a pull / local wipe so the UI updates.
   Future<void> _reloadAppData() async {
     try {

@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- v21: direct USB thermal printing (usb_serial) needs USB host support. -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false"/>
     <application
         android:label="Flash"
         android:name="${applicationName}"

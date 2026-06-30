@@ -66,9 +66,19 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
         if (controller.circuits.isEmpty)
           return Center(child: Text("no_circuits".tr));
 
-        return ListView.builder(
+        // v21: responsive GRID (mirrors the boards grid). Same data source,
+        // ordering, pagination, scroll controller and itemCount as before —
+        // only the visual list->grid changed.
+        return GridView.builder(
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 180,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.0,
+          ),
           itemCount:
               controller.circuits.length +
               (controller.isCircuitsMoreLoading.value ? 1 : 0),
@@ -82,17 +92,75 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
               );
             }
             final circuit = controller.circuits[index];
-            return ListTile(
-              leading: const Icon(Icons.flash_on),
-              title: Text(circuit.name),
-              subtitle: Text(circuit.phase ?? "phase_unknown".tr),
-              trailing: Obx(
-                () => auth.can(Perm.boards)
-                    ? IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.redAccent),
-                        onPressed: () => _showDeleteConfirm(circuit),
-                      )
-                    : const SizedBox.shrink(),
+            return Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Stack(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(10.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.settings_input_component,
+                          size: 34,
+                          color: Color(0xFF1565C0),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          circuit.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (circuit.phase != null &&
+                            circuit.phase!.isNotEmpty)
+                          Text(
+                            circuit.phase!,
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 11,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (auth.can(Perm.boards))
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert, color: Colors.grey),
+                        onSelected: (val) {
+                          if (val == 'delete') {
+                            _showDeleteConfirm(circuit);
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: ListTile(
+                              leading: const Icon(
+                                Icons.delete,
+                                color: Colors.red,
+                              ),
+                              title: Text('delete'.tr),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             );
           },

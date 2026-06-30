@@ -9,6 +9,8 @@ import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/utils/pdf_service.dart';
 import 'package:generatormanagment/utils/bluetooth_print_service.dart';
+import 'package:generatormanagment/utils/usb_print_service.dart';
+import 'package:generatormanagment/utils/printer_prefs.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
 import 'package:generatormanagment/views/screens/add_subscriber_screen.dart';
@@ -371,7 +373,22 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
       accountantName = a?.displayName ?? "";
     }
 
-    if (settings.printerAddress.value.isNotEmpty) {
+    if (PrinterPrefs.isUsb) {
+      // v21 item 1: direct USB thermal printing (auto-cut). Bluetooth untouched.
+      Get.snackbar(
+        'printing'.tr,
+        "${'sending_to'.tr} ${settings.usbDeviceName.value}...",
+        duration: const Duration(seconds: 2),
+      );
+      await UsbPrintService().printReceipt(
+        receipt,
+        widget.subscriber,
+        accountantName,
+        deviceId: settings.usbDeviceId.value.isEmpty
+            ? null
+            : settings.usbDeviceId.value,
+      );
+    } else if (settings.printerAddress.value.isNotEmpty) {
       Get.snackbar(
         'printing'.tr,
         "${'sending_to'.tr} ${settings.printerName.value}...",
