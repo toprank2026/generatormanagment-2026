@@ -13,6 +13,7 @@ import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/repositories/device_repository.dart';
 import 'package:generatormanagment/utils/bluetooth_print_service.dart';
 import 'package:generatormanagment/utils/usb_print_service.dart';
+import 'package:generatormanagment/utils/printer_prefs.dart';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -487,6 +488,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                   ),
+                  // v23 item 5: prove the printer works after pairing/selecting,
+                  // without collecting a real payment.
+                  ListTile(
+                    leading: const Icon(Icons.print_outlined,
+                        color: Color(0xFF1565C0)),
+                    title: Text('test_print'.tr),
+                    subtitle: Text('test_print_subtitle'.tr),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _testPrint(controller),
+                  ),
                 ],
               ),
             ),
@@ -519,28 +530,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         borderRadius:
                             BorderRadius.vertical(top: Radius.circular(20)),
                       ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ListTile(
-                            leading: const Icon(Icons.upload_file,
-                                color: Color(0xFF1565C0)),
-                            title: Text('backup_export'.tr),
-                            onTap: () {
-                              Get.back();
-                              controller.exportSubscriberBackup();
-                            },
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.download,
-                                color: Color(0xFF1565C0)),
-                            title: Text('backup_import'.tr),
-                            onTap: () {
-                              Get.back();
-                              controller.importSubscriberBackup();
-                            },
-                          ),
-                        ],
+                      // v23 item 5: SafeArea so the sheet clears the phone's
+                      // bottom navigation bar.
+                      child: SafeArea(
+                        top: false,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ListTile(
+                              leading: const Icon(Icons.upload_file,
+                                  color: Color(0xFF1565C0)),
+                              title: Text('backup_export'.tr),
+                              onTap: () {
+                                Get.back();
+                                controller.exportSubscriberBackup();
+                              },
+                            ),
+                            ListTile(
+                              leading: const Icon(Icons.download,
+                                  color: Color(0xFF1565C0)),
+                              title: Text('backup_import'.tr),
+                              onTap: () {
+                                Get.back();
+                                controller.importSubscriberBackup();
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -650,7 +666,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        child: Column(
+        // v23 item 5: SafeArea so the sheet clears the bottom navigation bar.
+        child: SafeArea(
+          top: false,
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
@@ -712,7 +731,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           color: Colors.redAccent,
                         ),
                         tooltip: 'unbind'.tr,
-                        onPressed: () => _confirmUnbind(deviceRepo, d.deviceId),
+                        onPressed: () => _confirmUnbind(deviceRepo, d.deviceId,
+                            isCurrent: d.current),
                       ),
                     );
                   },
@@ -721,14 +741,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         ),
+        ),
       ),
     );
   }
 
-  void _confirmUnbind(DeviceRepository repo, String deviceId) {
+  void _confirmUnbind(DeviceRepository repo, String deviceId,
+      {bool isCurrent = false}) {
     Get.defaultDialog(
       title: 'unbind'.tr,
-      middleText: 'unbind_confirm'.tr,
+      // v23 (§4.3): unbinding the CURRENT device gets an extra warning line.
+      middleText: isCurrent
+          ? '${'unbind_confirm'.tr}\n\n${'unbind_current_warn'.tr}'
+          : 'unbind_confirm'.tr,
       textConfirm: 'unbind'.tr,
       textCancel: 'cancel'.tr,
       confirmTextColor: Colors.white,
@@ -752,6 +777,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// v23 item 5: print a test slip on the ACTIVE transport (USB or Bluetooth),
+  /// so the user can confirm the printer works right after pairing/selecting.
+  Future<void> _testPrint(SettingsController controller) async {
+    Get.snackbar('test_print'.tr, 'printing'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+        duration: const Duration(seconds: 1));
+    try {
+      if (PrinterPrefs.isUsb) {
+        await UsbPrintService().printTest(
+          deviceId: controller.usbDeviceId.value.isEmpty
+              ? null
+              : controller.usbDeviceId.value,
+        );
+      } else {
+        await BluetoothPrintService().printTest();
+      }
+      Get.snackbar('success'.tr, 'test_print_sent'.tr,
+          backgroundColor: Colors.green,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM);
+    } catch (e) {
+      Get.snackbar('error'.tr, 'print_failed'.tr,
+          backgroundColor: Colors.redAccent,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM);
+    }
+  }
+
   /// v21 item 1: pick a connected USB thermal printer.
   void _showUsbSelection(SettingsController controller) async {
     List<Map<String, dynamic>> devices = const [];
@@ -765,7 +818,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        child: Column(
+        // v23 item 5: SafeArea so the sheet clears the bottom navigation bar.
+        child: SafeArea(
+          top: false,
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
@@ -796,6 +852,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               }),
           ],
         ),
+        ),
       ),
     );
   }
@@ -810,59 +867,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'select_bluetooth_printer_title'.tr,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+        // v23 item 5: SafeArea so the sheet clears the bottom navigation bar.
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'select_bluetooth_printer_title'.tr,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            FutureBuilder<List<BluetoothDevice>>(
-              future: printService.getPairedDevices(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Text("${'error'.tr}: ${snapshot.error}");
-                }
-                final devices = snapshot.data ?? [];
-                if (devices.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text('no_paired_devices'.tr),
-                  );
-                }
-                return ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: devices.length,
-                  itemBuilder: (ctx, i) {
-                    final d = devices[i];
-                    return ListTile(
-                      leading: const Icon(Icons.print, color: Colors.blue),
-                      title: Text(d.name ?? 'unknown_device'.tr),
-                      subtitle: Text(d.address ?? ""),
-                      onTap: () {
-                        controller.savePrinterSettings(
-                          d.name ?? 'printer'.tr,
-                          d.address ?? "",
-                        );
-                        Get.back();
-                        Get.snackbar(
-                          'printer_selected'.tr,
-                          '${d.name} ${'printer_selected_message'.tr}',
+              const SizedBox(height: 16),
+              FutureBuilder<List<BluetoothDevice>>(
+                future: printService.getPairedDevices(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Text("${'error'.tr}: ${snapshot.error}");
+                  }
+                  final devices = snapshot.data ?? [];
+                  if (devices.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text('no_paired_devices'.tr),
+                    );
+                  }
+                  // v23 item 5: bound the paired-device list so a long list
+                  // scrolls instead of overflowing the sheet.
+                  return ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: Get.height * 0.5),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: devices.length,
+                      itemBuilder: (ctx, i) {
+                        final d = devices[i];
+                        return ListTile(
+                          leading:
+                              const Icon(Icons.print, color: Colors.blue),
+                          title: Text(d.name ?? 'unknown_device'.tr),
+                          subtitle: Text(d.address ?? ""),
+                          onTap: () {
+                            controller.savePrinterSettings(
+                              d.name ?? 'printer'.tr,
+                              d.address ?? "",
+                            );
+                            Get.back();
+                            Get.snackbar(
+                              'printer_selected'.tr,
+                              '${d.name} ${'printer_selected_message'.tr}',
+                            );
+                          },
                         );
                       },
-                    );
-                  },
-                );
-              },
-            ),
-          ],
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );

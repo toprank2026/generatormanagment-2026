@@ -95,6 +95,8 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
   }
 
   Widget _buildReceiptCard(Receipt r) {
+    // v23 (§2.4): a refunded receipt must not read as a live payment.
+    final bool refunded = r.status != 'valid';
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -132,12 +134,24 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
               ),
           ],
         ),
-        trailing: Text(
-          fmtAmount(r.paidAmount),
-          style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              color: Color(0xFF2E7D32)),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              fmtAmount(r.paidAmount),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: refunded ? Colors.grey : const Color(0xFF2E7D32),
+                decoration:
+                    refunded ? TextDecoration.lineThrough : TextDecoration.none,
+              ),
+            ),
+            if (refunded)
+              Text('refunded'.tr,
+                  style: const TextStyle(color: Colors.grey, fontSize: 11)),
+          ],
         ),
       ),
     );

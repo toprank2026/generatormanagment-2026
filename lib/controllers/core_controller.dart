@@ -68,6 +68,11 @@ class CoreController extends GetxController {
   // Active category-tab filter (R5): null = All categories. Preserved across
   // pages so loadMore keeps the same category.
   String? _currentCategory;
+  // v23 item 7: which subscriber-list VARIANT is currently loaded, so the shared
+  // `loadMore` continues the right one. Exactly one of these is non-null at a
+  // time; both null = the plain "All subscribers" list.
+  String? _currentFilter; // 'paid' | 'unpaid' | null
+  String? _currentBoardId; // board-scoped list | null
 
   // Pagination (boards) — large page (R1): show all for normal sizes.
   static const int boardsPerPage = 100;
@@ -310,6 +315,8 @@ class CoreController extends GetxController {
 
     _currentQuery = query;
     _currentCategory = category;
+    _currentFilter = null; // v23: "All" mode — loadMore continues getAll
+    _currentBoardId = null;
     currentPage.value = page;
 
     try {
@@ -346,12 +353,20 @@ class CoreController extends GetxController {
     update();
   }
 
+  /// v23 item 7: paginate whichever subscriber-list VARIANT is on screen. The
+  /// three loaders keep `_currentFilter`/`_currentBoardId` mutually exclusive,
+  /// so this dispatches the correct next-page loader.
   void loadMore() {
-    if (hasNextPage.value && !isMoreLoading.value && !isLoading.value) {
+    if (!hasNextPage.value || isMoreLoading.value || isLoading.value) return;
+    final next = currentPage.value + 1;
+    if (_currentBoardId != null) {
+      loadBoardSubscribers(_currentBoardId!, query: _currentQuery, page: next);
+    } else if (_currentFilter != null) {
+      loadFilteredSubscribers(_currentFilter!,
+          category: _currentCategory, query: _currentQuery, page: next);
+    } else {
       loadSubscribers(
-          query: _currentQuery,
-          page: currentPage.value + 1,
-          category: _currentCategory);
+          query: _currentQuery, page: next, category: _currentCategory);
     }
   }
 
@@ -409,43 +424,98 @@ class CoreController extends GetxController {
     update();
   }
 
+  /// Paid/Unpaid list. v23 item 7: paginated with the canonical fetch-(N+1)
+  /// pattern (was loading ALL matching rows at once — a crash risk at scale).
   Future<void> loadFilteredSubscribers(String filter,
-      {String? category, String? query}) async {
-    isLoading.value = true;
+      {String? category, String? query, int page = 1}) async {
+    if (page == 1) {
+      isLoading.value = true;
+      subscribers.clear();
+    } else {
+      isMoreLoading.value = true;
+    }
+    _currentFilter = filter; // v23: paid/unpaid mode
+    _currentBoardId = null;
+    _currentQuery = query;
+    _currentCategory = category;
+    currentPage.value = page;
     try {
       // The globally-selected month (R9) drives paid/unpaid; the price is
       // category-aware and resolved inside the query (per subscriber's
       // category), so no single price is needed here.
-      _currentCategory = category;
       final String month = Get.find<MonthController>().selectedMonth.value;
-
-      await _loadRowMeta(); // v22 items 2+9
-      subscribers.value = await _subscriberRepo.getByPaymentStatus(
+      if (page == 1) await _loadRowMeta(); // v22 items 2+9
+      final result = await _subscriberRepo.getByPaymentStatus(
         month: month,
         isPaid: filter == 'paid',
         accountantId: null,
         branchId: _branchScope,
         category: category, // R5: category-tab filter (null = all)
         query: query, // v22 item 1: search composes with paid/unpaid
+        limit: itemsPerPage + 1,
+        offset: (page - 1) * itemsPerPage,
       );
+      final List<Subscriber> newItems;
+      if (result.length > itemsPerPage) {
+        hasNextPage.value = true;
+        newItems = result.sublist(0, itemsPerPage);
+      } else {
+        hasNextPage.value = false;
+        newItems = result;
+      }
+      if (page == 1) {
+        subscribers.assignAll(newItems);
+      } else {
+        subscribers.addAll(newItems);
+      }
     } catch (e) {
       print("Error loading filtered subscribers: $e");
     } finally {
       isLoading.value = false;
+      isMoreLoading.value = false;
     }
     update();
   }
 
-  Future<void> loadBoardSubscribers(String boardId, {String? query}) async {
-    isLoading.value = true;
+  /// Board-scoped list. v23 item 7: paginated (was unbounded).
+  Future<void> loadBoardSubscribers(String boardId,
+      {String? query, int page = 1}) async {
+    if (page == 1) {
+      isLoading.value = true;
+      subscribers.clear();
+    } else {
+      isMoreLoading.value = true;
+    }
+    _currentBoardId = boardId; // v23: board mode
+    _currentFilter = null;
+    _currentQuery = query;
+    currentPage.value = page;
     try {
-      await _loadRowMeta(); // v22 items 2+9
-      subscribers.value = await _subscriberRepo.getByBoard(boardId,
-          accountantId: null,
-          branchId: _branchScope,
-          query: query); // v22 item 1: search composes with the board scope
+      if (page == 1) await _loadRowMeta(); // v22 items 2+9
+      final result = await _subscriberRepo.getByBoard(
+        boardId,
+        accountantId: null,
+        branchId: _branchScope,
+        query: query, // v22 item 1: search composes with the board scope
+        limit: itemsPerPage + 1,
+        offset: (page - 1) * itemsPerPage,
+      );
+      final List<Subscriber> newItems;
+      if (result.length > itemsPerPage) {
+        hasNextPage.value = true;
+        newItems = result.sublist(0, itemsPerPage);
+      } else {
+        hasNextPage.value = false;
+        newItems = result;
+      }
+      if (page == 1) {
+        subscribers.assignAll(newItems);
+      } else {
+        subscribers.addAll(newItems);
+      }
     } finally {
       isLoading.value = false;
+      isMoreLoading.value = false;
     }
     update();
   }

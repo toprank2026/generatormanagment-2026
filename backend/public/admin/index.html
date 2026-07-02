@@ -562,6 +562,7 @@ function syncDataQuery(entity,opts){
   if(opts.includeDeleted) q+="&includeDeleted=true";
   if(opts.relField&&opts.relValue){ q+="&relField="+encodeURIComponent(opts.relField)+"&relValue="+encodeURIComponent(opts.relValue); }
   if(opts.branchId) q+="&branchId="+encodeURIComponent(opts.branchId);
+  if(opts.month) q+="&month="+encodeURIComponent(opts.month); // v23 (§7): expenses date filter
   return q;
 }
 var API={
@@ -1035,6 +1036,8 @@ var routes=[
   {re:/^#\/my$/, view:viewMyDashboard, owner:true},
   {re:/^#\/my\/reports$/, view:viewMyReports, owner:true},
   {re:/^#\/my\/data\/receipts\/detail\/([^\/]+)$/, view:viewMyReceiptDetail, owner:true},
+  // v23 (§9): generic clean detail for any entity (receipts keep the richer view above).
+  {re:/^#\/my\/data\/([^\/]+)\/detail\/([^\/]+)$/, view:viewMyEntityDetail, owner:true},
   {re:/^#\/my\/data\/([^\/]+)\/by\/([^\/]+)\/([^\/]+)$/, view:viewMyEntity, owner:true},
   {re:/^#\/my\/data\/([^\/]+)$/, view:viewMyEntity, owner:true},
   {re:/^#\/my\/sub\/([^\/]+)$/, view:viewMyStatement, owner:true},
@@ -1624,8 +1627,10 @@ var SYNC_COLUMNS={
     {label:"الخصم",get:function(d){ return discountText(d); }}
   ],
   expenses:[
-    {label:"الفئة",get:function(d){ return syncText(d.category); }},
+    {label:"الفئة",get:function(d){ return expenseCategoryLabel(d.category); }},
     {label:"المبلغ",get:function(d){ return d.amount!=null?fmtPrice(d.amount):"—"; }},
+    // Accountant NAME resolved by syncColumnsFor() (null accountant → المالك).
+    {label:"المحاسب",get:function(d){ return d.accountant_id?syncText(d.accountant_id):"المالك"; }},
     {label:"ملاحظة",get:function(d){ return syncText(d.note); }},
     {label:"التاريخ",get:function(d){ return d.date?fmtDateShort(d.date):"—"; }}
   ],
@@ -1659,6 +1664,11 @@ var SYNC_COLUMNS={
     {label:"تاريخ الطلب",get:function(d){ return d.requested_at?fmtDate(d.requested_at):"—"; }}
   ]
 };
+// v23 (§7): Arabic labels for the app's expense categories (raw value fallback).
+var EXPENSE_CATEGORY_LABELS={Fuel:"وقود",Oil:"زيت",Maintenance:"صيانة",Salaries:"رواتب",Rent:"إيجار",Other:"أخرى"};
+function expenseCategoryLabel(cat){
+  return EXPENSE_CATEGORY_LABELS[cat]||syncText(cat);
+}
 // Arabic status badge for a settlement ('pending'|'approved'|'rejected').
 var SETTLEMENT_STATUS_LABELS={pending:"قيد الانتظار",approved:"موافق عليه",rejected:"مرفوض"};
 function settlementStatusBadge(status){
@@ -1713,6 +1723,17 @@ function syncColumnsFor(entity,maps){
       return {label:c.label,get:function(d){
         // Accountant NAME via the prefetched map; fall back to the raw id.
         return syncText(d.accountant_id!=null?(accts[d.accountant_id]||d.accountant_id):null);
+      }};
+    });
+  }
+  // v23 (§7): resolve the expenses accountant column to a NAME (null → المالك).
+  if(entity==="expenses"&&cols){
+    var eaccts=(maps&&maps.accountants)||{};
+    cols=cols.map(function(c){
+      if(c.label!=="المحاسب") return c;
+      return {label:c.label,get:function(d){
+        if(d.accountant_id==null||d.accountant_id==="") return "المالك";
+        return syncText(eaccts[d.accountant_id]||d.accountant_id);
       }};
     });
   }
@@ -2470,7 +2491,10 @@ function viewMyReports(){
     }
     var paid=repNum(dash.paidCount), unpaid=repNum(dash.unpaidCount);
     var totalSubs=dash.totalSubscribers!=null?repNum(dash.totalSubscribers):(paid+unpaid);
-    var expected=repNum(dash.totalAmps)*repNum(dash.pricePerAmp);
+    // v23 (§2.1): prefer the backend's category-aware `expected`. Older backends
+    // omit it → fall back to totalAmps × pricePerAmp (standard), which is only
+    // correct for single-tariff accounts.
+    var expected=dash.expected!=null?repNum(dash.expected):repNum(dash.totalAmps)*repNum(dash.pricePerAmp);
     var collected=repNum(dash.collected);
     var remaining=repNum(dash.totalDue);
     var hasExpenses=dash.expensesTotal!=null;          // older backends omit these
@@ -2567,20 +2591,68 @@ function viewMyEntity(entity,relField,relValue){
   if(entity==="receipts"){
     drill={label:"التفاصيل",onClick:function(r){ location.hash="#/my/data/receipts/detail/"+encodeURIComponent(r.localId); }};
   }
+  // v23 (§9): generic clean detail for entities that had no bespoke drill.
+  if(entity==="boards"||entity==="circuits"||entity==="expenses"||entity==="monthly_prices"||entity==="settlements"){
+    drill={label:"التفاصيل",onClick:function(r){ location.hash="#/my/data/"+entity+"/detail/"+encodeURIComponent(r.localId); }};
+  }
 
   var query="";
   var page=1;
+  // v23 (§7): expenses-only filter state (owner browses one accountant + month).
+  var acctFilter="";   // "" all · "__none__" owner · <accountant id>
+  var monthFilter="";  // "YYYY-MM"
+  var acctList=[];     // [{id,name}] for the dropdown
+  var expenseFilterWrap=el("div");
+  var totalWrap=el("div");
+  var filtersPainted=false;
 
-  // Name maps for FK columns (circuits→boards, settlements→accountants) so tables
-  // render names, never raw ids; fetched once per screen, reused across reloads.
+  // Name maps for FK columns (circuits→boards, settlements/expenses→accountants)
+  // so tables render names, never raw ids; fetched once per screen, reused.
   var relNameMaps=null;
   function ensureRelMaps(){
-    var need=entity==="circuits"?["boards"]:(entity==="settlements"?["accountants"]:null);
-    if(!need) return Promise.resolve(null);
     if(relNameMaps) return Promise.resolve(relNameMaps);
-    return loadNameMaps(function(en,opts){ return acctData(en,opts); },need).then(function(maps){
-      relNameMaps=maps; return maps;
-    });
+    if(entity==="circuits"){
+      return loadNameMaps(function(en,opts){ return acctData(en,opts); },["boards"]).then(function(maps){
+        relNameMaps=maps; return maps;
+      });
+    }
+    if(entity==="settlements"||entity==="expenses"){
+      // Robust accountants map (name OR username) — loadNameMaps only keys on
+      // name/code and would drop username-only accountants.
+      return acctData("accountants",{limit:200}).then(function(res){
+        var accts={}; acctList=[];
+        normalizeList(res,"records").forEach(function(r){
+          var d=(r&&r.data)||{}; var nm=d.name||d.username;
+          var id=(d.id!=null?d.id:r.localId);
+          if(nm&&id!=null){
+            accts[id]=nm; if(r.localId!=null) accts[r.localId]=nm;
+            acctList.push({id:String(id),name:nm});
+          }
+        });
+        relNameMaps={accountants:accts}; return relNameMaps;
+      }).catch(function(){ relNameMaps={accountants:{}}; return relNameMaps; });
+    }
+    return Promise.resolve(null);
+  }
+
+  // v23 (§7): the expenses accountant dropdown + month input (built once maps
+  // are available). Changing either resets to page 1.
+  function paintExpenseFilters(){
+    if(entity!=="expenses"||filtersPainted) return;
+    filtersPainted=true;
+    clear(expenseFilterWrap);
+    var sel=el("select",{class:"input"});
+    sel.appendChild(el("option",{value:"",text:"كل المحاسبين"}));
+    sel.appendChild(el("option",{value:"__none__",text:"المالك"}));
+    acctList.forEach(function(a){ sel.appendChild(el("option",{value:a.id,text:a.name})); });
+    sel.value=acctFilter;
+    sel.addEventListener("change",function(){ acctFilter=sel.value; page=1; load(); });
+    var mon=el("input",{class:"input",type:"month",value:monthFilter});
+    mon.addEventListener("change",function(){ monthFilter=mon.value; page=1; load(); });
+    expenseFilterWrap.appendChild(el("div",{class:"toolbar"},[
+      el("span",{class:"muted",text:"المحاسب:"}), sel,
+      el("span",{class:"muted",text:"الشهر:"}), mon
+    ]));
   }
 
   // Settlements: owner approves/rejects a PENDING wallet request inline. After a
@@ -2624,6 +2696,7 @@ function viewMyEntity(entity,relField,relValue){
     }
     toolbarKids.push(el("button",{class:"btn ghost",onclick:function(){ load(); }},["تحديث"]));
     content.appendChild(el("div",{class:"toolbar"},toolbarKids));
+    if(entity==="expenses"){ content.appendChild(expenseFilterWrap); content.appendChild(totalWrap); }
     content.appendChild(tableWrap);
     content.appendChild(pagerWrap);
     shell("#/my/data/"+entity,content);
@@ -2647,9 +2720,13 @@ function viewMyEntity(entity,relField,relValue){
 
   function load(){
     clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
-    clear(pagerWrap);
+    clear(pagerWrap); clear(totalWrap);
+    // v23 (§7): the expenses accountant dropdown overrides the drill relField.
+    var effRelField=relField, effRelValue=relValue;
+    if(entity==="expenses"&&acctFilter){ effRelField="accountant_id"; effRelValue=acctFilter; }
     Promise.all([
-      acctData(entity,{q:query,page:page,limit:SYNC_PAGE_LIMIT,relField:relField,relValue:relValue,
+      acctData(entity,{q:query,page:page,limit:SYNC_PAGE_LIMIT,relField:effRelField,relValue:effRelValue,
+        month:(entity==="expenses"&&monthFilter)?monthFilter:undefined,
         branchId:isBranchScopedEntity(entity)?ownerBranchParam():undefined}),
       ensureRelMaps()
     ]).then(function(both){
@@ -2659,6 +2736,15 @@ function viewMyEntity(entity,relField,relValue){
       if(res&&res.page) page=res.page;
       paintHead(total);
       paintPager(total);
+      // v23 (§7): expenses accountant dropdown + month input + total row.
+      paintExpenseFilters();
+      if(entity==="expenses"){
+        clear(totalWrap);
+        var sum=(res&&typeof res.totalAmount==="number")?res.totalAmount:0;
+        totalWrap.appendChild(el("div",{class:"card",style:"padding:10px;margin:6px 0;font-weight:bold"},[
+          el("span",{text:"إجمالي المصروفات: "}), el("span",{text:fmtPrice(sum)})
+        ]));
+      }
       clear(tableWrap);
       // Read-only (no onDelete) except settlements, which get inline
       // approve/reject actions on pending rows.
@@ -2836,6 +2922,109 @@ function renderMyReceiptDetail(rec,d,subName){
   ]));
   content.appendChild(receiptDetailContent(rec,d,subName));
   shell("#/my/data/receipts",content);
+}
+
+/* ============================================================
+   v23 (§9): generic clean detail card for any synced entity (receipts keep
+   their richer receiptDetailContent). Renders known fields with FK ids resolved
+   to NAMES via `maps` ({boards,circuits,accountants,branches}), then any extra
+   scalar fields — never a raw JSON dump.
+   ============================================================ */
+function entityDetailContent(entity,rec,d,maps){
+  maps=maps||{};
+  var kvs=[]; var handled={};
+  var catMap={commercial:"تجاري",standard:"عادي",gold:"ذهبي (٢٤ ساعة)"};
+  function row(label,val){ kvs.push.apply(kvs,kv(label,(val==null||val==="")?"—":String(val))); }
+  function badgeRow(label,node){ kvs.push(el("div",{class:"k",text:label})); kvs.push(el("div",{class:"v"},[node])); }
+  function nameOf(mapName,id){ var m=maps[mapName]||{}; return id!=null?(m[id]||id):null; }
+  function mark(){ for(var i=0;i<arguments.length;i++) handled[arguments[i]]=1; }
+
+  if(entity==="subscribers"){
+    row("الاسم",d.name); row("الهاتف",d.phone); row("الأمبيرات",d.amps);
+    row("الفئة",catMap[d.category]||d.category);
+    row("اللوحة",nameOf("boards",d.board_id)); row("الجوزة",nameOf("circuits",d.circuit_id));
+    row("الحالة",d.status); mark("name","phone","amps","category","board_id","circuit_id","status");
+  } else if(entity==="boards"){
+    row("الاسم",d.name); row("الرمز",d.code); mark("name","code");
+  } else if(entity==="circuits"){
+    row("الاسم",d.name); row("اللوحة",nameOf("boards",d.board_id)); row("الطور",d.phase);
+    mark("name","board_id","phase");
+  } else if(entity==="expenses"){
+    row("الفئة",expenseCategoryLabel(d.category));
+    row("المبلغ",d.amount!=null?fmtPrice(d.amount):null);
+    row("المحاسب",d.accountant_id?nameOf("accountants",d.accountant_id):"المالك");
+    row("ملاحظة",d.note); row("التاريخ",d.date?fmtDateShort(d.date):null);
+    mark("category","amount","accountant_id","note","date");
+  } else if(entity==="monthly_prices"){
+    row("الشهر",d.month); row("الفئة",catMap[d.category]||d.category);
+    row("سعر الأمبير",(d.price_per_amp!=null?fmtPrice(d.price_per_amp):(d.price!=null?fmtPrice(d.price):null)));
+    mark("month","category","price_per_amp","price");
+  } else if(entity==="settlements"){
+    row("المحاسب",nameOf("accountants",d.accountant_id));
+    row("المبلغ",d.amount!=null?fmtPrice(d.amount):null);
+    row("الطريقة",d.method==="card"?"بطاقة":"نقدي");
+    badgeRow("الحالة",settlementStatusBadge(d.status));
+    row("تاريخ الطلب",d.requested_at?fmtDate(d.requested_at):null);
+    mark("accountant_id","amount","method","status","requested_at");
+  }
+  // Common branch field when present + not already shown.
+  if(d.branch_id!=null&&!handled.branch_id){ row("الفرع",nameOf("branches",d.branch_id)); handled.branch_id=1; }
+  // Any remaining scalar fields (never a raw JSON blob).
+  Object.keys(d).forEach(function(k){
+    if(handled[k]) return;
+    if(k==="id"||k==="uuid"||k==="updated_at") return;
+    var v=d[k]; if(v==null||v===""||typeof v==="object") return;
+    row(k,v);
+  });
+  row("تاريخ المزامنة",rec.updatedAt?fmtDate(rec.updatedAt):null);
+  row("المعرّف",rec.localId);
+
+  return el("div",{class:"card"},[
+    el("div",{class:"card-h"},[el("span",{text:ownerEntityLabel(entity)+" — التفاصيل"})]),
+    el("div",{class:"card-b"},[el("div",{class:"kv"},kvs)])
+  ]);
+}
+
+function viewMyEntityDetail(entity,localId){
+  var base="#/my/data/"+entity;
+  shell(base,loadingBlock("جارٍ التحميل…"));
+  Promise.all([
+    acctData(entity,{localId:localId}),
+    loadNameMaps(function(en,opts){ return acctData(en,opts); },["boards","circuits","branches"]),
+    acctData("accountants",{limit:200}).then(function(res){
+      var m={}; normalizeList(res,"records").forEach(function(r){
+        var dd=(r&&r.data)||{}; var nm=dd.name||dd.username; var id=dd.id!=null?dd.id:r.localId;
+        if(nm&&id!=null){ m[id]=nm; if(r.localId!=null) m[r.localId]=nm; }
+      });
+      return {accountants:m};
+    }).catch(function(){ return {accountants:{}}; })
+  ]).then(function(all){
+    var rec=normalizeList(all[0],"records")[0];
+    var maps=Object.assign({},all[1]||{},all[2]||{});
+    var content=el("div");
+    content.appendChild(el("div",{class:"crumb"},[
+      el("a",{href:"#/my",text:"لوحتي"}),el("span",{text:" / "}),
+      el("a",{href:base,text:ownerEntityLabel(entity)}),el("span",{text:" / التفاصيل"})
+    ]));
+    if(!rec){
+      content.appendChild(pageHead(ownerEntityLabel(entity)));
+      content.appendChild(el("div",{class:"card"},[el("div",{class:"card-b"},[
+        el("div",{class:"empty"},["السجل غير موجود في النسخة المتزامنة."])
+      ])]));
+    } else {
+      content.appendChild(entityDetailContent(entity,rec,rec.data||{},maps));
+      if(entity==="subscribers"){
+        content.appendChild(el("div",{class:"toolbar"},[
+          el("a",{class:"btn neutral",href:"#/my/sub/"+encodeURIComponent(rec.localId)},["كشف الحساب ›"])
+        ]));
+      }
+    }
+    shell(base,content);
+  }).catch(function(err){
+    if(err.status===401) return;
+    if(isFeatureDisabled(err)){ shell(base,ownerFeatureBlock()); return; }
+    shell(base,errorBlock(err,function(){ viewMyEntityDetail(entity,localId); }));
+  });
 }
 
 /* Set-plan modal (loads plans for the dropdown) */

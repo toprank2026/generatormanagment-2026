@@ -48,7 +48,9 @@ class ReportsController extends GetxController {
   var unpaidCount = 0.obs;
 
   var totalAmps = 0.0.obs;
-  var pricePerAmp = 0.0.obs; // standard (back-compat; banner + expected math)
+  var pricePerAmp =
+      0.0.obs; // standard-category representative — banner + header ONLY
+  // (expected is category-aware since R4; v23 consolidated is branch-aware).
   // (item 1) per-tariff PAID subscriber counts for the selected month/branch
   // (replaces the old per-tariff price cards).
   var paidGold = 0.obs;
@@ -95,6 +97,9 @@ class ReportsController extends GetxController {
 
   Future<void> loadReport() async {
     isLoading.value = true;
+    // v23 item 1 (§2.5): compute EVERY figure into locals first, then commit
+    // them in one atomic block at the end. A mid-way failure used to leave the
+    // screen showing a mix of the new month's and the previous month's numbers.
     try {
       final m = month.value;
       // Money (collected/expenses/payments list) is per-accountant; the shared
@@ -105,46 +110,60 @@ class ReportsController extends GetxController {
 
       // 1. Subscribers & Amps (branch-scoped) — SQL aggregates, NOT a full
       //    materialization of every subscriber row (audit: scale).
-      totalSubscribers.value = await _subRepo.countByBranch(branchId: branch);
+      final int totalSubs = await _subRepo.countByBranch(branchId: branch);
       final ampsByCat = await _subRepo.ampsByCategory(branchId: branch);
-      totalAmps.value = ampsByCat.values.fold(0.0, (sum, a) => sum + a);
+      final double totalAmpsLocal =
+          ampsByCat.values.fold(0.0, (sum, a) => sum + a);
 
       // 2. Per-category prices for the month (R4). The single "price per amp"
       //    figure shown on the report uses the standard category as representative.
       final prices = await _priceRepo.pricesForMonth(m, branchId: branch);
-      pricePerAmp.value = prices[SubscriberCategory.standard] ?? 0.0;
+      final double pricePerAmpLocal =
+          prices[SubscriberCategory.standard] ?? 0.0;
 
-      // 3. Financials. Expected is CATEGORY-AWARE: Σ amps × price[category] (R4),
-      //    from the per-category amp sums above.
-      double expected = 0.0;
-      ampsByCat.forEach((cat, amps) {
-        expected += amps * (prices[cat] ?? 0.0);
-      });
-      expectedTotal.value = expected;
-      collectedTotal.value = await _receiptRepo.getCollectedSum(m,
+      // 3. Financials. Expected is CATEGORY-AWARE: Σ amps × price[category] (R4).
+      //    v23 item 1 (§2.3): in the CONSOLIDATED (All-branches) view, price each
+      //    branch's amps with THAT branch's own tariff — the flat
+      //    pricesForMonth(null) collapses branches last-row-wins (wrong for
+      //    differently-priced branches). A single active branch keeps the old math.
+      double expectedLocal = 0.0;
+      if (branch == null) {
+        final ampsByBranchCat = await _subRepo.ampsByBranchCategory();
+        final pricesByBranch = await _priceRepo.pricesForMonthByBranch(m);
+        ampsByBranchCat.forEach((br, catMap) {
+          final brPrices = pricesByBranch[br] ?? const <String, double>{};
+          catMap.forEach((cat, amps) {
+            expectedLocal += amps * (brPrices[cat] ?? 0.0);
+          });
+        });
+      } else {
+        ampsByCat.forEach((cat, amps) {
+          expectedLocal += amps * (prices[cat] ?? 0.0);
+        });
+      }
+      final double collectedLocal = await _receiptRepo.getCollectedSum(m,
           accountantId: scope, branchId: branch);
       // Remaining = expected − collected − waived discount (audit: discount
       // lockstep with the dashboard, backend, and paid/unpaid counts).
-      final discountTotal = await _receiptRepo.getDiscountSum(m,
+      final double discountTotal = await _receiptRepo.getDiscountSum(m,
           accountantId: scope, branchId: branch);
-      remainingTotal.value =
-          expectedTotal.value - collectedTotal.value - discountTotal;
-      expensesTotal.value = await _expenseRepo.getTotalExpenses(m,
+      final double remainingLocal = expectedLocal - collectedLocal - discountTotal;
+      final double expensesLocal = await _expenseRepo.getTotalExpenses(m,
           accountantId: scope, branchId: branch);
-      netProfit.value = collectedTotal.value - expensesTotal.value;
+      final double netLocal = collectedLocal - expensesLocal;
 
       // 4. Paid / Unpaid counts — category-aware, branch-scoped (R4).
       // v22 item 6: also scoped to the COLLECTOR when a per-accountant view is
       // active (receiptAccountantId — receipts.accountant_id, matching the
       // backend panel's v14 per-accountant coverage), so the donut + per-tariff
       // counts no longer stay branch-wide while the money figures are filtered.
-      paidCount.value = await _subRepo.countByPaymentStatus(
+      final int paidLocal = await _subRepo.countByPaymentStatus(
         month: m,
         isPaid: true,
         branchId: branch,
         receiptAccountantId: scope,
       );
-      unpaidCount.value = await _subRepo.countByPaymentStatus(
+      final int unpaidLocal = await _subRepo.countByPaymentStatus(
         month: m,
         isPaid: false,
         branchId: branch,
@@ -152,36 +171,35 @@ class ReportsController extends GetxController {
       );
 
       // (item 1) per-tariff PAID counts (gold / standard / commercial).
-      paidGold.value = await _subRepo.countByPaymentStatus(
+      final int paidGoldLocal = await _subRepo.countByPaymentStatus(
           month: m,
           isPaid: true,
           branchId: branch,
           category: SubscriberCategory.gold,
           receiptAccountantId: scope);
-      paidStandard.value = await _subRepo.countByPaymentStatus(
+      final int paidStandardLocal = await _subRepo.countByPaymentStatus(
           month: m,
           isPaid: true,
           branchId: branch,
           category: SubscriberCategory.standard,
           receiptAccountantId: scope);
-      paidCommercial.value = await _subRepo.countByPaymentStatus(
+      final int paidCommercialLocal = await _subRepo.countByPaymentStatus(
           month: m,
           isPaid: true,
           branchId: branch,
           category: SubscriberCategory.commercial,
           receiptAccountantId: scope);
 
-      // v22 item 6: refresh the collector-name map (best-effort; the report
-      // still renders without attribution if it fails).
+      // v22 item 6: collector-name map (best-effort; report renders without it).
+      // v23 review: SNAPSHOT the prior names (not an alias) so a getAll() failure
+      // leaves the atomic commit re-installing the previous map, not an empty one.
+      Map<String, String> namesLocal = Map<String, String>.from(accountantNames);
       try {
         final all = await _accountantRepo.getAll();
-        accountantNames
-          ..clear()
-          ..addEntries(all.map((a) => MapEntry(a.id, a.displayName)));
+        namesLocal = {for (final a in all) a.id: a.displayName};
       } catch (_) {}
 
       // 5. The month's payments list (newest first), page 1.
-      _receiptsPage = 1;
       final page = await _receiptRepo.getByMonth(
         m,
         limit: _receiptsPerPage + 1,
@@ -189,12 +207,35 @@ class ReportsController extends GetxController {
         accountantId: scope,
         branchId: branch,
       );
-      hasMoreReceipts.value = page.length > _receiptsPerPage;
-      receipts.assignAll(
-        hasMoreReceipts.value ? page.sublist(0, _receiptsPerPage) : page,
-      );
+      final bool moreReceipts = page.length > _receiptsPerPage;
+      final receiptsPage =
+          moreReceipts ? page.sublist(0, _receiptsPerPage) : page;
+
+      // --- ATOMIC COMMIT: everything computed OK → publish together. ---
+      totalSubscribers.value = totalSubs;
+      totalAmps.value = totalAmpsLocal;
+      pricePerAmp.value = pricePerAmpLocal;
+      expectedTotal.value = expectedLocal;
+      collectedTotal.value = collectedLocal;
+      remainingTotal.value = remainingLocal;
+      expensesTotal.value = expensesLocal;
+      netProfit.value = netLocal;
+      paidCount.value = paidLocal;
+      unpaidCount.value = unpaidLocal;
+      paidGold.value = paidGoldLocal;
+      paidStandard.value = paidStandardLocal;
+      paidCommercial.value = paidCommercialLocal;
+      accountantNames
+        ..clear()
+        ..addAll(namesLocal);
+      _receiptsPage = 1;
+      hasMoreReceipts.value = moreReceipts;
+      receipts.assignAll(receiptsPage);
     } catch (e) {
+      // Keep the previously-displayed figures intact; surface the failure.
       print("Error loading monthly report: $e");
+      Get.snackbar('error'.tr, 'report_failed'.tr,
+          snackPosition: SnackPosition.BOTTOM);
     } finally {
       isLoading.value = false;
     }

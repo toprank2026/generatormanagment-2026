@@ -12,7 +12,16 @@ class DeviceRepository {
   final SecureStore _store = SecureStore();
 
   Future<List<DeviceBinding>> list() async {
-    final res = await _api.get(ApiConfig.devices);
+    // v23 (§4.3): send THIS device's id so the backend can flag `current`, so
+    // the settings sheet can label "(this device)" + warn before unbinding it.
+    String? current;
+    try {
+      current = (await _device.collect())['deviceId']?.toString();
+    } catch (_) {}
+    final res = await _api.get(
+      ApiConfig.devices,
+      query: (current != null && current.isNotEmpty) ? {'current': current} : null,
+    );
     final list = (res is Map ? res['devices'] : res) as List? ?? const [];
     return list
         .whereType<Map<String, dynamic>>()

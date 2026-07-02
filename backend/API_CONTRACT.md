@@ -120,7 +120,9 @@ Errors: `400 code=VALIDATION` (`device.deviceId` missing), `401` bad
 credentials, `403 code=BLOCKED` account blocked, `403 code=RECOVERY_NOT_ALLOWED`
 (role is not `owner` — accountants are device-exempt and admins unrestricted,
 so neither needs recovery), `429 code=RATE_LIMITED`. Re-binding an
-already-known device just refreshes it (no eviction).
+already-known device just refreshes it (no eviction). **v23:** the Flutter app
+now calls this after a `403 code=DEVICE_LIMIT` login (the user opts to "move the
+account to this device").
 
 ### GET `/api/auth/me`  (auth)
 Returns the current account (used for offline-first re-validation on launch /
@@ -164,6 +166,9 @@ Requests a plan; goes to `pending` until an admin approves.
 ## Device — `/api/device`  (all auth)
 
 ### GET `/api/device`         → `{ "devices": [ { /* Device */ } ] }`
+Optional `?current=<deviceId>` (v23) flags the caller's own row `current:true`
+(so the app can label "(this device)" + warn before unbinding it); omitted → all
+`current:false` (prior behavior).
 ### POST `/api/device/bind`   → body `{ "device": { /* Device */ } }` → `{ "device": { /* Device */ } }`
 ### DELETE `/api/device/:deviceId` → `{ "ok": true }`  (unbind a device)
 
@@ -282,7 +287,12 @@ mirror:
 - `entity` (required), `q`, `page`, `limit`, `includeDeleted=true`
 - `localId` (exact single-record fetch)
 - `relField`/`relValue` (relationship filter, whitelisted:
-  `subscriber_id · board_id · circuit_id`)
+  `subscriber_id · board_id · circuit_id · branch_id · accountant_id`).
+  **v23:** `relValue=__none__` matches rows with a NULL value for the field
+  (e.g. owner-created expenses have `accountant_id: null`).
+- `month=YYYY-MM` (**v23**, expenses only) — prefix-filters `data.date`.
+- **v23:** for `entity=expenses` the response also includes
+  `totalAmount` = Σ `data.amount` over the SAME filter (not just the page).
 
 ```jsonc
 // 200 response — identical shape to the admin variant
@@ -313,8 +323,10 @@ Paid/unpaid formula (same as the app): with `P[category] = monthly_prices[month]
 **paid** when its month **coverage** — `Σ paid_amount + Σ discount_value` over
 that month's receipts — is `>= amps * P[category]`. The receipt **discount** is
 WAIVED money: it folds into the DUE side (coverage + `totalDue`) but is **never**
-added to `collected`/`monthlyRevenue`/`netProfit`. With `P = 0` every subscriber
-counts as paid. `totalDue` is kept raw (`expected - collected - Σ discount_value`)
+added to `collected`/`monthlyRevenue`/`netProfit`. **v23:** a subscriber whose
+category has **no `monthly_prices` row** for the month counts **UNPAID** (like the
+app — subscribers start unpaid until a price is set); an explicit price of `0`
+still counts paid. `totalDue` is kept raw (`expected - collected - Σ discount_value`)
 and may go negative, like the app.
 
 Pricing is keyed by **`(branch, category)`**: each subscriber's due uses the
@@ -349,7 +361,8 @@ month falls back to the current server-UTC month.
     },
     "totalSubscribers": 12,
     "totalAmps": 180,          // sum of subscriber amps
-    "paidCount": 9,            // coverage (paid_amount + discount_value) >= due
+    "expected": 200000,        // v23: category-aware Σ amps × price[category]
+    "paidCount": 9,            // coverage (paid_amount + discount_value) >= due (unpriced category => unpaid)
     "unpaidCount": 3,
     "totalDue": 200000,        // expected - collected - Σ discount_value (raw, discount waived)
     "collected": 700000,       // Σ paid_amount over that month's receipts (discount NOT included)
@@ -410,14 +423,19 @@ Updates any of `{ name, permissions, branchId, active, password }` of one of the
 caller's accountants (ownership guarded). A provided `password` is re-hashed and
 **bumps the accountant's `tokenVersion`**, so its previously-issued tokens become
 `401 code=TOKEN_STALE` (see `GET /api/auth/me`); `active:false` blocks the
-accountant (cannot log in).
+accountant (cannot log in). **v23 (§3.3):** setting `password` REQUIRES the
+caller's OWN password in `ownerPassword` (`bcrypt.compare` vs the owner) → wrong/
+absent = `401 code=WRONG_PASSWORD`, and the new password must be ≥ 4 chars
+(`400 code=WEAK_PASSWORD`); nothing is mutated when the check fails. Non-password
+edits need no `ownerPassword`.
 ```jsonc
-// request (any subset)
-{ "name": "...", "permissions": ["..."], "branchId": "...", "active": false, "password": "newpass" }
+// request (any subset; ownerPassword required only when setting password)
+{ "name": "...", "permissions": ["..."], "branchId": "...", "active": false, "password": "newpass", "ownerPassword": "my-own-pass" }
 // 200 response
 { "accountant": { /* Accountant */ } }
 ```
-Errors: `404 code=ACCOUNTANT_NOT_FOUND` (not the caller's accountant).
+Errors: `404 code=ACCOUNTANT_NOT_FOUND` (not the caller's accountant);
+`401 code=WRONG_PASSWORD`, `400 code=WEAK_PASSWORD` (password reset).
 
 #### DELETE `/api/account/accountants/:id`  (owner|admin)
 Deletes one of the caller's accountants (ownership guarded).
@@ -426,6 +444,22 @@ Deletes one of the caller's accountants (ownership guarded).
 { "ok": true }
 ```
 Errors: `404 code=ACCOUNTANT_NOT_FOUND`.
+
+#### PUT `/api/account/profile`  (owner|admin — accountants 403)
+Self-edit of the caller's OWN `{ name, phone, generatorName, username, password }`.
+A `password` change bumps `tokenVersion` (old JWTs → `TOKEN_STALE`) and the
+response returns a FRESH `token` so the editing device stays signed in. **v23
+(§3.2):** setting `password` REQUIRES the caller's `currentPassword` (`bcrypt.compare`)
+→ wrong/absent = `401 code=WRONG_PASSWORD`; new password must be ≥ 4 chars
+(`400 code=WEAK_PASSWORD`); nothing is mutated when the check fails.
+```jsonc
+// request (any subset; currentPassword required only when setting password)
+{ "name": "...", "phone": "...", "generatorName": "...", "username": "...", "password": "newpass", "currentPassword": "old-pass" }
+// 200 response
+{ "token": "<fresh jwt>", "account": { /* Account */ } }
+```
+Errors: `409 code=USERNAME_TAKEN`/`PHONE_TAKEN`; `401 code=WRONG_PASSWORD`;
+`400 code=WEAK_PASSWORD`; `403 code=FORBIDDEN` (accountant).
 
 **Accountant creation by phone (Flash v11).** `POST /api/account/accountants`
 now takes the accountant's **phone** (the login identifier): the body is

@@ -112,9 +112,10 @@ test('changing a password invalidates the previously-issued token (401 TOKEN_STA
   assert.equal(me.status, 200, 'old token works before the password change');
 
   // Owner changes the accountant's password -> bumps tokenVersion.
+  // v23 (§3.3): resetting a password now requires the owner's own password.
   const upd = await api('PUT', `/api/account/accountants/${acctId}`, {
     token: owner.token,
-    body: { password: 'newsecret2' },
+    body: { password: 'newsecret2', ownerPassword: 'secret1' },
   });
   assert.equal(upd.status, 200, `update -> ${upd.status} ${JSON.stringify(upd.data)}`);
 

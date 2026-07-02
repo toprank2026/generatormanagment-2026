@@ -298,70 +298,115 @@ class AuthController extends GetxController {
         };
       }
       final result = await _auth.login(username: username, password: password);
-      await _cache.saveAccount(result.account.toJson());
-      // Fresh sign-in always resets the acting user (then _setAccount re-sets it
-      // to the owner or, for a backend accountant, the accountant actor).
-      currentUser.value = null;
-      _setAccount(result.account, online: true);
-      await _clearActingUser();
-      // Owner-password hash (for the offline owner profile-switch) is only
-      // meaningful for an owner/admin session, not an accountant one.
-      if (result.account.role != 'accountant') {
-        await _persistOwnerCredential(username, password);
-      }
-      await _cache.setLastOnlineValidationAt(DateTime.now().toIso8601String());
-      // v22 item 7: cross-account residue guard — MUST run BEFORE the session
-      // is marked live (isLoggedIn=true). While the guard's warning dialog is
-      // open, SyncController's heartbeat/connectivity auto-push gates on
-      // _loggedIn: flipping it first would let the OLD account's outbox push
-      // into the NEW account's mirror behind the dialog (cross-account leak +
-      // permanent loss), and RootHandler would flash MainScreen with the old
-      // data. Keyed on the EFFECTIVE owner (an accountant shares its owner's
-      // mirror); the user may cancel when unsynced residue would be lost.
-      final String effOwner = result.account.role == 'accountant'
-          ? (result.account.ownerId ?? result.account.id)
-          : result.account.id;
-      if (!await _guardCrossAccountResidue(effOwner)) {
-        await logout();
-        return {'success': false, 'message': 'login_cancelled'.tr};
-      }
-      isLoggedIn.value = true;
-      logoutReason.value = null; // clear any prior "you were signed out" warning
-      update();
-      // R8: an accountant starts with no local data on its own device — pull
-      // the owner's mirror (backend scopes by effective owner) and activate the
-      // accountant's branch so the app opens on its data.
-      // P4: an owner/admin login also auto-fetches data from the backend (after
-      // a logout wipe the local DB is empty, so this restores it). Login already
-      // required network above, so the pull always has connectivity.
-      if (result.account.role == 'accountant') {
-        await _onAccountantLoggedIn(result.account);
-      } else {
-        try {
-          if (Get.isRegistered<SyncController>()) {
-            await Get.find<SyncController>().pull(silent: true);
-          }
-        } catch (e) {
-          Log.w('owner post-login pull skipped: $e');
-        }
-        // v22 item 7: resetForLogout cleared the in-memory branch list (and
-        // pull's reload doesn't cover BranchController) — re-establish branches
-        // from the freshly-pulled DB and activate Main, like the accountant path.
-        try {
-          if (Get.isRegistered<BranchController>()) {
-            await Get.find<BranchController>()
-                .reloadAndActivate(DbHelper.kMainBranchId);
-          }
-        } catch (e) {
-          Log.w('post-login branch reload skipped: $e');
-        }
-      }
-      return {'success': true};
+      return await _completeSignIn(result, username, password);
     } on ApiException catch (e) {
-      return {'success': false, 'statusCode': e.statusCode, 'message': e.message};
+      // v23 §4.1: expose the error code so the login screen can distinguish
+      // DEVICE_LIMIT from a blocked account (and offer device recovery).
+      return {
+        'success': false,
+        'statusCode': e.statusCode,
+        'code': e.code,
+        'message': e.message,
+      };
     } catch (e) {
       return {'success': false, 'message': 'Error: $e'};
     }
+  }
+
+  /// v23 §4.2: move THIS account onto THIS device. Calls the backend
+  /// `recover-device` endpoint (evicts the least-recently-seen binding, binds
+  /// this device) then completes sign-in exactly like [login]. Owner/admin only
+  /// (accountants are device-exempt so they never hit DEVICE_LIMIT).
+  Future<Map<String, dynamic>> recoverDevice(
+      String username, String password) async {
+    try {
+      if (!await _net.isOnline()) {
+        return {'success': false, 'message': 'no_internet_sign_in'.tr};
+      }
+      final result =
+          await _auth.recoverDevice(username: username, password: password);
+      return await _completeSignIn(result, username, password);
+    } on ApiException catch (e) {
+      return {
+        'success': false,
+        'statusCode': e.statusCode,
+        'code': e.code,
+        'message': e.message,
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Error: $e'};
+    }
+  }
+
+  /// Shared post-authentication tail for [login] and [recoverDevice]: caches the
+  /// account, applies it, runs the cross-account residue guard BEFORE marking
+  /// the session live (v22 §7 ordering), then pulls the mirror + re-establishes
+  /// branches. Returns {success:true}, or the cancel map when the residue guard
+  /// is declined.
+  Future<Map<String, dynamic>> _completeSignIn(
+      AuthResult result, String username, String password) async {
+    await _cache.saveAccount(result.account.toJson());
+    // Fresh sign-in always resets the acting user (then _setAccount re-sets it
+    // to the owner or, for a backend accountant, the accountant actor).
+    currentUser.value = null;
+    _setAccount(result.account, online: true);
+    await _clearActingUser();
+    // Owner-password hash (for the offline owner profile-switch) is only
+    // meaningful for an owner/admin session, not an accountant one.
+    if (result.account.role != 'accountant') {
+      await _persistOwnerCredential(username, password);
+    }
+    await _cache.setLastOnlineValidationAt(DateTime.now().toIso8601String());
+    // v22 item 7: cross-account residue guard — MUST run BEFORE the session is
+    // marked live (isLoggedIn=true). While the guard's warning dialog is open,
+    // SyncController's heartbeat/connectivity auto-push gates on _loggedIn:
+    // flipping it first would let the OLD account's outbox push into the NEW
+    // account's mirror behind the dialog (cross-account leak + permanent loss),
+    // and RootHandler would flash MainScreen with the old data. Keyed on the
+    // EFFECTIVE owner (an accountant shares its owner's mirror).
+    final String effOwner = result.account.role == 'accountant'
+        ? (result.account.ownerId ?? result.account.id)
+        : result.account.id;
+    if (!await _guardCrossAccountResidue(effOwner)) {
+      // v23 §4.4: the server already bound this device during _auth.login — a
+      // cancelled sign-in must release that slot (best-effort, online here).
+      try {
+        await DeviceRebind.apply(rebind: false);
+      } catch (_) {}
+      await logout();
+      return {'success': false, 'message': 'login_cancelled'.tr};
+    }
+    isLoggedIn.value = true;
+    logoutReason.value = null; // clear any prior "you were signed out" warning
+    update();
+    // R8: an accountant starts with no local data on its own device — pull the
+    // owner's mirror (backend scopes by effective owner) and activate the
+    // accountant's branch so the app opens on its data.
+    // P4: an owner/admin login also auto-fetches data from the backend (after a
+    // logout wipe the local DB is empty, so this restores it).
+    if (result.account.role == 'accountant') {
+      await _onAccountantLoggedIn(result.account);
+    } else {
+      try {
+        if (Get.isRegistered<SyncController>()) {
+          await Get.find<SyncController>().pull(silent: true);
+        }
+      } catch (e) {
+        Log.w('owner post-login pull skipped: $e');
+      }
+      // v22 item 7: resetForLogout cleared the in-memory branch list (and pull's
+      // reload doesn't cover BranchController) — re-establish branches from the
+      // freshly-pulled DB and activate Main, like the accountant path.
+      try {
+        if (Get.isRegistered<BranchController>()) {
+          await Get.find<BranchController>()
+              .reloadAndActivate(DbHelper.kMainBranchId);
+        }
+      } catch (e) {
+        Log.w('post-login branch reload skipped: $e');
+      }
+    }
+    return {'success': true};
   }
 
   Future<Map<String, dynamic>> register({
@@ -422,6 +467,7 @@ class AuthController extends GetxController {
   Future<Map<String, dynamic>> updateProfile({
     String? username,
     String? password,
+    String? currentPassword, // v23 §3.2: required by the backend when password set
     String? name,
     String? phone,
     String? generatorName,
@@ -433,6 +479,7 @@ class AuthController extends GetxController {
       final result = await _auth.updateProfile(
         username: username,
         password: password,
+        currentPassword: currentPassword,
         name: name,
         phone: phone,
         generatorName: generatorName,
@@ -449,7 +496,12 @@ class AuthController extends GetxController {
       update();
       return {'success': true};
     } on ApiException catch (e) {
-      return {'success': false, 'statusCode': e.statusCode, 'message': e.message};
+      return {
+        'success': false,
+        'statusCode': e.statusCode,
+        'code': e.code, // v23 §3.2: lets the UI show WRONG_PASSWORD specifically
+        'message': e.message,
+      };
     } catch (e) {
       return {'success': false, 'message': 'Error: $e'};
     }

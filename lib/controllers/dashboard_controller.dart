@@ -82,10 +82,26 @@ class DashboardController extends GetxController {
       final prices = await _priceRepo.pricesForMonth(month, branchId: branch);
       // Month pricing check: has the owner set any price for this month/branch?
       hasPriceForMonth.value = prices.isNotEmpty;
+      // v23 item 1 (§2.3): CONSOLIDATED (All-branches) view prices each branch's
+      // amps with THAT branch's own tariff — the flat pricesForMonth(null)
+      // collapses branches last-row-wins (wrong for differently-priced branches).
+      // A single active branch keeps the old math.
       double expected = 0.0;
-      ampsByCat.forEach((cat, amps) {
-        expected += amps * (prices[cat] ?? 0.0);
-      });
+      if (branch == null) {
+        final ampsByBranchCat = await _subRepo.ampsByBranchCategory();
+        final pricesByBranch =
+            await _priceRepo.pricesForMonthByBranch(month);
+        ampsByBranchCat.forEach((br, catMap) {
+          final brPrices = pricesByBranch[br] ?? const <String, double>{};
+          catMap.forEach((cat, amps) {
+            expected += amps * (brPrices[cat] ?? 0.0);
+          });
+        });
+      } else {
+        ampsByCat.forEach((cat, amps) {
+          expected += amps * (prices[cat] ?? 0.0);
+        });
+      }
 
       // 3. Monthly Revenue = collected valid receipts this month (active branch +
       //    this accountant; owner = all) (R6/R9).

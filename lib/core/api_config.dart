@@ -22,6 +22,8 @@ class ApiConfig {
   static const String register = '/api/auth/register';
   static const String login = '/api/auth/login';
   static const String me = '/api/auth/me';
+  // v23 §4.2: move an account onto this device (evicts the LRU binding).
+  static const String recoverDevice = '/api/auth/recover-device';
 
   // --- Accountant sub-accounts (owner creates/manages; R8) ---
   static const String accountants = '/api/account/accountants';

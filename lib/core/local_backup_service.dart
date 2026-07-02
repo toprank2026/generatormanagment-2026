@@ -78,7 +78,14 @@ class LocalBackupService {
       'ct': base64Encode(ct),
     });
     final dir = await getTemporaryDirectory();
-    final file = File(p.join(dir.path, '${_safeName(generatorName)}.backup'));
+    // v23 (§3.1): stamp the date into the filename so multiple exports are
+    // distinguishable (envelope format is unchanged — v:1 stays importable).
+    final now = DateTime.now();
+    final stamp = '${now.year}'
+        '${now.month.toString().padLeft(2, '0')}'
+        '${now.day.toString().padLeft(2, '0')}';
+    final file =
+        File(p.join(dir.path, '${_safeName(generatorName)}-$stamp.backup'));
     await file.writeAsString(envelope, flush: true);
     return file.path;
   }

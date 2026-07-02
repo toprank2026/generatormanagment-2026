@@ -55,6 +55,26 @@ class MonthlyPriceRepository {
     }
     return map;
   }
+
+  /// v23 item 1 (§2.3): all [month] prices grouped by BRANCH then category —
+  /// `{ branchKey: { category: pricePerAmp } }` (branchKey normalizes NULL to
+  /// [DbHelper.kMainBranchId], matching `SubscriberRepository.ampsByBranchCategory`).
+  /// Lets the CONSOLIDATED (All-branches) report price each branch's amps with
+  /// that branch's OWN tariff instead of the flat last-row-wins collapse in
+  /// [pricesForMonth]. Additive — never modify [pricesForMonth].
+  Future<Map<String, Map<String, double>>> pricesForMonthByBranch(
+      String month) async {
+    final db = await _dbHelper.database;
+    final rows = await db
+        .query('monthly_prices', where: 'month = ?', whereArgs: [month]);
+    final map = <String, Map<String, double>>{};
+    for (final r in rows) {
+      final mp = MonthlyPrice.fromMap(r);
+      final br = mp.branchId ?? DbHelper.kMainBranchId;
+      (map[br] ??= <String, double>{})[mp.category] = mp.pricePerAmp;
+    }
+    return map;
+  }
 }
 
 class ReceiptRepository {

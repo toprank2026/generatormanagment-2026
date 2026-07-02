@@ -108,8 +108,8 @@ class PdfService {
                 pw.Center(
                   child: pw.BarcodeWidget(
                     data: qrData,
-                    width: 75,
-                    height: 75,
+                    width: 65, // v23 item 5: QR reduced slightly (was 75)
+                    height: 65,
                     barcode: pw.Barcode.qrCode(),
                   ),
                 ),

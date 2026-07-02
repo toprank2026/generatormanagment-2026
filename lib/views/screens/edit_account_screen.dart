@@ -21,8 +21,11 @@ class _EditAccountScreenState extends State<EditAccountScreen> {
   late final TextEditingController _phone;
   late final TextEditingController _generator;
   final TextEditingController _password = TextEditingController();
+  // v23 (§3.2): required only when a NEW password is entered.
+  final TextEditingController _currentPassword = TextEditingController();
   bool _saving = false;
   bool _obscure = true;
+  bool _obscureCurrent = true;
 
   @override
   void initState() {
@@ -41,6 +44,7 @@ class _EditAccountScreenState extends State<EditAccountScreen> {
     _phone.dispose();
     _generator.dispose();
     _password.dispose();
+    _currentPassword.dispose();
     super.dispose();
   }
 
@@ -52,6 +56,30 @@ class _EditAccountScreenState extends State<EditAccountScreen> {
           snackPosition: SnackPosition.BOTTOM);
       return;
     }
+    // v23 (§3.2): a password change requires the CURRENT password.
+    // Trim for consistency with the backup + accountant-edit flows.
+    final String newPwd = _password.text.trim();
+    final bool changingPassword = newPwd.isNotEmpty;
+    final String currentPwd = _currentPassword.text.trim();
+    if (changingPassword) {
+      if (newPwd.length < 4) {
+        Get.snackbar('error'.tr, 'password_too_short'.tr,
+            snackPosition: SnackPosition.BOTTOM);
+        return;
+      }
+      if (currentPwd.isEmpty) {
+        Get.snackbar('error'.tr, 'current_password_required'.tr,
+            snackPosition: SnackPosition.BOTTOM);
+        return;
+      }
+      // Fast local reject when an offline owner-hash is available (the backend
+      // is the authoritative gate; verifyOwnerPassword returns true if no hash).
+      if (!await _auth.verifyOwnerPassword(currentPwd)) {
+        Get.snackbar('error'.tr, 'wrong_password'.tr,
+            snackPosition: SnackPosition.BOTTOM);
+        return;
+      }
+    }
     setState(() => _saving = true);
     final res = await _auth.updateProfile(
       username: username,
@@ -59,7 +87,8 @@ class _EditAccountScreenState extends State<EditAccountScreen> {
       phone: _phone.text.trim(),
       generatorName: _generator.text.trim(),
       // empty → keep the current password (repo only sends non-empty).
-      password: _password.text.isEmpty ? null : _password.text,
+      password: changingPassword ? newPwd : null,
+      currentPassword: changingPassword ? currentPwd : null,
     );
     if (!mounted) return;
     setState(() => _saving = false);
@@ -71,11 +100,17 @@ class _EditAccountScreenState extends State<EditAccountScreen> {
           snackPosition: SnackPosition.BOTTOM);
     } else {
       // 409 = username OR phone already taken — surface the backend's specific
-      // message (it says which), falling back to the username message.
+      // message (it says which); 401 WRONG_PASSWORD → the current password was
+      // wrong (v23 §3.2).
       final code = res['statusCode'];
-      final msg = code == 409
-          ? (res['message'] ?? 'username_taken'.tr).toString()
-          : (res['message'] ?? 'error'.tr).toString();
+      final String msg;
+      if (res['code'] == 'WRONG_PASSWORD' || code == 401) {
+        msg = 'wrong_password'.tr;
+      } else if (code == 409) {
+        msg = (res['message'] ?? 'username_taken'.tr).toString();
+      } else {
+        msg = (res['message'] ?? 'error'.tr).toString();
+      }
       Get.snackbar('error'.tr, msg,
           backgroundColor: Colors.redAccent,
           colorText: Colors.white,
@@ -119,6 +154,7 @@ class _EditAccountScreenState extends State<EditAccountScreen> {
             TextField(
               controller: _password,
               obscureText: _obscure,
+              onChanged: (_) => setState(() {}), // toggle current-password field
               decoration: _dec('new_password_optional'.tr, Icons.lock_outline)
                   .copyWith(
                 helperText: 'leave_blank_keep_password'.tr,
@@ -129,6 +165,27 @@ class _EditAccountScreenState extends State<EditAccountScreen> {
                 ),
               ),
             ),
+            // v23 (§3.2): current-password field, shown only while changing the
+            // password (required to authorize the change).
+            if (_password.text.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              TextField(
+                controller: _currentPassword,
+                obscureText: _obscureCurrent,
+                decoration:
+                    _dec('current_password'.tr, Icons.lock_clock_outlined)
+                        .copyWith(
+                  helperText: 'current_password_required'.tr,
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscureCurrent
+                        ? Icons.visibility
+                        : Icons.visibility_off),
+                    onPressed: () =>
+                        setState(() => _obscureCurrent = !_obscureCurrent),
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             FilledButton.icon(
               style: FilledButton.styleFrom(

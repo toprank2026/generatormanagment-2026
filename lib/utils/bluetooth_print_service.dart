@@ -132,6 +132,23 @@ class BluetoothPrintService {
     } // end copy loop
   }
 
+  /// v23 item 5: print a tiny TEST slip to prove the Bluetooth link works after
+  /// pairing (no real receipt/payment needed). Throws on connection failure so
+  /// the caller can surface it.
+  Future<void> printTest() async {
+    if (!await _ensureConnected()) {
+      throw Exception('printer_not_connected');
+    }
+    bluetooth.write(" \n");
+    await printArabicText('Flash', '', fontSize: 30, textAlign: 1);
+    await Future.delayed(const Duration(milliseconds: 100));
+    await printArabicText('اختبار الطباعة — Test print', '',
+        fontSize: 22, textAlign: 1);
+    await Future.delayed(const Duration(milliseconds: 100));
+    bluetooth.printNewLine();
+    bluetooth.printNewLine();
+  }
+
   /// v20 item 5: guarantee a live connection to the SAVED printer before
   /// printing. Returns true only when actually connected; reconnects (1 retry)
   /// to the persisted address if the link dropped. Never reports a false "sent".
@@ -198,7 +215,7 @@ class BluetoothPrintService {
   /// Image path is reliable for long URLs where the native QR command garbles.
   Future<void> _printQrImage(String data) async {
     final double paper = PrinterPrefs.pixelWidth;
-    const double qr = 190; // v20 item 3: slightly smaller QR
+    const double qr = 160; // v23 item 5: QR reduced slightly (was 190)
     final double off = (paper - qr) / 2;
     final code = bc.Barcode.qrCode(
       errorCorrectLevel: bc.BarcodeQRCorrectionLevel.medium,

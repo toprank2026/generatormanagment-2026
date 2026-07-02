@@ -59,6 +59,26 @@ class AuthRepository {
     return _parseAuth(res);
   }
 
+  /// v23 §4.2: recover this account onto THIS device — same request shape as
+  /// [login] (credentials + device fingerprint), but hits `recover-device`,
+  /// which evicts the least-recently-seen binding to admit this one.
+  Future<AuthResult> recoverDevice({
+    required String username,
+    required String password,
+  }) async {
+    final device = await _device.collect();
+    final res = await _api.post(
+      ApiConfig.recoverDevice,
+      auth: false,
+      body: {
+        'username': username,
+        'password': password,
+        'device': device,
+      },
+    );
+    return _parseAuth(res);
+  }
+
   /// Re-fetches the account (used for offline-first re-validation). A thrown
   /// [ApiException] with `isAuthError` is the only thing that ends the session.
   Future<Account> me() async {
@@ -76,13 +96,17 @@ class AuthRepository {
   Future<AuthResult> updateProfile({
     String? username,
     String? password,
+    String? currentPassword, // v23 §3.2: sent only when changing the password
     String? name,
     String? phone,
     String? generatorName,
   }) async {
     final body = <String, dynamic>{};
     if (username != null) body['username'] = username;
-    if (password != null && password.isNotEmpty) body['password'] = password;
+    if (password != null && password.isNotEmpty) {
+      body['password'] = password;
+      if (currentPassword != null) body['currentPassword'] = currentPassword;
+    }
     if (name != null) body['name'] = name;
     if (phone != null) body['phone'] = phone;
     if (generatorName != null) body['generatorName'] = generatorName;
@@ -169,13 +193,17 @@ class AuthRepository {
     String? branchId,
     bool? active,
     String? password,
+    String? ownerPassword, // v23 §3.3: sent only when resetting the password
   }) async {
     final body = <String, dynamic>{};
     if (name != null) body['name'] = name;
     if (permissions != null) body['permissions'] = permissions.toList();
     if (branchId != null) body['branchId'] = branchId;
     if (active != null) body['active'] = active;
-    if (password != null && password.isNotEmpty) body['password'] = password;
+    if (password != null && password.isNotEmpty) {
+      body['password'] = password;
+      if (ownerPassword != null) body['ownerPassword'] = ownerPassword;
+    }
     await _api.put(ApiConfig.accountantById(localId), body: body);
   }
 

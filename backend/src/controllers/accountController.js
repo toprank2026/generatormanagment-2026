@@ -49,8 +49,10 @@ const num = (value) => {
  * monthly_prices (legacy/missing categories default to 'standard'; absent = 0).
  * A subscriber's due = amps * P[category]; it is PAID when its month-M coverage
  * (Σ paid_amount + Σ discount_value of its receipts) is >= that due — so a
- * discounted FULL payment counts as fully paid, and with no price every
- * subscriber counts as paid, exactly like the app. The expected total is
+ * discounted FULL payment counts as fully paid. v23 (§2.2): when the
+ * subscriber's category has NO price row for the month it counts UNPAID (not
+ * paid), exactly like the app (subscribers start unpaid until a price is set).
+ * An explicit price of 0 still counts paid (owes nothing). The expected total is
  * Σ amps × P[category] over the in-scope subscribers; totalDue is kept raw
  * (expected - collected - Σ discount_value), which may go negative, matching the
  * app. The discount is WAIVED money: it folds into the DUE side only and is
@@ -133,6 +135,14 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
   }
   const priceFor = (bid, cat) =>
     num(priceByBranchCat[`${bid || 'main'}|${cat || 'standard'}`] || 0);
+  // v23 (§2.2): is there ANY price row for this (branch, category)? A subscriber
+  // whose category is unpriced this month counts UNPAID (matches the app's
+  // `mp.price_per_amp IS NOT NULL` rule) — distinct from an explicit price of 0.
+  const hasPriceFor = (bid, cat) =>
+    Object.prototype.hasOwnProperty.call(
+      priceByBranchCat,
+      `${bid || 'main'}|${cat || 'standard'}`,
+    );
 
   // Back-compat single price reported in the payload: prefer 'standard', else the
   // first category present (or 0). Per-subscriber math below uses priceByBranchCat.
@@ -191,7 +201,9 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     const due = amps * catPrice;
     expected += due;
     const coverage = coverageBySubscriber.get(data.id || s.localId) || 0;
-    if (coverage >= due) {
+    // v23 (§2.2): unpriced category → UNPAID (was: due=0 → coverage>=0 → paid,
+    // which diverged from the app). Priced (incl. explicit 0) keeps the rule.
+    if (hasPriceFor(data.branch_id, data.category) && coverage >= due) {
       paidCount += 1;
       const cat = paidByCategory[data.category] !== undefined ? data.category : 'standard';
       paidByCategory[cat] += 1;
@@ -218,6 +230,10 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     categoryPrices: priceMap,
     totalSubscribers: subscribers.length,
     totalAmps,
+    // v23 (§2.1): the category-aware expected total, so the owner panel can show
+    // it directly instead of recomputing totalAmps × pricePerAmp(standard),
+    // which was wrong for mixed-tariff accounts.
+    expected,
     paidCount,
     unpaidCount: subscribers.length - paidCount,
     // Per-tariff paid counts (owner-panel reports parity with the app).
@@ -411,7 +427,24 @@ const updateMyProfile = asyncHandler(async (req, res) => {
   }
 
   const user = req.user;
-  const { name, phone, generatorName, username, password } = req.body || {};
+  const { name, phone, generatorName, username, password, currentPassword } =
+    req.body || {};
+
+  // v23 (§3.2): a password change must be authorized with the CURRENT password.
+  // Verified BEFORE any field is mutated, so a wrong/absent current password
+  // changes nothing. (Old clients that set a password without currentPassword
+  // now get 401 — that is the point of the fix.)
+  if (password !== undefined && password) {
+    const ok =
+      currentPassword &&
+      (await bcrypt.compare(String(currentPassword), user.passwordHash || ''));
+    if (!ok) {
+      throw new HttpError(401, 'Current password is incorrect', 'WRONG_PASSWORD');
+    }
+    if (String(password).length < 4) {
+      throw new HttpError(400, 'Password must be at least 4 characters', 'WEAK_PASSWORD');
+    }
+  }
 
   if (name !== undefined) user.name = String(name).trim();
   if (generatorName !== undefined) {

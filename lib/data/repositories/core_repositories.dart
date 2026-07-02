@@ -490,7 +490,11 @@ class SubscriberRepository {
   }
 
   Future<List<Subscriber>> getByBoard(String boardId,
-      {String? accountantId, String? branchId, String? query}) async {
+      {String? accountantId,
+      String? branchId,
+      String? query,
+      int? limit,
+      int? offset}) async {
     final db = await _dbHelper.database;
     final clauses = <String>['board_id = ?'];
     final args = <dynamic>[boardId];
@@ -511,7 +515,11 @@ class SubscriberRepository {
         where: clauses.join(' AND '),
         whereArgs: args,
         // v22 item 5: creation order, language-independent.
-        orderBy: 'created_at ASC, rowid ASC');
+        orderBy: 'created_at ASC, rowid ASC',
+        // v23 item 7: paginate the board-scoped list (existing callers pass
+        // neither → full result set as before).
+        limit: limit,
+        offset: (limit != null) ? offset : null);
     return List.generate(maps.length, (i) => Subscriber.fromMap(maps[i]));
   }
 
@@ -524,9 +532,10 @@ class SubscriberRepository {
   /// explicit price of 0 still counts as paid (owes nothing).
   /// Shared FROM/JOIN/WHERE (+ positional args) for the paid/unpaid query, so the
   /// row fetch and the COUNT use identical logic. The returned [sql] begins at
-  /// `FROM subscribers s ...`. Arg order follows the `?` placeholders:
-  ///   inner receipts: month [, branch]   mp join: month
-  ///   outer: [accountant] [branch] [category]
+  /// `FROM subscribers s ...`. Arg order follows the `?` placeholders EXACTLY
+  /// (v22/v23 — keep in sync when editing):
+  ///   inner receipts: month [, branch] [, receiptAccountant]   mp join: month
+  ///   outer: [accountant] [branch] [category] [query ×2]
   ({String sql, List<dynamic> args}) _paymentStatusFrom({
     required String month,
     required bool isPaid,
@@ -757,6 +766,40 @@ class SubscriberRepository {
     final map = <String, double>{};
     for (final row in rows) {
       map[row['cat'] as String] = ((row['amps'] as num?) ?? 0).toDouble();
+    }
+    return map;
+  }
+
+  /// v23 item 1 (§2.3): Σ amps grouped by BRANCH and category (both normalized)
+  /// — lets the CONSOLIDATED (All-branches) report compute expected per branch
+  /// per category instead of collapsing every branch's prices into one map
+  /// (last-row-wins bug). Returned as `{ branchKey: { category: amps } }` where
+  /// branchKey normalizes a NULL branch_id to [DbHelper.kMainBranchId], matching
+  /// [pricesForMonthByBranch]. Additive — never modify [ampsByCategory].
+  Future<Map<String, Map<String, double>>> ampsByBranchCategory(
+      {String? accountantId}) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>[];
+    final args = <dynamic>[];
+    if (accountantId != null) {
+      clauses.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    final where = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
+    final rows = await db.rawQuery(
+      "SELECT IFNULL(branch_id, '${DbHelper.kMainBranchId}') as br, "
+      "IFNULL(category,'standard') as cat, SUM(amps) as amps "
+      "FROM subscribers $where "
+      "GROUP BY IFNULL(branch_id, '${DbHelper.kMainBranchId}'), "
+      "IFNULL(category,'standard')",
+      args.isEmpty ? null : args,
+    );
+    final map = <String, Map<String, double>>{};
+    for (final row in rows) {
+      final br = row['br'] as String;
+      final cat = row['cat'] as String;
+      (map[br] ??= <String, double>{})[cat] =
+          ((row['amps'] as num?) ?? 0).toDouble();
     }
     return map;
   }

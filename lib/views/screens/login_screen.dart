@@ -43,6 +43,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (result['success'] == true) {
         Get.offAll(() => const RootHandler());
+      } else if (result['code'] == 'DEVICE_LIMIT') {
+        // v23 §4.1/§4.2: a device-limit rejection is NOT "account disabled" —
+        // explain it and offer to move the account to THIS device.
+        _offerDeviceRecovery();
       } else {
         String message = result['message'];
         if (result['statusCode'] == 403) {
@@ -59,6 +63,39 @@ class _LoginScreenState extends State<LoginScreen> {
           colorText: Colors.red,
         );
       }
+    }
+  }
+
+  /// v23 §4.2: on DEVICE_LIMIT, offer to move this account onto this device
+  /// (evicts the other binding server-side, then signs in normally).
+  Future<void> _offerDeviceRecovery() async {
+    final ok = await Get.defaultDialog<bool>(
+      title: 'device_limit_msg'.tr,
+      middleText: 'device_limit_recover_q'.tr,
+      textConfirm: 'move_to_this_device'.tr,
+      textCancel: 'cancel'.tr,
+      confirmTextColor: Colors.white,
+      onConfirm: () => Get.back(result: true),
+      onCancel: () {},
+    );
+    if (ok != true) return;
+    setState(() => _isLoading = true);
+    final res = await _authController.recoverDevice(
+      _usernameController.text.trim(),
+      _passwordController.text,
+    );
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (res['success'] == true) {
+      Get.offAll(() => const RootHandler());
+    } else {
+      Get.snackbar(
+        'login_failed'.tr,
+        (res['message'] ?? 'error'.tr).toString(),
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red.withOpacity(0.1),
+        colorText: Colors.red,
+      );
     }
   }
 

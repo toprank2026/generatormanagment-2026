@@ -121,7 +121,23 @@ const updateAccountant = asyncHandler(async (req, res) => {
   const accountant = await findOwnedAccountant(req.user._id, req.params.id);
   if (!accountant) throw new HttpError(404, 'Accountant not found', 'ACCOUNTANT_NOT_FOUND');
 
-  const { name, permissions, branchId, active, password } = req.body || {};
+  const { name, permissions, branchId, active, password, ownerPassword } =
+    req.body || {};
+
+  // v23 (§3.3): resetting an accountant's password must be authorized with the
+  // OWNER's OWN password (the owner doesn't know the accountant's old one).
+  // Verified BEFORE any field is mutated. Non-password edits need no challenge.
+  if (password !== undefined && password) {
+    const ok =
+      ownerPassword &&
+      (await bcrypt.compare(String(ownerPassword), req.user.passwordHash || ''));
+    if (!ok) {
+      throw new HttpError(401, 'Your password is incorrect', 'WRONG_PASSWORD');
+    }
+    if (String(password).length < 4) {
+      throw new HttpError(400, 'Password must be at least 4 characters', 'WEAK_PASSWORD');
+    }
+  }
 
   if (name !== undefined) accountant.name = String(name).trim();
   if (Array.isArray(permissions)) accountant.permissions = permissions;

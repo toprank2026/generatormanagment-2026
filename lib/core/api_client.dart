@@ -17,6 +17,11 @@ class ApiException implements Exception {
   bool get isAuthError => statusCode == 401 || statusCode == 403;
   bool get isNetworkError => statusCode == 0;
 
+  /// Machine-readable error code from the backend body (e.g. 'DEVICE_LIMIT',
+  /// 'WRONG_PASSWORD', 'USERNAME_TAKEN'), or null when absent.
+  String? get code =>
+      (body is Map && body['code'] is String) ? body['code'] as String : null;
+
   @override
   String toString() => 'ApiException($statusCode): $message';
 }

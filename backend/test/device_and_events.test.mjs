@@ -152,6 +152,34 @@ test('reinstall on the same handset (same deviceId, new installId) -> 200 and st
   assert.equal(dev.installId, 'install-2', 'reinstall refreshes the installId on the same handset');
 });
 
+test('GET /api/device?current=<id> marks the caller\'s own device (v23 §4.3)', async () => {
+  const username = uniqueUsername();
+  const reg = await api('POST', '/api/auth/register', {
+    body: {
+      name: 'Owner Name',
+      phone: username,
+      username,
+      password: 'secret1',
+      device: { deviceId: 'dev-A', installId: 'install-1', platform: 'android' },
+    },
+  });
+  assert.equal(reg.status, 201, `register -> ${reg.status} ${JSON.stringify(reg.data)}`);
+  const token = reg.data.token;
+
+  // With current=dev-A the row is flagged current.
+  const withCurrent = await api('GET', '/api/device?current=dev-A', { token });
+  assert.equal(withCurrent.status, 200);
+  const devA = withCurrent.data.devices.find((d) => d.deviceId === 'dev-A');
+  assert.ok(devA, 'dev-A present');
+  assert.equal(devA.current, true, 'dev-A is flagged current when it matches ?current');
+
+  // With a non-matching current (or none) the row is NOT current (old behavior).
+  const otherCurrent = await api('GET', '/api/device?current=dev-Z', { token });
+  assert.equal(otherCurrent.data.devices.find((d) => d.deviceId === 'dev-A').current, false);
+  const noCurrent = await api('GET', '/api/device', { token });
+  assert.equal(noCurrent.data.devices.find((d) => d.deviceId === 'dev-A').current, false);
+});
+
 test('login from a DIFFERENT handset (new deviceId) -> 403 DEVICE_LIMIT', async () => {
   const username = uniqueUsername();
   const password = 'secret1';

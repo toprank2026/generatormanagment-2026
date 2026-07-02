@@ -34,11 +34,34 @@ class _AccountantSettlementsScreenState
   List<({Settlement settlement, String accountantName})> _rows = [];
   bool _loading = true;
   bool _busy = false; // a decision is being saved
+  // v23 review: the true pending total (not just the loaded page) for the banner.
+  int _pendingTotal = 0;
+
+  // v23 item 7: paginate — the list previously loaded only the first 100 rows
+  // (listAllForOwner default) with no way to reach older settlements.
+  static const int _perPage = 20;
+  int _page = 1;
+  bool _hasMore = false;
+  bool _moreLoading = false;
+  final ScrollController _scroll = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _scroll.addListener(_onScroll);
     _load(pull: true);
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 200) {
+      _loadMore();
+    }
   }
 
   /// Pull the latest requests (best-effort, online) then read the local mirror.
@@ -52,14 +75,40 @@ class _AccountantSettlementsScreenState
           await Get.find<SyncController>().pull(silent: true);
         } catch (_) {/* fall through to local figures */}
       }
-      final rows = await _repo.listAllForOwner();
+      // Fetch one extra to detect the next page (canonical pattern).
+      final rows = await _repo.listAllForOwner(limit: _perPage + 1);
+      // v23 review: the pending banner must reflect the TRUE total, not the page.
+      int pendingTotal = 0;
+      try {
+        pendingTotal = await _repo.pendingCount();
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
-        _rows = rows;
+        _page = 1;
+        _hasMore = rows.length > _perPage;
+        _rows = _hasMore ? rows.sublist(0, _perPage) : rows;
+        _pendingTotal = pendingTotal;
         _loading = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_moreLoading || !_hasMore || _loading) return;
+    setState(() => _moreLoading = true);
+    try {
+      final next = await _repo.listAllForOwner(
+          limit: _perPage + 1, offset: _page * _perPage);
+      if (!mounted) return;
+      setState(() {
+        _hasMore = next.length > _perPage;
+        _rows.addAll(_hasMore ? next.sublist(0, _perPage) : next);
+        _page += 1;
+      });
+    } finally {
+      if (mounted) setState(() => _moreLoading = false);
     }
   }
 
@@ -99,7 +148,7 @@ class _AccountantSettlementsScreenState
 
   @override
   Widget build(BuildContext context) {
-    final pending = _rows.where((r) => r.settlement.isPending).length;
+    final pending = _pendingTotal; // v23 review: true total, not just the page
     return Scaffold(
       appBar: AppBar(title: Text('accountant_settlements'.tr)),
       body: SafeArea(
@@ -109,6 +158,7 @@ class _AccountantSettlementsScreenState
                 onRefresh: () => _load(pull: true),
                 child: _rows.isEmpty
                     ? ListView(
+                        controller: _scroll,
                         children: [
                           const SizedBox(height: 120),
                           Icon(Icons.receipt_long,
@@ -121,6 +171,7 @@ class _AccountantSettlementsScreenState
                         ],
                       )
                     : ListView(
+                        controller: _scroll,
                         padding: const EdgeInsets.all(12),
                         children: [
                           if (pending > 0)
@@ -134,6 +185,11 @@ class _AccountantSettlementsScreenState
                               ),
                             ),
                           ..._rows.map((r) => _tile(r.settlement, r.accountantName)),
+                          if (_moreLoading)
+                            const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: Center(child: CircularProgressIndicator()),
+                            ),
                         ],
                       ),
               ),

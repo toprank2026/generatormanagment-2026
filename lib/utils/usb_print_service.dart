@@ -131,6 +131,61 @@ class UsbPrintService {
     }
   }
 
+  /// v23 item 5: print a tiny TEST slip to prove the USB link works after the
+  /// device is selected (no real receipt needed). Same transport as a receipt.
+  Future<void> printTest({String? deviceId}) async {
+    if (_busy) throw Exception('usb_busy');
+    _busy = true;
+    try {
+      int? vid;
+      int? pid;
+      if (deviceId != null && deviceId.contains(':')) {
+        final parts = deviceId.split(':');
+        vid = int.tryParse(parts[0]);
+        pid = int.tryParse(parts[1]);
+      }
+      final devices = await listDevices();
+      if (devices.isEmpty) throw Exception('usb_printer_not_found');
+      final bool savedPresent = vid != null &&
+          pid != null &&
+          devices.any((d) =>
+              int.tryParse(d['vendorId']?.toString() ?? '') == vid &&
+              int.tryParse(d['productId']?.toString() ?? '') == pid);
+      if (!savedPresent) {
+        final d = devices.first;
+        vid = int.tryParse(d['vendorId']?.toString() ?? '');
+        pid = int.tryParse(d['productId']?.toString() ?? '');
+      }
+      if (vid == null || pid == null) throw Exception('usb_printer_not_found');
+
+      final img.Image line1 = await _textImage('Flash', 30, center: true);
+      final img.Image line2 =
+          await _textImage('اختبار الطباعة — Test print', 22, center: true);
+      final profile = await CapabilityProfile.load();
+      final gen = Generator(
+          PrinterPrefs.is80mm ? PaperSize.mm80 : PaperSize.mm58, profile);
+      final List<int> bytes = [];
+      bytes.addAll(gen.imageRaster(line1));
+      bytes.addAll(gen.imageRaster(line2));
+      bytes.addAll(gen.feed(2));
+      bytes.addAll(gen.cut());
+
+      final bool ok = (await _channel.invokeMethod('printBytes', {
+            'vendorId': vid,
+            'productId': pid,
+            'bytes': Uint8List.fromList(bytes),
+          }).timeout(const Duration(seconds: 75))) ==
+          true;
+      if (!ok) throw Exception('usb_write_failed');
+    } on PlatformException catch (e) {
+      throw Exception('print_failed: ${e.code} ${e.message}');
+    } on TimeoutException {
+      throw Exception('print_failed: usb_timeout');
+    } finally {
+      _busy = false;
+    }
+  }
+
   // ----------------------------------------------------------------------
   // Rendering — mirrors BluetoothPrintService so the USB receipt has the SAME
   // shape (centered header, bordered 2-column table, QR, footer). Each piece is
@@ -281,7 +336,7 @@ class UsbPrintService {
   /// Renders [data] as a centered QR image — identical to the Bluetooth path.
   Future<img.Image> _qrImage(String data) async {
     final double paper = PrinterPrefs.pixelWidth;
-    const double qr = 190;
+    const double qr = 160; // v23 item 5: QR reduced slightly (was 190)
     final double off = (paper - qr) / 2;
     final code = bc.Barcode.qrCode(
       errorCorrectLevel: bc.BarcodeQRCorrectionLevel.medium,

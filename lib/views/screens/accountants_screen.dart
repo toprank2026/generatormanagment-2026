@@ -352,12 +352,34 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
                     : () async {
                         final name = nameCtrl.text.trim();
                         final pwd = passwordCtrl.text.trim();
+                        // v23 §3.3: resetting the accountant's password must be
+                        // authorized with the OWNER's OWN password.
+                        String? ownerPwd;
+                        if (pwd.isNotEmpty) {
+                          if (pwd.length < 4) {
+                            Get.snackbar('error'.tr, 'password_too_short'.tr,
+                                snackPosition: SnackPosition.BOTTOM);
+                            return;
+                          }
+                          ownerPwd = await _askOwnerPassword();
+                          if (ownerPwd == null || ownerPwd.isEmpty) {
+                            return; // cancelled — keep the dialog open
+                          }
+                          // Fast local reject when an offline owner-hash exists
+                          // (the backend is the authoritative gate).
+                          if (!await auth.verifyOwnerPassword(ownerPwd)) {
+                            Get.snackbar('error'.tr, 'wrong_password'.tr,
+                                snackPosition: SnackPosition.BOTTOM);
+                            return;
+                          }
+                        }
                         setLocalState(() => busy = true);
                         final ok = await controller.updateAccountant(
                           a.id,
                           name: name,
                           active: active,
                           newPassword: pwd.isEmpty ? null : pwd,
+                          ownerPassword: ownerPwd,
                           permissions: selected,
                         );
                         if (ok) {
@@ -381,6 +403,55 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
                             strokeWidth: 2, color: Colors.white),
                       )
                     : Text('save'.tr),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// v23 §3.3: prompts the owner to re-enter their OWN password to authorize an
+  /// accountant password reset. Returns the entered value, or null on cancel.
+  Future<String?> _askOwnerPassword() {
+    final ctrl = TextEditingController();
+    return Get.dialog<String>(
+      // barrierDismissible:false + close via the dialog's own route (R-GETX).
+      barrierDismissible: false,
+      StatefulBuilder(
+        builder: (context, setLocal) {
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text('confirm_identity'.tr),
+            content: TextField(
+              controller: ctrl,
+              obscureText: true,
+              autofocus: true,
+              onChanged: (_) => setLocal(() {}),
+              onSubmitted: (v) {
+                if (v.trim().isNotEmpty) {
+                  Navigator.of(context).pop(v.trim());
+                }
+              },
+              decoration: InputDecoration(
+                labelText: 'current_password'.tr,
+                prefixIcon: const Icon(Icons.lock_outline, color: kAppBlue),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text('cancel'.tr),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: kAppBlue, foregroundColor: Colors.white),
+                onPressed: ctrl.text.trim().isEmpty
+                    ? null
+                    : () => Navigator.of(context).pop(ctrl.text.trim()),
+                child: Text('continue'.tr),
               ),
             ],
           );

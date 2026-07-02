@@ -272,6 +272,7 @@ class SettingsController extends GetxController {
     String? name,
     bool? active,
     String? newPassword,
+    String? ownerPassword, // v23 §3.3: required by the backend when resetting pwd
     Iterable<String>? permissions,
   }) async {
     if (!await _net.isOnline()) {
@@ -280,12 +281,15 @@ class SettingsController extends GetxController {
       return false;
     }
     try {
+      // Backend FIRST (authoritative): a 401 WRONG_PASSWORD aborts here, before
+      // any local mirror write — so a rejected reset changes nothing on device.
       await _authRepo.updateAccountant(
         id,
         name: name,
         active: active,
         permissions: permissions,
         password: newPassword,
+        ownerPassword: ownerPassword,
       );
       await _accountantRepo.update(
         id: id,
@@ -299,7 +303,10 @@ class SettingsController extends GetxController {
       update();
       return true;
     } on ApiException catch (e) {
-      Get.snackbar('error'.tr, e.isNetworkError ? 'online_only'.tr : e.message,
+      final msg = e.isNetworkError
+          ? 'online_only'.tr
+          : (e.code == 'WRONG_PASSWORD' ? 'wrong_password'.tr : e.message);
+      Get.snackbar('error'.tr, msg,
           backgroundColor: Colors.redAccent, colorText: Colors.white);
     } catch (e) {
       Get.snackbar('error'.tr, "${'edit_accountant'.tr}: $e");
@@ -408,30 +415,44 @@ class SettingsController extends GetxController {
   // (no history), encrypted with the OWNER PASSWORD, OWNER/ADMIN-ONLY, offline.
   // ==========================================================================
 
-  /// Password prompt dialog (returns the entered password, or null on cancel).
+  /// Password prompt dialog (returns the TRIMMED password, or null on cancel).
+  /// v23 (§3.1): the confirm button stays disabled until the field is non-empty.
   Future<String?> _askBackupPassword(String titleKey) async {
     final ctrl = TextEditingController();
     return Get.dialog<String>(
-      AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(titleKey.tr),
-        content: TextField(
-          controller: ctrl,
-          obscureText: true,
-          autofocus: true,
-          decoration: InputDecoration(
-            labelText: 'password'.tr,
-            prefixIcon: const Icon(Icons.lock_outline),
-          ),
-          onSubmitted: (v) => Get.back(result: v),
-        ),
-        actions: [
-          TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
-          ElevatedButton(
-            onPressed: () => Get.back(result: ctrl.text),
-            child: Text('confirm'.tr),
-          ),
-        ],
+      StatefulBuilder(
+        builder: (context, setLocal) {
+          void submit() {
+            final v = ctrl.text.trim();
+            if (v.isNotEmpty) Navigator.of(context).pop(v);
+          }
+
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text(titleKey.tr),
+            content: TextField(
+              controller: ctrl,
+              obscureText: true,
+              autofocus: true,
+              onChanged: (_) => setLocal(() {}),
+              decoration: InputDecoration(
+                labelText: 'password'.tr,
+                prefixIcon: const Icon(Icons.lock_outline),
+              ),
+              onSubmitted: (_) => submit(),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text('cancel'.tr)),
+              ElevatedButton(
+                onPressed: ctrl.text.trim().isEmpty ? null : submit,
+                child: Text('confirm'.tr),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -471,8 +492,12 @@ class SettingsController extends GetxController {
       Get.snackbar('error'.tr, 'no_permission'.tr);
       return;
     }
-    final res =
-        await FilePicker.platform.pickFiles(dialogTitle: 'select_backup_file'.tr);
+    // v23 (§3.1): restrict the picker to `.backup` files.
+    final res = await FilePicker.platform.pickFiles(
+      dialogTitle: 'select_backup_file'.tr,
+      type: FileType.custom,
+      allowedExtensions: ['backup'],
+    );
     final path = res?.files.single.path;
     if (path == null) return;
     final pwd = await _askBackupPassword('backup_import');
@@ -482,13 +507,11 @@ class SettingsController extends GetxController {
     // by no widget — the user could navigate and mutate mid-import). Overlay is
     // hidden BEFORE any snackbar (GetX gotcha: snackbar first blocks the close).
     SyncProgress.show('saving'.tr);
-    int total = 0;
+    Map<String, int> counts = const {};
     String? errorKey;
     String? errorDetail;
     try {
-      final counts = await LocalBackupService()
-          .import(file: File(path), password: pwd);
-      total = counts.values.fold<int>(0, (a, b) => a + b);
+      counts = await LocalBackupService().import(file: File(path), password: pwd);
       SyncController.poke(); // the restore writes queue an upload
       // v21 item 3: refresh the in-app lists + dashboard so the imported
       // boards/circuits/subscribers appear immediately (no app restart).
@@ -497,8 +520,11 @@ class SettingsController extends GetxController {
           await Get.find<SyncController>().reloadAppData();
         }
       } catch (_) {}
-    } on FormatException {
-      errorKey = 'backup_wrong_password';
+    } on FormatException catch (e) {
+      // v23 (§3.1): distinguish a non-backup file from a wrong password.
+      errorKey = e.message == 'not_a_valid_backup'
+          ? 'not_a_valid_backup'
+          : 'backup_wrong_password';
     } catch (e) {
       errorKey = 'import_failed';
       errorDetail = '$e';
@@ -506,13 +532,22 @@ class SettingsController extends GetxController {
       SyncProgress.hide();
       isLoading.value = false;
     }
-    if (errorKey == 'backup_wrong_password') {
+    if (errorKey == 'not_a_valid_backup') {
+      Get.snackbar('error'.tr, 'not_a_valid_backup'.tr,
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
+    } else if (errorKey == 'backup_wrong_password') {
       Get.snackbar('error'.tr, 'backup_wrong_password'.tr,
           backgroundColor: Colors.redAccent, colorText: Colors.white);
     } else if (errorKey != null) {
       Get.snackbar('error'.tr, "${'import_failed'.tr}: $errorDetail");
     } else {
-      Get.snackbar('success'.tr, '${'backup_imported'.tr}: $total',
+      // v23 (§3.1): per-table counts instead of a single total.
+      final detail = [
+        '${'boards'.tr} ${counts['boards'] ?? 0}',
+        '${'circuits'.tr} ${counts['circuits'] ?? 0}',
+        '${'subscribers_title'.tr} ${counts['subscribers'] ?? 0}',
+      ].join('  ·  ');
+      Get.snackbar('success'.tr, '${'backup_imported'.tr}\n$detail',
           backgroundColor: Colors.green, colorText: Colors.white);
     }
   }

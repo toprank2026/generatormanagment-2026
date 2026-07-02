@@ -227,7 +227,17 @@ async function listUserData(userId, query = {}) {
   const relField = typeof query.relField === 'string' ? query.relField : '';
   const relValue = query.relValue;
   if (relField && REL_FIELDS.includes(relField) && typeof relValue === 'string' && relValue) {
-    filter[`data.${relField}`] = relValue;
+    // v23 (§7): '__none__' selects rows with NO value for the field — e.g.
+    // owner-created expenses have `data.accountant_id = null`, which a plain
+    // equality match can't express.
+    filter[`data.${relField}`] = relValue === '__none__' ? null : relValue;
+  }
+
+  // v23 (§7): optional month=YYYY-MM prefix filter on data.date (expenses date
+  // browsing on the owner panel). Same convention buildDashboard uses.
+  const month = typeof query.month === 'string' ? query.month.trim() : '';
+  if (month && /^\d{4}-\d{2}$/.test(month) && entity === 'expenses') {
+    filter['data.date'] = { $regex: '^' + month };
   }
 
   // Optional active-branch scope (full isolation): composes with q/relField so a
@@ -272,7 +282,22 @@ async function listUserData(userId, query = {}) {
     updatedAt: d.updatedAt ? d.updatedAt.toISOString() : null,
   }));
 
-  return { entity, records, total, page, limit };
+  // v23 (§7): for expenses, also return the total amount over the SAME filter
+  // (not just the current page) so the panel can show a meaningful sum row.
+  const result = { entity, records, total, page, limit };
+  if (entity === 'expenses') {
+    const agg = await SyncRecord.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: null,
+          sum: { $sum: { $toDouble: { $ifNull: ['$data.amount', 0] } } },
+        },
+      },
+    ]);
+    result.totalAmount = agg.length ? agg[0].sum : 0;
+  }
+  return result;
 }
 
 /**
@@ -291,8 +316,13 @@ const getUserData = asyncHandler(async (req, res) => {
 /**
  * DELETE /api/admin/users/:id/data/:entity/:localId
  *
- * Hard-deletes a single mirrored row for the owner. The mirror is otherwise
- * read-only (sync is push-only device->server); delete is the lone exception.
+ * TOMBSTONES a single mirrored row for the owner (the mirror is otherwise
+ * read-only; delete is the lone exception). v23 (§10.2): this used to HARD
+ * delete, which left the device's local row intact — the row's next local edit
+ * re-created the mirror record (resurrection). Setting `deleted:true` + a fresh
+ * `data.updated_at` instead means a pulling device deletes its local row, and a
+ * later STALE local edit LOSES to this tombstone under last-edit-wins. Panel
+ * lists already filter `deleted:false`, so the display is unchanged.
  */
 const deleteUserData = asyncHandler(async (req, res) => {
   const { id, entity, localId } = req.params;
@@ -300,8 +330,17 @@ const deleteUserData = asyncHandler(async (req, res) => {
   const user = await User.findById(id);
   if (!user) throw new HttpError(404, 'User not found', 'USER_NOT_FOUND');
 
-  const deleted = await SyncRecord.findOneAndDelete({ user: user._id, entity, localId });
-  if (!deleted) throw new HttpError(404, 'Record not found', 'RECORD_NOT_FOUND');
+  const rec = await SyncRecord.findOne({ user: user._id, entity, localId });
+  if (!rec) throw new HttpError(404, 'Record not found', 'RECORD_NOT_FOUND');
+
+  const now = new Date();
+  rec.deleted = true;
+  rec.updatedAt = now; // pull cursor
+  // Stamp data.updated_at so the sync engine's last-EDIT-wins treats this
+  // tombstone as newer than any pre-existing device edit.
+  rec.data = Object.assign({}, rec.data, { updated_at: now.toISOString() });
+  rec.markModified('data');
+  await rec.save();
 
   res.status(200).json({ ok: true });
 });

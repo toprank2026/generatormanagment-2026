@@ -78,10 +78,9 @@ class _SubscribersScreenState extends State<SubscribersScreen>
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
-      // Only the All list paginates (Paid/Unpaid load in full).
-      if (widget.filter == null && widget.boardId == null) {
-        controller.loadMore();
-      }
+      // v23 item 7: ALL variants paginate now (All / Paid / Unpaid / board).
+      // The controller tracks the loaded variant and continues the right one.
+      controller.loadMore();
     }
   }
 

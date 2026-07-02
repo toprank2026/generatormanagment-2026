@@ -312,7 +312,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                                 ),
                               ),
                               subtitle: Text(
-                                "${DateFormat('MMM d').format(DateTime.parse(ex.date))} • ${ex.note ?? ''}",
+                                "${DateFormat('yyyy-MM-dd').format(DateTime.parse(ex.date))} • ${ex.note ?? ''}",
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),

@@ -127,6 +127,87 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
     super.dispose();
   }
 
+  /// v23 item 4: a numeric month/year picker (1..12 + a year stepper) — no
+  /// month NAMES. Writes yyyy-MM through [MonthController.setMonth] (R9).
+  Future<void> _pickMonth(BuildContext context) async {
+    final parts = month.selectedMonth.value.split('-');
+    int year = int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? DateTime.now().year;
+    final int selMonth =
+        int.tryParse(parts.length > 1 ? parts[1] : '') ?? DateTime.now().month;
+    year = year.clamp(2020, 2030);
+
+    await Get.dialog<void>(
+      StatefulBuilder(
+        builder: (ctx, setLocal) {
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text('billing_month'.tr),
+            content: SizedBox(
+              width: 300,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Year stepper (chevrons, RTL-safe via explicit icons).
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.chevron_left),
+                        onPressed: year > 2020
+                            ? () => setLocal(() => year--)
+                            : null,
+                      ),
+                      Text('$year',
+                          style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1565C0))),
+                      IconButton(
+                        icon: const Icon(Icons.chevron_right),
+                        onPressed: year < 2030
+                            ? () => setLocal(() => year++)
+                            : null,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  // 12 numeric month buttons (4 columns).
+                  GridView.count(
+                    crossAxisCount: 4,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 1.4,
+                    children: [
+                      for (int m = 1; m <= 12; m++)
+                        _MonthCell(
+                          number: m,
+                          selected: m == selMonth && year == int.tryParse(parts[0]),
+                          onTap: () {
+                            month.setMonth(
+                                DateFormat('yyyy-MM').format(DateTime(year, m)));
+                            Navigator.of(ctx).pop();
+                          },
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text('cancel'.tr),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -187,23 +268,11 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
                           Icons.calendar_month,
                           color: Color(0xFF1565C0),
                         ),
-                        onPressed: () async {
-                          DateTime initial = DateTime.now();
-                          final cur = DateTime.tryParse(
-                              '${controller.selectedMonth.value}-01');
-                          if (cur != null) initial = cur;
-                          DateTime? picked = await showDatePicker(
-                            context: context,
-                            initialDate: initial,
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime(2030),
-                          );
-                          if (picked != null) {
-                            // R9: Monthly Pricing is the ONLY place that sets the
-                            // global month — propagates to Home & subscribers.
-                            month.setMonth(DateFormat('yyyy-MM').format(picked));
-                          }
-                        },
+                        // v23 item 4: a NUMERIC month picker (month 6, not
+                        // "June") — easier for the operators. Writes the same
+                        // yyyy-MM string via MonthController (R9, the sole
+                        // mutation point), so everything downstream re-binds.
+                        onPressed: () => _pickMonth(context),
                       ),
                     ],
                   ),
@@ -464,6 +533,37 @@ class _MonthlyPricingScreenState extends State<MonthlyPricingScreen> {
           ],
         ),
       )),
+    );
+  }
+}
+
+/// v23 item 4: one numeric month button in the month picker grid.
+class _MonthCell extends StatelessWidget {
+  final int number;
+  final bool selected;
+  final VoidCallback onTap;
+  const _MonthCell(
+      {required this.number, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? const Color(0xFF1565C0) : const Color(0xFFE3F2FD),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Center(
+          child: Text(
+            '$number',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: selected ? Colors.white : const Color(0xFF1565C0),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

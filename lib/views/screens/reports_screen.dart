@@ -93,9 +93,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // No price set for this month → nothing is due, so everyone
-                      // shows as "paid". Make that explicit so the all-paid state
-                      // isn't mistaken for actual collection.
+                      // v23 (§2.2): a month with no STANDARD price set — since
+                      // the audit fix, subscribers of an unpriced category count
+                      // as UNPAID (not paid) until a price is set. Surface that so
+                      // the all-unpaid state isn't mistaken for non-collection.
                       if (controller.pricePerAmp.value <= 0)
                         Container(
                           width: double.infinity,
@@ -141,8 +142,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               color: const Color(0xFFC62828),
                             ),
                           ],
-                          centerText:
-                              controller.totalSubscribers.value.toString(),
+                          // v23 (§2.6): the center equals the two visible
+                          // segments (paid+unpaid). Under an accountant filter
+                          // this differs from branch-wide totalSubscribers, so
+                          // showing the sum keeps the donut internally consistent.
+                          centerText: (controller.paidCount.value +
+                                  controller.unpaidCount.value)
+                              .toString(),
                         ),
                       ),
 

@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/controllers/settlement_controller.dart';
+import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/views/widgets/app_form_field.dart';
@@ -87,8 +88,48 @@ class _UserSwitchScreenState extends State<UserSwitchScreen> {
   /// so the user can't act on half-loaded data. Credentials are pre-verified by
   /// the callers, so a failure here is unexpected (and never silently loses data
   /// without a result message).
+  /// v23 (§10.1): mirror the v17 LOGOUT guard — NEVER wipe local data while
+  /// unsynced records remain (the switch wipes ALL local data). Returns true
+  /// when it is safe to proceed. Only applies on a sync-enabled plan.
+  Future<bool> _guardUnsynced() async {
+    if (!auth.canSync || !Get.isRegistered<SyncController>()) return true;
+    final sync = Get.find<SyncController>();
+    // 1) Don't race an in-flight sync.
+    if (sync.isSyncing.value || sync.isPulling.value) {
+      Get.snackbar('switch_user'.tr, 'logout_sync_running'.tr,
+          snackPosition: SnackPosition.BOTTOM);
+      return false;
+    }
+    // 2) Online → push pending first (upload only) so a normal switch completes.
+    if (await ConnectivityService().isOnline()) {
+      SyncProgress.show('sync_uploading'.tr);
+      try {
+        await sync.syncNow(silent: true, showOverlay: false);
+      } catch (_) {} finally {
+        SyncProgress.hide();
+      }
+    }
+    // 3) Re-read the REAL outbox after the push attempt.
+    try {
+      await sync.refreshPending();
+    } catch (_) {}
+    // 4) Still unsynced → BLOCK the switch and keep ALL local data.
+    if (sync.pendingCount.value > 0) {
+      await Get.defaultDialog<void>(
+        title: 'warning'.tr,
+        middleText: 'logout_blocked_unsynced'.tr,
+        textConfirm: 'ok'.tr,
+        onConfirm: () => Get.back(),
+      );
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _switchWithWipe(Future<bool> Function() doSwitch,
       {required bool reloadOwner}) async {
+    // v23 (§10.1): never wipe unsynced data on an account switch.
+    if (!await _guardUnsynced()) return;
     SyncProgress.show('switching_user'.tr);
     bool ok = false;
     try {

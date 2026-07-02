@@ -134,14 +134,16 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
         backgroundColor: Colors.green,
         colorText: Colors.white,
       );
-      _handlePrint(receipt);
+      // v23 item 5: AWAIT the print so it sequences before the refresh, exactly
+      // like subscriber_detail (was fire-and-forget → diverging behavior).
+      await _handlePrint(receipt);
       _load(page: 1); // Refresh history list
     }
   }
 
   /// Prints [receipt] for this subscriber. Reuses the same print path as the
   /// detail screen (Bluetooth thermal printer when configured, else PDF).
-  void _handlePrint(Receipt receipt) async {
+  Future<void> _handlePrint(Receipt receipt) async {
     final settings = Get.find<SettingsController>();
     try {
       // The accountant this invoice belongs to (owning accountant), resolved

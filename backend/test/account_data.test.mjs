@@ -405,7 +405,7 @@ test('GET /api/account/stats dashboard applies the app paid/unpaid formula (owne
   assert.equal(Number(counts.monthly_prices), 1);
 });
 
-test('dashboard is per-account: owner B (no price row) counts everyone as paid', async () => {
+test('dashboard is per-account: owner B (no price row) counts everyone as UNPAID', async () => {
   const r = await api('GET', '/api/account/stats', { token: ownerB.token });
   assert.equal(r.status, 200, `stats should 200, got ${r.status} ${JSON.stringify(r.data)}`);
 
@@ -415,11 +415,12 @@ test('dashboard is per-account: owner B (no price row) counts everyone as paid',
     `stats response must include a dashboard object, got ${JSON.stringify(r.data)}`
   );
 
-  // B never pushed monthly_prices -> P = 0 -> its single subscriber is PAID
-  // (sum 0 >= 20 * 0), exactly like the app. Nothing of C's data may leak in.
+  // v23 (§2.2): B never pushed monthly_prices -> its category is UNPRICED -> its
+  // single subscriber counts UNPAID (subscribers start unpaid until a price is
+  // set), exactly like the app. Nothing of C's data may leak in.
   assert.equal(Number(dashboard.totalSubscribers), 1, 'B has exactly 1 subscriber');
-  assert.equal(Number(dashboard.paidCount), 1, 'price 0 -> every subscriber counts as paid');
-  assert.equal(Number(dashboard.unpaidCount), 0);
+  assert.equal(Number(dashboard.paidCount), 0, 'no price row -> nobody counts paid');
+  assert.equal(Number(dashboard.unpaidCount), 1, 'the unpriced subscriber counts unpaid');
   assert.equal(Number(dashboard.collected || 0), 0, 'B pushed no receipts');
   assert.equal(Number(dashboard.pricePerAmp || 0), 0, 'no monthly_prices row for the current month');
 });
