@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/repositories/expense_repository.dart';
@@ -61,6 +62,11 @@ class ReportsController extends GetxController {
 
   /// The selected month's receipts, newest first (paginated).
   final RxList<Receipt> receipts = <Receipt>[].obs;
+
+  /// v22 item 6: accountant id → display name, so the owner's payments list can
+  /// attribute each receipt to its collector (one query per report load).
+  final Map<String, String> accountantNames = <String, String>{};
+  final AccountantRepository _accountantRepo = AccountantRepository();
 
   /// Payments-list pagination (canonical pattern: fetch one extra row to
   /// detect a next page, trim, page-1 assignAll + later pages addAll).
@@ -128,15 +134,21 @@ class ReportsController extends GetxController {
       netProfit.value = collectedTotal.value - expensesTotal.value;
 
       // 4. Paid / Unpaid counts — category-aware, branch-scoped (R4).
+      // v22 item 6: also scoped to the COLLECTOR when a per-accountant view is
+      // active (receiptAccountantId — receipts.accountant_id, matching the
+      // backend panel's v14 per-accountant coverage), so the donut + per-tariff
+      // counts no longer stay branch-wide while the money figures are filtered.
       paidCount.value = await _subRepo.countByPaymentStatus(
         month: m,
         isPaid: true,
         branchId: branch,
+        receiptAccountantId: scope,
       );
       unpaidCount.value = await _subRepo.countByPaymentStatus(
         month: m,
         isPaid: false,
         branchId: branch,
+        receiptAccountantId: scope,
       );
 
       // (item 1) per-tariff PAID counts (gold / standard / commercial).
@@ -144,17 +156,29 @@ class ReportsController extends GetxController {
           month: m,
           isPaid: true,
           branchId: branch,
-          category: SubscriberCategory.gold);
+          category: SubscriberCategory.gold,
+          receiptAccountantId: scope);
       paidStandard.value = await _subRepo.countByPaymentStatus(
           month: m,
           isPaid: true,
           branchId: branch,
-          category: SubscriberCategory.standard);
+          category: SubscriberCategory.standard,
+          receiptAccountantId: scope);
       paidCommercial.value = await _subRepo.countByPaymentStatus(
           month: m,
           isPaid: true,
           branchId: branch,
-          category: SubscriberCategory.commercial);
+          category: SubscriberCategory.commercial,
+          receiptAccountantId: scope);
+
+      // v22 item 6: refresh the collector-name map (best-effort; the report
+      // still renders without attribution if it fails).
+      try {
+        final all = await _accountantRepo.getAll();
+        accountantNames
+          ..clear()
+          ..addEntries(all.map((a) => MapEntry(a.id, a.displayName)));
+      } catch (_) {}
 
       // 5. The month's payments list (newest first), page 1.
       _receiptsPage = 1;

@@ -83,6 +83,21 @@ class BranchController extends GetxController {
   /// Switch to the consolidated / All-branches view (owner reporting only).
   Future<void> setConsolidated() => setBranch(null);
 
+  /// v22 item 7: logout cleanup — forget the persisted active branch and reset
+  /// the in-memory context to the Main default, so the NEXT account never
+  /// inherits the previous account's branch selection or branch list.
+  Future<void> resetForLogout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kActiveBranchId);
+    branches.clear();
+    currentBranch.value = Branch(
+      id: DbHelper.kMainBranchId,
+      name: 'الفرع الرئيسي',
+      isMain: true,
+    );
+    update();
+  }
+
   /// R7: after a branch-switch clear+pull, re-establish branches from the
   /// freshly-pulled local DB and activate [targetId] (null = consolidated).
   /// Setting the active branch fires every controller's `ever(currentBranch)`

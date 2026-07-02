@@ -27,6 +27,10 @@ Future<Receipt?> showCollectPaymentDialog({
   bool full = true; // default to full payment
   String discountType = 'none'; // 'none' | 'ampere' | 'value'
   String paymentMethod = 'cash'; // v11: 'cash' | 'card'
+  // v22 item 8: busy latch — a double-tap on Confirm must not run
+  // collectPayment twice (duplicate receipt) or call Get.back twice (the
+  // second pop would close the UNDERLYING screen).
+  bool busy = false;
   final amountCtrl = TextEditingController(text: due.toStringAsFixed(0));
   final discAmpsCtrl = TextEditingController();
   final discValCtrl = TextEditingController();
@@ -45,6 +49,10 @@ Future<Receipt?> showCollectPaymentDialog({
   }
 
   return Get.dialog<Receipt?>(
+    // v22 item 8: barrier locked — dismissing mid-save would discard the saved
+    // receipt (payment recorded but never printed/refreshed). Cancel is the
+    // only way out, and it is gated while the save is in flight.
+    barrierDismissible: false,
     StatefulBuilder(
       builder: (context, setLocal) {
         final double discount = computeDiscount();
@@ -211,35 +219,59 @@ Future<Receipt?> showCollectPaymentDialog({
           ),
           actions: [
             TextButton(
-              onPressed: () => Get.back(result: null),
+              // v22 item 8: gated while saving, and popped via the dialog's OWN
+              // route — Get.back would be swallowed by an open snackbar (GetX
+              // closes the snackbar and returns without popping the dialog).
+              onPressed: busy
+                  ? null
+                  : () => Navigator.of(context).pop<Receipt?>(null),
               child: Text('cancel'.tr),
             ),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: _kBlue),
-              onPressed: () async {
-                // Audit: a throw in collectPayment must not leave the dialog
-                // stuck open with no feedback — surface it and close.
-                try {
-                  final receipt = await controller.collectPayment(
-                    subscriber,
-                    double.tryParse(amountCtrl.text.trim()) ?? 0,
-                    fullPayment: full,
-                    discountType: full ? discountType : 'none',
-                    discountAmps:
-                        double.tryParse(discAmpsCtrl.text.trim()) ?? 0,
-                    discountValueInput:
-                        double.tryParse(discValCtrl.text.trim()) ?? 0,
-                    paymentMethod: paymentMethod,
-                  );
-                  Get.back(result: receipt);
-                } catch (e) {
-                  Get.back(result: null);
-                  Get.snackbar('error'.tr, '$e',
-                      backgroundColor: Colors.redAccent,
-                      colorText: Colors.white);
-                }
-              },
-              child: Text('confirm_print'.tr),
+              // v22 item 8: disabled while the save runs (double-tap guard).
+              onPressed: busy
+                  ? null
+                  : () async {
+                      setLocal(() => busy = true);
+                      // Audit: a throw in collectPayment must not leave the
+                      // dialog stuck open with no feedback — surface it and
+                      // close. Navigator.pop targets THIS dialog's route, so it
+                      // can never pop the underlying screen and is immune to
+                      // the GetX snackbar-swallow (which would drop the saved
+                      // receipt and strand the dialog in the busy state).
+                      try {
+                        final receipt = await controller.collectPayment(
+                          subscriber,
+                          double.tryParse(amountCtrl.text.trim()) ?? 0,
+                          fullPayment: full,
+                          discountType: full ? discountType : 'none',
+                          discountAmps:
+                              double.tryParse(discAmpsCtrl.text.trim()) ?? 0,
+                          discountValueInput:
+                              double.tryParse(discValCtrl.text.trim()) ?? 0,
+                          paymentMethod: paymentMethod,
+                        );
+                        if (context.mounted) {
+                          Navigator.of(context).pop<Receipt?>(receipt);
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          Navigator.of(context).pop<Receipt?>(null);
+                        }
+                        Get.snackbar('error'.tr, '$e',
+                            backgroundColor: Colors.redAccent,
+                            colorText: Colors.white);
+                      }
+                    },
+              child: busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : Text('confirm_print'.tr),
             ),
           ],
         );

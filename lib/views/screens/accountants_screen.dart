@@ -148,6 +148,9 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
     bool busy = false; // v14: loading state while the accountant is created
 
     Get.dialog(
+      // v22 item 8: barrier locked — dismissing mid-create would strand the
+      // in-flight save with its input gone.
+      barrierDismissible: false,
       StatefulBuilder(
         builder: (context, setLocalState) {
           return AlertDialog(
@@ -212,7 +215,10 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Get.back(),
+                // v22 item 8: gated while saving; pops THIS dialog's own route
+                // (Get.back is swallowed by an open snackbar).
+                onPressed:
+                    busy ? null : () => Navigator.of(context).pop(),
                 child: Text('cancel'.tr),
               ),
               ElevatedButton(
@@ -247,14 +253,17 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
                           // Failure: clear the spinner so the owner can fix/
                           // retry (the controller already showed the error);
                           // the dialog stays open with their input.
-                          setLocalState(() => busy = false);
+                          if (context.mounted) {
+                            setLocalState(() => busy = false);
+                          }
                           return;
                         }
-                        // Success: CLOSE the dialog FIRST, THEN snackbar — a
-                        // snackbar shown before close flips Get.isDialogOpen to
-                        // false and blocks Get.back(), which left the spinner
-                        // stuck open. This is the fix for that.
-                        if (Get.isDialogOpen ?? false) Get.back();
+                        // Success: CLOSE the dialog FIRST, THEN snackbar. The
+                        // pop targets THIS dialog's own route, so an open
+                        // snackbar can't swallow the close (which used to
+                        // strand the spinner) and it can never pop a
+                        // different route.
+                        if (context.mounted) Navigator.of(context).pop();
                         Get.snackbar('success'.tr, 'add_accountant'.tr);
                       },
                 child: busy
@@ -280,8 +289,14 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
     final passwordCtrl = TextEditingController();
     final selected = <String>{...a.permissions};
     bool active = a.active;
+    // v22 item 8: busy latch — the save now AWAITS the (online-required)
+    // update, keeping the dialog + the user's edits open on failure instead of
+    // fire-and-forget discarding them (mirrors the ADD dialog's v14 pattern).
+    bool busy = false;
 
     Get.dialog(
+      // v22 item 8: barrier locked (see the ADD dialog).
+      barrierDismissible: false,
       StatefulBuilder(
         builder: (context, setLocalState) {
           return AlertDialog(
@@ -321,7 +336,10 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Get.back(),
+                // v22 item 8: gated while saving; pops THIS dialog's own route
+                // (Get.back is swallowed by an open snackbar).
+                onPressed:
+                    busy ? null : () => Navigator.of(context).pop(),
                 child: Text('cancel'.tr),
               ),
               ElevatedButton(
@@ -329,19 +347,40 @@ class _AccountantsScreenState extends State<AccountantsScreen> {
                   backgroundColor: kAppBlue,
                   foregroundColor: Colors.white,
                 ),
-                onPressed: () {
-                  final name = nameCtrl.text.trim();
-                  final pwd = passwordCtrl.text.trim();
-                  Get.back();
-                  controller.updateAccountant(
-                    a.id,
-                    name: name,
-                    active: active,
-                    newPassword: pwd.isEmpty ? null : pwd,
-                    permissions: selected,
-                  );
-                },
-                child: Text('save'.tr),
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final name = nameCtrl.text.trim();
+                        final pwd = passwordCtrl.text.trim();
+                        setLocalState(() => busy = true);
+                        final ok = await controller.updateAccountant(
+                          a.id,
+                          name: name,
+                          active: active,
+                          newPassword: pwd.isEmpty ? null : pwd,
+                          permissions: selected,
+                        );
+                        if (ok) {
+                          // Close FIRST (via this dialog's own route — immune
+                          // to the snackbar swallow), snackbar after.
+                          if (context.mounted) Navigator.of(context).pop();
+                          Get.snackbar('success'.tr, 'edit_accountant'.tr);
+                        } else {
+                          // Failure: keep the dialog + edits open to retry
+                          // (updateAccountant already snackbared the error).
+                          if (context.mounted) {
+                            setLocalState(() => busy = false);
+                          }
+                        }
+                      },
+                child: busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : Text('save'.tr),
               ),
             ],
           );

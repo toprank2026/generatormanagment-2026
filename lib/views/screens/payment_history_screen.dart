@@ -71,27 +71,38 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
     } else {
       setState(() => _moreLoading = true);
     }
-    // Fetch one extra to detect the next page.
-    final result = await _repo.getBySubscriber(
-      widget.subscriber.id,
-      limit: _perPage + 1,
-      offset: (page - 1) * _perPage,
-    );
-    final hasNext = result.length > _perPage;
-    final newItems = hasNext ? result.sublist(0, _perPage) : result;
-    setState(() {
-      _page = page;
-      _hasNext = hasNext;
-      if (page == 1) {
-        _items
-          ..clear()
-          ..addAll(newItems);
-      } else {
-        _items.addAll(newItems);
+    // v22 item 8: a repository throw must not leave _loading=true forever
+    // (stuck full-screen spinner), and the post-await setState needs a
+    // mounted check (the user can navigate away mid-fetch).
+    try {
+      // Fetch one extra to detect the next page.
+      final result = await _repo.getBySubscriber(
+        widget.subscriber.id,
+        limit: _perPage + 1,
+        offset: (page - 1) * _perPage,
+      );
+      if (!mounted) return;
+      final hasNext = result.length > _perPage;
+      final newItems = hasNext ? result.sublist(0, _perPage) : result;
+      setState(() {
+        _page = page;
+        _hasNext = hasNext;
+        if (page == 1) {
+          _items
+            ..clear()
+            ..addAll(newItems);
+        } else {
+          _items.addAll(newItems);
+        }
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _moreLoading = false;
+        });
       }
-      _loading = false;
-      _moreLoading = false;
-    });
+    }
   }
 
   void _loadMore() {

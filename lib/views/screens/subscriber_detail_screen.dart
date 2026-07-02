@@ -423,16 +423,27 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
       textCancel: "cancel".tr,
       confirmTextColor: Colors.white,
       buttonColor: Colors.red,
+      // v22 item 8: close-FIRST-then-act — the old await-then-double-back left
+      // the dialog stuck open on a throw, and a double-tapped confirm popped 4
+      // routes. The pops go through the raw Navigator: Get.back while a
+      // snackbar is open closes the SNACKBAR instead (GetX), which would leave
+      // the dialog open and then mis-pop it in place of the screen.
       onConfirm: () async {
-        await coreController.deleteSubscriber(widget.subscriber.id);
-        Get.back(); // Close dialog
-        Get.back(); // Go back to previous screen
-        Get.snackbar(
-          "success".tr,
-          "subscriber_deleted".tr,
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
-        );
+        // Close dialog (synchronously — no double-tap window).
+        Navigator.of(context, rootNavigator: true).pop();
+        try {
+          await coreController.deleteSubscriber(widget.subscriber.id);
+          if (mounted) Navigator.of(context).pop(); // leave the detail screen
+          Get.snackbar(
+            "success".tr,
+            "subscriber_deleted".tr,
+            backgroundColor: Colors.red,
+            colorText: Colors.white,
+          );
+        } catch (e) {
+          Get.snackbar('error'.tr, '$e',
+              backgroundColor: Colors.redAccent, colorText: Colors.white);
+        }
       },
     );
   }

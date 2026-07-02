@@ -192,6 +192,11 @@ class BillingController extends GetxController {
   /// amps × pricePerAmp), for 'value' pass [discountValueInput] (IQD). On a full
   /// payment the cash collected = due − discountValue and remaining = 0, and the
   /// waived amount is recorded so the subscriber counts as fully paid.
+  /// v22 item 8: reentrancy guard — two concurrent collectPayment calls (e.g.
+  /// a double-tap racing the dialog's busy latch) would both read the same due
+  /// and insert two receipts. Silent null like the other guards (no snackbar).
+  bool _collecting = false;
+
   Future<Receipt?> collectPayment(
     Subscriber sub,
     double amount, {
@@ -205,6 +210,32 @@ class BillingController extends GetxController {
     // here at the single write choke point too, not just the UI). Silent no-op
     // (return null) — never snackbar here (it would block the dialog's Get.back).
     if (!Get.find<AuthController>().isAccountant) return null;
+    if (_collecting) return null; // v22 item 8: one collection at a time
+    _collecting = true;
+    try {
+      return await _collectPaymentInner(
+        sub,
+        amount,
+        fullPayment: fullPayment,
+        discountType: discountType,
+        discountAmps: discountAmps,
+        discountValueInput: discountValueInput,
+        paymentMethod: paymentMethod,
+      );
+    } finally {
+      _collecting = false;
+    }
+  }
+
+  Future<Receipt?> _collectPaymentInner(
+    Subscriber sub,
+    double amount, {
+    bool fullPayment = false,
+    String discountType = 'none',
+    double discountAmps = 0,
+    double discountValueInput = 0,
+    String paymentMethod = 'cash',
+  }) async {
     // The receipt belongs to the SUBSCRIBER's branch (correct even when
     // collecting from the consolidated view, where the active branch is null).
     final String branchId = sub.branchId ?? _branch.writeBranchId;

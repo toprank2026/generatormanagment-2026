@@ -53,16 +53,17 @@ class _SubscribersScreenState extends State<SubscribersScreen>
   }
 
   /// Reload the list for the current variant + category tab (R5).
+  /// v22 item 1: the search query reaches ALL variants (all / paid / unpaid /
+  /// board-scoped), composed with the active filters at the SQL level.
   void _reload() {
+    final String? q = searchCtrl.text.isEmpty ? null : searchCtrl.text;
     if (widget.filter != null) {
-      controller.loadFilteredSubscribers(widget.filter!, category: _category);
+      controller.loadFilteredSubscribers(widget.filter!,
+          category: _category, query: q);
     } else if (widget.boardId != null) {
-      controller.loadBoardSubscribers(widget.boardId!);
+      controller.loadBoardSubscribers(widget.boardId!, query: q);
     } else {
-      controller.loadSubscribers(
-        query: searchCtrl.text.isEmpty ? null : searchCtrl.text,
-        category: _category,
-      );
+      controller.loadSubscribers(query: q, category: _category);
     }
   }
 
@@ -273,39 +274,86 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                             fontSize: 16,
                           ),
                         ),
-                        subtitle: Row(
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              Icons.phone,
-                              size: 14,
-                              color: Colors.grey[500],
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.phone,
+                                  size: 14,
+                                  color: Colors.grey[500],
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  sub.phone ?? 'no_phone'.tr,
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              sub.phone ?? 'no_phone'.tr,
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 13,
+                            // v22 item 9: the circuit (جوزة) this subscriber is
+                            // linked to (resolved from the batch id→name map).
+                            if (ctrl.circuitNames[sub.circuitId] != null)
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.settings_input_component,
+                                    size: 14,
+                                    color: Colors.grey[500],
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      ctrl.circuitNames[sub.circuitId]!,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // v22 item 2: paid/unpaid dot for the selected
+                            // month — green = paid, red = unpaid (derived
+                            // status, one query per list load).
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: ctrl.paidIds.contains(sub.id)
+                                    ? Colors.green
+                                    : Colors.red,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE3F2FD),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                "${sub.amps} A",
+                                style: const TextStyle(
+                                  color: Color(0xFF1565C0),
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ],
-                        ),
-                        trailing: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE3F2FD),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            "${sub.amps} A",
-                            style: const TextStyle(
-                              color: Color(0xFF1565C0),
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
                         ),
                         onTap: () {
                           // Audit: reload on return so a payment collected in

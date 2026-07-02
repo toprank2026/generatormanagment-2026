@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
+import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart'
-    show ValidationException;
+    show SubscriberRepository, ValidationException;
+import 'package:generatormanagment/views/screens/subscriber_detail_screen.dart';
 import 'package:generatormanagment/views/widgets/app_form_field.dart';
 import 'package:generatormanagment/views/widgets/sync_progress_overlay.dart';
 
@@ -97,7 +99,13 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Stack(
+              // v22 item 3: the circuit card was a billing dead end (no onTap).
+              // Tapping now opens the subscriber occupying this جوزة — same
+              // detail screen + collect flow as the Home and Boards paths.
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => _openCircuitSubscriber(circuit),
+                child: Stack(
                 children: [
                   Padding(
                     padding: const EdgeInsets.all(10.0),
@@ -161,12 +169,35 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
                       ),
                     ),
                 ],
+                ),
               ),
             );
           },
         );
       })),
     );
+  }
+
+  /// v22 item 3: resolve the ACTIVE subscriber on [circuit] and open the shared
+  /// detail screen (collect payment included). A vacant circuit gets a hint.
+  Future<void> _openCircuitSubscriber(Circuit circuit) async {
+    try {
+      final subs = await SubscriberRepository().getByCircuit(circuit.id,
+          branchId: Get.find<BranchController>().scopeBranchId);
+      final Subscriber? active =
+          subs.firstWhereOrNull((s) => s.status == 'active') ??
+              (subs.isNotEmpty ? subs.first : null);
+      if (active == null) {
+        Get.snackbar('circuits'.tr, 'circuit_vacant'.tr);
+        return;
+      }
+      await Get.to(() => SubscriberDetailScreen(subscriber: active));
+      // Refresh so a collected payment is reflected when the user returns.
+      controller.loadCircuits(widget.board.id);
+    } catch (e) {
+      Get.snackbar('error'.tr, '$e',
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
+    }
   }
 
   void _showAddCircuitDialog(BuildContext context) {
@@ -238,9 +269,18 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
       textCancel: "cancel".tr,
       confirmTextColor: Colors.white,
       buttonColor: Colors.red,
+      // v22 item 8: close-FIRST-then-act (a throw stranded the dialog open; a
+      // double-tapped confirm over-popped a real route). Raw-navigator pop —
+      // Get.back would be swallowed by an open snackbar and leave the dialog up.
       onConfirm: () async {
-        await controller.deleteCircuit(circuit.id, widget.board.id);
-        Get.back();
+        Navigator.of(context, rootNavigator: true).pop();
+        try {
+          await controller.deleteCircuit(circuit.id, widget.board.id);
+        } catch (e) {
+          Get.snackbar('error'.tr, '$e',
+              backgroundColor: Colors.redAccent, colorText: Colors.white);
+          return;
+        }
         Get.snackbar(
           "success".tr,
           "circuit_deleted".tr,

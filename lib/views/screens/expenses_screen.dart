@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/expense_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
+import 'package:generatormanagment/data/models/accountant_model.dart';
+import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/views/widgets/date_field.dart';
 
@@ -102,6 +104,61 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 ),
               ],
             ),
+          ),
+
+          // v22 item 6: owner/admin-only accountant filter — browse ONE
+          // accountant's expenses (null = all). Accountants are always scoped
+          // to themselves, so the dropdown is hidden for them. The Obx reads
+          // auth.isAdmin (currentUser) FIRST — never short-circuits before an
+          // observable read (GetX "improper use of Obx" gotcha).
+          Obx(
+            () => auth.isAdmin
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: FutureBuilder<List<Accountant>>(
+                        future: AccountantRepository().getAll(),
+                        builder: (context, snapshot) {
+                          final List<Accountant> accountants =
+                              snapshot.data ?? [];
+                          return Obx(
+                            () => DropdownButtonHideUnderline(
+                              child: DropdownButton<String?>(
+                                isExpanded: true,
+                                value: controller.accountantFilter.value,
+                                hint: Text('all_accountants'.tr),
+                                icon: const Icon(Icons.person_search,
+                                    color: Color(0xFF1565C0)),
+                                items: [
+                                  DropdownMenuItem<String?>(
+                                    value: null,
+                                    child: Text('all_accountants'.tr),
+                                  ),
+                                  ...accountants.map(
+                                    (a) => DropdownMenuItem<String?>(
+                                      value: a.id,
+                                      child: Text(
+                                        a.displayName,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                onChanged: controller.setAccountantFilter,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
           ),
 
           // Quick Add Buttons Grid (owner or accountant granted expenses)

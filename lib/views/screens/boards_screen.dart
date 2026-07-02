@@ -140,10 +140,14 @@ class _BoardsScreenState extends State<BoardsScreen> {
                   children: [
                     InkWell(
                       onTap: () {
+                        // v22 item 10: reload on return so the paid/unpaid
+                        // badges reflect payments collected inside.
                         if (widget.forCircuits) {
-                          Get.to(() => CircuitsScreen(board: board));
+                          Get.to(() => CircuitsScreen(board: board))
+                              ?.then((_) => controller.loadBoards());
                         } else {
-                          Get.to(() => SubscribersScreen(boardId: board.id));
+                          Get.to(() => SubscribersScreen(boardId: board.id))
+                              ?.then((_) => controller.loadBoards());
                         }
                       },
                       borderRadius: BorderRadius.circular(16),
@@ -176,6 +180,55 @@ class _BoardsScreenState extends State<BoardsScreen> {
                                   fontSize: 11,
                                 ),
                               ),
+                            // v22 item 10: paid/unpaid subscriber counts for
+                            // the selected month (green = paid, red = unpaid),
+                            // only when the board HAS subscribers.
+                            if ((ctrl.boardPaidCounts[board.id]?.paid ?? 0) +
+                                    (ctrl.boardPaidCounts[board.id]?.unpaid ??
+                                        0) >
+                                0) ...[
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.green,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    '${ctrl.boardPaidCounts[board.id]!.paid}',
+                                    style: const TextStyle(
+                                      color: Colors.green,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.red,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    '${ctrl.boardPaidCounts[board.id]!.unpaid}',
+                                    style: const TextStyle(
+                                      color: Colors.red,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -183,7 +236,9 @@ class _BoardsScreenState extends State<BoardsScreen> {
                     if (auth.can(Perm.boards))
                       Positioned(
                         top: 4,
-                        right: 4,
+                        // v22 item 11: the edit/delete 3-dots menu sits in the
+                        // LEFT corner of the card (was the right).
+                        left: 4,
                         child: PopupMenuButton<String>(
                           icon: const Icon(Icons.more_vert, color: Colors.grey),
                           onSelected: (val) {
@@ -324,9 +379,18 @@ class _BoardsScreenState extends State<BoardsScreen> {
       textCancel: "cancel".tr,
       confirmTextColor: Colors.white,
       buttonColor: Colors.red,
+      // v22 item 8: close-FIRST-then-act (a throw stranded the dialog open; a
+      // double-tapped confirm over-popped a real route). Raw-navigator pop —
+      // Get.back would be swallowed by an open snackbar and leave the dialog up.
       onConfirm: () async {
-        await controller.deleteBoard(board.id);
-        Get.back();
+        Navigator.of(context, rootNavigator: true).pop();
+        try {
+          await controller.deleteBoard(board.id);
+        } catch (e) {
+          Get.snackbar('error'.tr, '$e',
+              backgroundColor: Colors.redAccent, colorText: Colors.white);
+          return;
+        }
         Get.snackbar(
           "success".tr,
           "board_deleted".tr,

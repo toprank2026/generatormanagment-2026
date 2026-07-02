@@ -29,6 +29,34 @@ class CoreController extends GetxController {
   var subscribers = <Subscriber>[].obs;
   var isLoading = false.obs;
 
+  // v22 item 2: ids of subscribers PAID for the selected month (one query per
+  // list load, not per row) — every list row paints its green/red dot from it.
+  final Set<String> paidIds = <String>{};
+  // v22 item 9: circuit id → display name, so rows show their جوزة without N+1.
+  final Map<String, String> circuitNames = <String, String>{};
+  // v22 item 10: board id → (paid, unpaid) subscriber counts for the selected
+  // month (one GROUP BY query per boards load) — shown under each board name.
+  final Map<String, ({int paid, int unpaid})> boardPaidCounts =
+      <String, ({int paid, int unpaid})>{};
+
+  /// Refreshes the row metadata (paid-ids set + circuit-name map) for the
+  /// active branch + globally-selected month. Called on page-1 list loads.
+  Future<void> _loadRowMeta() async {
+    try {
+      final month = Get.find<MonthController>().selectedMonth.value;
+      final paid = await _subscriberRepo.paidSubscriberIds(
+          month: month, branchId: _branchScope);
+      final allCircuits =
+          await _circuitRepo.getAllInBranch(branchId: _branchScope);
+      paidIds
+        ..clear()
+        ..addAll(paid);
+      circuitNames
+        ..clear()
+        ..addEntries(allCircuits.map((c) => MapEntry(c.id, c.name)));
+    } catch (_) {/* row badges are best-effort; the list itself still loads */}
+  }
+
   // Pagination (subscribers). Large page (R1/D1): effectively "show all" for
   // normal data sizes; infinite scroll (loadMore) still loads the rest at scale.
   static const int itemsPerPage = 100;
@@ -98,6 +126,18 @@ class CoreController extends GetxController {
     boardsPage.value = page;
 
     try {
+      // v22 item 10: refresh the per-board paid/unpaid counts with page 1
+      // (best-effort — the grid still renders without the badges).
+      if (page == 1) {
+        try {
+          final month = Get.find<MonthController>().selectedMonth.value;
+          final counts = await _subscriberRepo.paymentCountsByBoard(
+              month: month, branchId: _branchScope);
+          boardPaidCounts
+            ..clear()
+            ..addAll(counts);
+        } catch (_) {}
+      }
       // Fetch one extra item to check if there is a next page
       final result = await _boardRepo.getAll(
         limit: boardsPerPage + 1,
@@ -273,6 +313,8 @@ class CoreController extends GetxController {
     currentPage.value = page;
 
     try {
+      // v22 items 2+9: refresh the paid-dot set + circuit-name map with page 1.
+      if (page == 1) await _loadRowMeta();
       // Fetch one extra item to check if there is a next page
       final result = await _subscriberRepo.getAll(
         query: query,
@@ -319,6 +361,9 @@ class CoreController extends GetxController {
     sub.branchId ??= _branch.writeBranchId;
     // item 5: link a subscriber created by an accountant to that accountant.
     sub.accountantId ??= _auth.scopeAccountantId;
+    // v22 item 5: stamp creation time so subscribers sort in true creation
+    // order (the lists order by created_at; without this it would be NULL).
+    sub.createdAt ??= DateTime.now().toUtc().toIso8601String();
     await _validateSubscriber(sub); // R7/R8 — throws ValidationException
     await _subscriberRepo.insert(sub);
     loadSubscribers(); // Refresh list if showing all
@@ -329,8 +374,13 @@ class CoreController extends GetxController {
   Future<void> updateSubscriber(Subscriber sub) async {
     sub.branchId ??= _branch.writeBranchId;
     // item 5 (review fix): preserve the ORIGINAL creator's accountant_id on edit
-    // (the edit form doesn't carry it) instead of wiping it to null.
-    sub.accountantId ??= (await _subscriberRepo.getById(sub.id))?.accountantId;
+    // (the edit form doesn't carry it) instead of wiping it to null. v22: same
+    // for created_at, or editing would wipe it and break creation ordering.
+    if (sub.accountantId == null || sub.createdAt == null) {
+      final orig = await _subscriberRepo.getById(sub.id);
+      sub.accountantId ??= orig?.accountantId;
+      sub.createdAt ??= orig?.createdAt;
+    }
     await _validateSubscriber(sub, exceptId: sub.id);
     await _subscriberRepo.update(sub);
     loadSubscribers();
@@ -359,7 +409,8 @@ class CoreController extends GetxController {
     update();
   }
 
-  Future<void> loadFilteredSubscribers(String filter, {String? category}) async {
+  Future<void> loadFilteredSubscribers(String filter,
+      {String? category, String? query}) async {
     isLoading.value = true;
     try {
       // The globally-selected month (R9) drives paid/unpaid; the price is
@@ -368,12 +419,14 @@ class CoreController extends GetxController {
       _currentCategory = category;
       final String month = Get.find<MonthController>().selectedMonth.value;
 
+      await _loadRowMeta(); // v22 items 2+9
       subscribers.value = await _subscriberRepo.getByPaymentStatus(
         month: month,
         isPaid: filter == 'paid',
         accountantId: null,
         branchId: _branchScope,
         category: category, // R5: category-tab filter (null = all)
+        query: query, // v22 item 1: search composes with paid/unpaid
       );
     } catch (e) {
       print("Error loading filtered subscribers: $e");
@@ -383,11 +436,14 @@ class CoreController extends GetxController {
     update();
   }
 
-  Future<void> loadBoardSubscribers(String boardId) async {
+  Future<void> loadBoardSubscribers(String boardId, {String? query}) async {
     isLoading.value = true;
     try {
+      await _loadRowMeta(); // v22 items 2+9
       subscribers.value = await _subscriberRepo.getByBoard(boardId,
-          accountantId: null, branchId: _branchScope);
+          accountantId: null,
+          branchId: _branchScope,
+          query: query); // v22 item 1: search composes with the board scope
     } finally {
       isLoading.value = false;
     }

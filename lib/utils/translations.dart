@@ -259,6 +259,10 @@ class Messages extends Translations {
       'cat_standard': 'Standard',
       'cat_gold': 'Gold (24h)',
       'circuit_in_use': 'This socket is already assigned to another subscriber',
+      'circuit_vacant': 'No subscriber is linked to this socket',
+      'cross_account_wipe_warning':
+          'This device holds UNSYNCED data from another account. Continuing will permanently delete that data so this account starts clean.',
+      'login_cancelled': 'Sign-in cancelled',
       'duplicate_name': 'A subscriber with this name already exists',
       'duplicate_board_name': 'A board with this name already exists',
       'duplicate_circuit_name':
@@ -730,6 +734,10 @@ class Messages extends Translations {
       'cat_standard': 'عادي',
       'cat_gold': 'ذهبي (٢٤ ساعة)',
       'circuit_in_use': 'هذه الجوزة مخصّصة لمشترك آخر',
+      'circuit_vacant': 'لا يوجد مشترك مرتبط بهذه الجوزة',
+      'cross_account_wipe_warning':
+          'يحتوي هذا الجهاز على بيانات غير مُتزامنة تعود لحساب آخر. المتابعة ستحذف تلك البيانات نهائياً ليبدأ هذا الحساب بشكل نظيف.',
+      'login_cancelled': 'تم إلغاء تسجيل الدخول',
       'duplicate_name': 'يوجد مشترك بنفس الاسم',
       'duplicate_board_name': 'توجد لوحة بنفس الاسم',
       'duplicate_circuit_name': 'توجد جوزة بنفس الاسم على هذه اللوحة',

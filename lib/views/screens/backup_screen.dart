@@ -210,21 +210,27 @@ class _BackupScreenState extends State<BackupScreen> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          // v22 item 8: gated on isCloudBusy so a second tap
+                          // can't start a second restore/delete mid-flight
+                          // (the enclosing Obx already reads the Rx).
                           IconButton(
                             icon: const Icon(
                               Icons.restore,
                               color: Color(0xFF1565C0),
                             ),
                             tooltip: 'restore'.tr,
-                            onPressed: () =>
-                                controller.restoreCloudBackup(b.id),
+                            onPressed: controller.isCloudBusy.value
+                                ? null
+                                : () => controller.restoreCloudBackup(b.id),
                           ),
                           IconButton(
                             icon: const Icon(
                               Icons.delete,
                               color: Colors.redAccent,
                             ),
-                            onPressed: () => _confirmDeleteCloudBackup(b.id),
+                            onPressed: controller.isCloudBusy.value
+                                ? null
+                                : () => _confirmDeleteCloudBackup(b.id),
                           ),
                         ],
                       ),

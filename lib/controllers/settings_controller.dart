@@ -19,6 +19,7 @@ import 'package:generatormanagment/data/repositories/auth_repository.dart';
 import 'package:generatormanagment/data/repositories/backup_repository.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/utils/printer_prefs.dart';
+import 'package:generatormanagment/views/widgets/sync_progress_overlay.dart';
 import 'package:uuid/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
@@ -94,6 +95,10 @@ class SettingsController extends GetxController {
       } else {
         accountants.clear();
       }
+      // v22 item 7: re-read the per-account backup timestamp (SessionCache
+      // clears the pref on logout, but this Rx survived and kept showing the
+      // PREVIOUS account's "last backup" time).
+      _loadLastBackupAt();
     });
   }
 
@@ -257,7 +262,12 @@ class SettingsController extends GetxController {
   /// rename MUST reach the BACKEND or it doesn't take effect (the accountant is
   /// a real backend login) — so this is online-required and backend-first, then
   /// mirrors locally. The backend resolves the accountant by its local id.
-  Future<void> updateAccountant(
+  ///
+  /// v22 item 8: returns true on success so the edit dialog can await it and
+  /// keep the user's edits open on failure (mirrors [createAccountant]). On
+  /// success it does NOT snackbar — the caller closes the dialog first, then
+  /// snackbars (GetX gotcha: a snackbar before Get.back blocks the close).
+  Future<bool> updateAccountant(
     String id, {
     String? name,
     bool? active,
@@ -267,7 +277,7 @@ class SettingsController extends GetxController {
     if (!await _net.isOnline()) {
       Get.snackbar('error'.tr, 'accountant_needs_internet'.tr,
           backgroundColor: Colors.redAccent, colorText: Colors.white);
-      return;
+      return false;
     }
     try {
       await _authRepo.updateAccountant(
@@ -284,8 +294,10 @@ class SettingsController extends GetxController {
         newPassword: newPassword,
         permissions: permissions,
       );
+      SyncController.poke(); // v22 item 4: push the identity edit promptly
       await loadAccountants();
-      Get.snackbar('success'.tr, 'edit_accountant'.tr);
+      update();
+      return true;
     } on ApiException catch (e) {
       Get.snackbar('error'.tr, e.isNetworkError ? 'online_only'.tr : e.message,
           backgroundColor: Colors.redAccent, colorText: Colors.white);
@@ -293,6 +305,7 @@ class SettingsController extends GetxController {
       Get.snackbar('error'.tr, "${'edit_accountant'.tr}: $e");
     }
     update();
+    return false;
   }
 
   /// Delete an accountant (R8). Must delete the BACKEND account first (so the
@@ -311,6 +324,7 @@ class SettingsController extends GetxController {
     try {
       await _authRepo.deleteAccountant(id);
       await _accountantRepo.delete(id);
+      SyncController.poke(); // v22 item 4: push the delete tombstone promptly
       accountants.removeWhere((a) => a.id == id);
     } on ApiException catch (e) {
       Get.snackbar('error'.tr, e.isNetworkError ? 'online_only'.tr : e.message,
@@ -464,10 +478,17 @@ class SettingsController extends GetxController {
     final pwd = await _askBackupPassword('backup_import');
     if (pwd == null || pwd.isEmpty) return;
     isLoading.value = true;
+    // v22 item 8: BLOCK the UI while the import writes (isLoading is rendered
+    // by no widget — the user could navigate and mutate mid-import). Overlay is
+    // hidden BEFORE any snackbar (GetX gotcha: snackbar first blocks the close).
+    SyncProgress.show('saving'.tr);
+    int total = 0;
+    String? errorKey;
+    String? errorDetail;
     try {
       final counts = await LocalBackupService()
           .import(file: File(path), password: pwd);
-      final total = counts.values.fold<int>(0, (a, b) => a + b);
+      total = counts.values.fold<int>(0, (a, b) => a + b);
       SyncController.poke(); // the restore writes queue an upload
       // v21 item 3: refresh the in-app lists + dashboard so the imported
       // boards/circuits/subscribers appear immediately (no app restart).
@@ -476,15 +497,23 @@ class SettingsController extends GetxController {
           await Get.find<SyncController>().reloadAppData();
         }
       } catch (_) {}
-      Get.snackbar('success'.tr, '${'backup_imported'.tr}: $total',
-          backgroundColor: Colors.green, colorText: Colors.white);
     } on FormatException {
+      errorKey = 'backup_wrong_password';
+    } catch (e) {
+      errorKey = 'import_failed';
+      errorDetail = '$e';
+    } finally {
+      SyncProgress.hide();
+      isLoading.value = false;
+    }
+    if (errorKey == 'backup_wrong_password') {
       Get.snackbar('error'.tr, 'backup_wrong_password'.tr,
           backgroundColor: Colors.redAccent, colorText: Colors.white);
-    } catch (e) {
-      Get.snackbar('error'.tr, "${'import_failed'.tr}: $e");
-    } finally {
-      isLoading.value = false;
+    } else if (errorKey != null) {
+      Get.snackbar('error'.tr, "${'import_failed'.tr}: $errorDetail");
+    } else {
+      Get.snackbar('success'.tr, '${'backup_imported'.tr}: $total',
+          backgroundColor: Colors.green, colorText: Colors.white);
     }
   }
 
@@ -504,6 +533,11 @@ class SettingsController extends GetxController {
   }
 
   Future<void> _performImport(File sourceFile) async {
+    // v22 item 8: BLOCK the UI while the whole-DB restore overwrites moldati.db
+    // (the DB is closed mid-copy — a free-roaming user could trigger reads/
+    // writes against it). Overlay hidden BEFORE the success dialog / snackbar.
+    SyncProgress.show('saving'.tr);
+    String? error;
     try {
       isLoading.value = true;
       String dbPath = await _dbHelper.getDbPath();
@@ -520,25 +554,28 @@ class SettingsController extends GetxController {
       final db = await _dbHelper.database;
       await db.delete('sync_outbox');
       await _dbHelper.close();
-
-      Get.defaultDialog(
-        title: 'success'.tr,
-        middleText: 'import_success_restart'.tr,
-        textConfirm: 'logout_restart'.tr,
-        barrierDismissible: false,
-        onConfirm: () {
-          auth.logout();
-          Get.back();
-          // Optionally exit(0) or just let logout handle it.
-          // Logout usually redirects to login, which is fine.
-        },
-      );
     } catch (e) {
-      Get.snackbar('error'.tr, "${'import_execution_failed'.tr}: $e");
-      // Try to reopen db if failed?
+      error = '$e';
     } finally {
+      SyncProgress.hide();
       isLoading.value = false;
     }
+    if (error != null) {
+      Get.snackbar('error'.tr, "${'import_execution_failed'.tr}: $error");
+      return;
+    }
+    Get.defaultDialog(
+      title: 'success'.tr,
+      middleText: 'import_success_restart'.tr,
+      textConfirm: 'logout_restart'.tr,
+      barrierDismissible: false,
+      onConfirm: () {
+        auth.logout();
+        Get.back();
+        // Optionally exit(0) or just let logout handle it.
+        // Logout usually redirects to login, which is fine.
+      },
+    );
   }
 
   // --------------------------------------------------------------------------
@@ -628,6 +665,9 @@ class SettingsController extends GetxController {
 
   Future<void> _performCloudRestore(String id) async {
     if (!auth.canBackup) return; // per-plan capability guard (see uploadCloudBackup)
+    // v22 item 8: never start a SECOND restore while one is in flight (the
+    // confirm dialog could be re-opened and confirmed mid-restore).
+    if (isCloudBusy.value) return;
     if (!await ConnectivityService().isOnline()) {
       Get.snackbar('cloud_backup'.tr, 'online_only'.tr);
       return;

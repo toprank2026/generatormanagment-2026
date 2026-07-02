@@ -17,6 +17,15 @@ class _SetupScreenState extends State<SetupScreen> {
   final AuthController _authController = Get.find();
   final _formKey = GlobalKey<FormState>();
 
+  @override
+  void dispose() {
+    // v22 item 8: these were never disposed (leak).
+    _usernameController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
   void _setup() async {
     if (_formKey.currentState!.validate()) {
       if (_passwordController.text != _confirmPasswordController.text) {

@@ -19,6 +19,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isLoading = false;
 
+  @override
+  void dispose() {
+    // v22 item 8: these were never disposed (leak).
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
   void _submit() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
@@ -28,6 +36,9 @@ class _LoginScreenState extends State<LoginScreen> {
         _passwordController.text,
       );
 
+      // v22 item 8: RootHandler swaps this screen out on success, so the State
+      // can be disposed while login() was awaited — guard the setState.
+      if (!mounted) return;
       setState(() => _isLoading = false);
 
       if (result['success'] == true) {

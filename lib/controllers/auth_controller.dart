@@ -9,7 +9,9 @@ import 'package:generatormanagment/core/session_cache.dart';
 import 'package:generatormanagment/core/device_rebind.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
+import 'package:generatormanagment/controllers/month_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
+import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/models/user_model.dart';
 import 'package:generatormanagment/data/repositories/auth_repository.dart';
@@ -32,6 +34,11 @@ class AuthController extends GetxController {
   /// SharedPreferences keys for the local acting-user layer.
   static const String _kActingUserId = 'acting_user_id';
   static const String _kOwnerPwdHash = 'owner_pwd_hash';
+
+  /// v22 item 7: which account's data the local DB belongs to (EFFECTIVE owner
+  /// id — an accountant maps to its owner). Compared on every login so a
+  /// different account never inherits/pushes another account's local rows.
+  static const String _kDbOwnerAccountId = 'db_owner_account_id';
 
   final isLoggedIn = false.obs;
   final isLoading = true.obs;
@@ -303,6 +310,21 @@ class AuthController extends GetxController {
         await _persistOwnerCredential(username, password);
       }
       await _cache.setLastOnlineValidationAt(DateTime.now().toIso8601String());
+      // v22 item 7: cross-account residue guard — MUST run BEFORE the session
+      // is marked live (isLoggedIn=true). While the guard's warning dialog is
+      // open, SyncController's heartbeat/connectivity auto-push gates on
+      // _loggedIn: flipping it first would let the OLD account's outbox push
+      // into the NEW account's mirror behind the dialog (cross-account leak +
+      // permanent loss), and RootHandler would flash MainScreen with the old
+      // data. Keyed on the EFFECTIVE owner (an accountant shares its owner's
+      // mirror); the user may cancel when unsynced residue would be lost.
+      final String effOwner = result.account.role == 'accountant'
+          ? (result.account.ownerId ?? result.account.id)
+          : result.account.id;
+      if (!await _guardCrossAccountResidue(effOwner)) {
+        await logout();
+        return {'success': false, 'message': 'login_cancelled'.tr};
+      }
       isLoggedIn.value = true;
       logoutReason.value = null; // clear any prior "you were signed out" warning
       update();
@@ -321,6 +343,17 @@ class AuthController extends GetxController {
           }
         } catch (e) {
           Log.w('owner post-login pull skipped: $e');
+        }
+        // v22 item 7: resetForLogout cleared the in-memory branch list (and
+        // pull's reload doesn't cover BranchController) — re-establish branches
+        // from the freshly-pulled DB and activate Main, like the accountant path.
+        try {
+          if (Get.isRegistered<BranchController>()) {
+            await Get.find<BranchController>()
+                .reloadAndActivate(DbHelper.kMainBranchId);
+          }
+        } catch (e) {
+          Log.w('post-login branch reload skipped: $e');
         }
       }
       return {'success': true};
@@ -354,9 +387,25 @@ class AuthController extends GetxController {
       );
       await _cache.saveAccount(result.account.toJson());
       _setAccount(result.account, online: true);
+      // v22 item 7: same cross-account residue guard as login — a brand-new
+      // account must never inherit (or push) another account's local rows.
+      if (!await _guardCrossAccountResidue(result.account.id)) {
+        await logout();
+        return {'success': false, 'message': 'login_cancelled'.tr};
+      }
       await _cache.setLastOnlineValidationAt(DateTime.now().toIso8601String());
       isLoggedIn.value = true;
       update();
+      // A residue wipe removes the branches table's Main row — re-establish it
+      // (ensureMain) and the in-memory branch list for the fresh account.
+      try {
+        if (Get.isRegistered<BranchController>()) {
+          await Get.find<BranchController>()
+              .reloadAndActivate(DbHelper.kMainBranchId);
+        }
+      } catch (e) {
+        Log.w('post-register branch reload skipped: $e');
+      }
       return {'success': true};
     } on ApiException catch (e) {
       return {'success': false, 'statusCode': e.statusCode, 'message': e.message};
@@ -504,6 +553,60 @@ class AuthController extends GetxController {
   /// Accounts now live on the backend, so there is no local "first user" check.
   Future<bool> hasAnyUser() async => false;
 
+  /// v22 item 7: cross-account residue guard. When this device's local DB
+  /// still belongs to a DIFFERENT effective owner, the residue must be wiped
+  /// BEFORE any push/pull (a stale outbox would otherwise push the old
+  /// account's rows into the new account's mirror). If that residue contains
+  /// UNSYNCED rows, the user is warned first and may cancel — returns false on
+  /// cancel (the caller aborts the sign-in), true when it's safe to continue.
+  /// Best-effort on internal errors (never blocks a normal sign-in).
+  Future<bool> _guardCrossAccountResidue(String effOwner) async {
+    SharedPreferences prefs;
+    String? prevOwner;
+    try {
+      prefs = await SharedPreferences.getInstance();
+      prevOwner = prefs.getString(_kDbOwnerAccountId);
+    } catch (e) {
+      // Best-effort: can't read the stamp — never block a normal sign-in.
+      Log.w('cross-account residue guard skipped: $e');
+      return true;
+    }
+    if (prevOwner != null &&
+        prevOwner != effOwner &&
+        Get.isRegistered<SyncController>()) {
+      final sync = Get.find<SyncController>();
+      try {
+        await sync.refreshPending();
+      } catch (_) {}
+      // Unsynced rows from the other account would be permanently lost —
+      // warn and allow the user to back out.
+      if (sync.pendingCount.value > 0) {
+        final ok = await Get.defaultDialog<bool>(
+          title: 'warning'.tr,
+          middleText: 'cross_account_wipe_warning'.tr,
+          textConfirm: 'continue'.tr,
+          textCancel: 'cancel'.tr,
+          barrierDismissible: false,
+          onConfirm: () => Get.back(result: true),
+          onCancel: () {},
+        );
+        if (ok != true) return false;
+      }
+      // Fail CLOSED: if the wipe itself fails, signing in would push/merge
+      // another account's rows into this account's mirror — abort instead.
+      try {
+        await sync.deleteAllLocalData();
+      } catch (e) {
+        Log.w('cross-account residue wipe failed: $e');
+        return false;
+      }
+    }
+    try {
+      await prefs.setString(_kDbOwnerAccountId, effOwner);
+    } catch (_) {/* stamp is best-effort; worst case the next login re-checks */}
+    return true;
+  }
+
   /// Ends the session. [reason] is a translation key for the warning to show on
   /// the login screen (set by [recheckSession]); leave it null for a normal
   /// user-initiated logout so no warning is shown.
@@ -592,11 +695,31 @@ class AuthController extends GetxController {
     await _clearActingUser();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kOwnerPwdHash);
+    // End the session FIRST: the resets below fire ever() workers (month/branch)
+    // whose listeners gate on the session — with isLoggedIn already false,
+    // SyncController's _monthWorker can't launch a zombie (token-less) pull
+    // that would block the next login's post-login pull.
     isLoggedIn.value = false;
     account.value = null;
     currentUser.value = null;
     ownerUser.value = null;
     subscriptionBlocked.value = false;
+    // v22 item 7: reset session-scoped state so the NEXT account starts clean
+    // in the same app run — active branch (pref + in-memory), selected month,
+    // and the previous session's sync markers. Best-effort: never blocks logout.
+    try {
+      if (Get.isRegistered<BranchController>()) {
+        await Get.find<BranchController>().resetForLogout();
+      }
+      if (Get.isRegistered<MonthController>()) {
+        Get.find<MonthController>().resetToCurrentMonth();
+      }
+      if (Get.isRegistered<SyncController>()) {
+        await Get.find<SyncController>().resetSessionState();
+      }
+    } catch (e) {
+      Log.w('logout state reset skipped: $e');
+    }
     logoutReason.value = reason;
     update();
   }

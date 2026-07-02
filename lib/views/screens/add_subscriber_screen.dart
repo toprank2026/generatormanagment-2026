@@ -25,6 +25,9 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
   Board? selectedBoard;
   Circuit? selectedCircuit;
 
+  // v22 item 8: save-in-flight latch (double-tap guard).
+  bool _saving = false;
+
   // R4: pricing category (commercial | standard | gold).
   late String _category =
       isEdit ? widget.subscriber!.category : SubscriberCategory.standard;
@@ -52,6 +55,15 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
     }
     // Ensure boards are loaded
     _initData();
+  }
+
+  @override
+  void dispose() {
+    // v22 item 8: these were never disposed (leak).
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _ampsCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _initData() async {
@@ -327,6 +339,9 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
   }
 
   void _save() async {
+    // v22 item 8: double-tap guard — a second tap while the first save awaits
+    // would insert the subscriber TWICE (each call mints a new UUID).
+    if (_saving) return;
     if (_formKey.currentState!.validate()) {
       final amps = double.tryParse(_ampsCtrl.text.trim());
       if (amps == null) {
@@ -354,6 +369,7 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
         createdAt: isEdit ? widget.subscriber!.createdAt : null,
       );
 
+      setState(() => _saving = true);
       try {
         if (isEdit) {
           await controller.updateSubscriber(sub);
@@ -377,6 +393,17 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
           backgroundColor: Colors.redAccent,
           colorText: Colors.white,
         );
+      } catch (e) {
+        // v22 item 8: any other failure must SURFACE (was silently swallowed
+        // by the zone, leaving the screen open with zero feedback).
+        Get.snackbar(
+          'error'.tr,
+          '$e',
+          backgroundColor: Colors.redAccent,
+          colorText: Colors.white,
+        );
+      } finally {
+        if (mounted) setState(() => _saving = false);
       }
     }
   }

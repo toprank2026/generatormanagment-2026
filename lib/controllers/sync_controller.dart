@@ -117,6 +117,19 @@ class SyncController extends GetxController {
     pendingCount.value = await _sync.pendingCount();
   }
 
+  /// v22 item 7: logout cleanup — forget the previous session's sync markers
+  /// (timestamps + error banner) so the next account starts with a clean sync
+  /// status instead of the previous account's, then re-read the (now empty)
+  /// outbox count.
+  Future<void> resetSessionState() async {
+    lastSyncAt.value = null;
+    lastPullAt.value = null;
+    lastSyncError.value = null;
+    try {
+      await refreshPending();
+    } catch (_) {}
+  }
+
   /// Decides whether to sync silently, ask first, or skip.
   Future<void> maybeAutoSync() async {
     // Offline-only mode: the active plan disables sync — never auto-push.
@@ -299,6 +312,7 @@ class SyncController extends GetxController {
     if (isSyncing.value || isPulling.value) return;
 
     isPulling.value = true;
+    bool switchFailed = false;
     try {
       SyncProgress.show('branch_switch_saving'.tr);
       // 1. Preserve any unsynced local changes BEFORE the destructive clear.
@@ -327,11 +341,17 @@ class SyncController extends GetxController {
       Log.e('branch switch failed', e);
       // Best effort: still activate the chosen branch so the user isn't stuck.
       await branchCtrl.setBranch(target);
-      Get.snackbar('sync'.tr, 'sync_failed'.tr);
+      // v22 item 8: buffer the failure — the snackbar fires AFTER the overlay
+      // hides (a snackbar makes Get.isDialogOpen read false, which used to rely
+      // on hide()'s raw-navigator fallback to close the overlay).
+      switchFailed = true;
     } finally {
       SyncProgress.hide();
       isPulling.value = false;
       await refreshPending();
+    }
+    if (switchFailed) {
+      Get.snackbar('sync'.tr, 'sync_failed'.tr);
     }
   }
 

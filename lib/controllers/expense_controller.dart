@@ -16,6 +16,21 @@ class ExpenseController extends GetxController {
   /// Per-accountant scope: null = owner/admin (all). Expenses are owner-only.
   String? get _scope => _auth.scopeAccountantId;
 
+  /// v22 item 6: owner-only accountant filter for BROWSING (null = all).
+  /// Ignored for an accountant, who is always scoped to themselves. Writes
+  /// (add/delete) keep using [_scope] — the filter never changes attribution.
+  final RxnString accountantFilter = RxnString();
+
+  /// Effective READ scope: an accountant is forced to their own id; the
+  /// owner/admin browses all or the chosen accountant.
+  String? get _readScope =>
+      _auth.isAdmin ? accountantFilter.value : _auth.scopeAccountantId;
+
+  void setAccountantFilter(String? accountantId) {
+    accountantFilter.value = accountantId;
+    loadExpenses();
+  }
+
   /// Active-branch read scope (null = consolidated / All branches).
   String? get _branchScope => _branch.scopeBranchId;
 
@@ -39,7 +54,10 @@ class ExpenseController extends GetxController {
   void onInit() {
     super.onInit();
     // Re-scope expenses when the acting user changes.
-    ever(_auth.currentUser, (_) => loadExpenses());
+    ever(_auth.currentUser, (_) {
+      accountantFilter.value = null; // v22 item 6: reset any owner filter
+      loadExpenses();
+    });
     // Re-scope when the active branch switches (full system-context swap).
     ever(_branch.currentBranch, (_) => loadExpenses());
     // R9: re-load when the global month changes (changed from Monthly Pricing).
@@ -69,7 +87,7 @@ class ExpenseController extends GetxController {
         month,
         limit: expensesPerPage + 1,
         offset: (page - 1) * expensesPerPage,
-        accountantId: _scope,
+        accountantId: _readScope, // v22 item 6: honors the owner's filter
         branchId: _branchScope,
       );
 
@@ -86,7 +104,7 @@ class ExpenseController extends GetxController {
         expenses.assignAll(newItems);
         // Month total must reflect ALL expenses, not just the page
         totalExpenses.value = await _repo.getTotalExpenses(month,
-            accountantId: _scope, branchId: _branchScope);
+            accountantId: _readScope, branchId: _branchScope);
       } else {
         expenses.addAll(newItems);
       }

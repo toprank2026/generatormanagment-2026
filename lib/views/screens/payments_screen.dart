@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
+import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/reports_controller.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/utils/money.dart';
@@ -111,10 +112,25 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
         ),
         title: Text('${'receipt_no'.tr} ${r.receiptNo}',
             style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(
-          '${_formatDate(r.issuedAt)} · ${r.paymentMethod == 'card' ? 'pay_card'.tr : 'pay_cash'.tr}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${_formatDate(r.issuedAt)} · ${r.paymentMethod == 'card' ? 'pay_card'.tr : 'pay_cash'.tr}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            // v22 item 6: the owner/admin sees WHO collected each receipt (an
+            // accountant's list is already scoped to themselves).
+            if (Get.find<AuthController>().isAdmin &&
+                controller.accountantNames[r.accountantId] != null)
+              Text(
+                '${'accountant'.tr}: ${controller.accountantNames[r.accountantId]}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              ),
+          ],
         ),
         trailing: Text(
           fmtAmount(r.paidAmount),

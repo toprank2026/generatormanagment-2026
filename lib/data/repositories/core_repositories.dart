@@ -244,6 +244,20 @@ class CircuitRepository {
     return List.generate(maps.length, (i) => Circuit.fromMap(maps[i]));
   }
 
+  /// v22 item 9: every circuit in scope (all boards) in ONE query — feeds the
+  /// id→name map so subscriber rows can show their linked circuit (جوزة)
+  /// without a per-row lookup.
+  Future<List<Circuit>> getAllInBranch({String? branchId}) async {
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'circuits',
+      where: branchId == null ? null : 'branch_id = ?',
+      whereArgs: branchId == null ? null : [branchId],
+      orderBy: 'created_at ASC, rowid ASC',
+    );
+    return List.generate(maps.length, (i) => Circuit.fromMap(maps[i]));
+  }
+
   /// COUNT of circuits in the active branch (no row hydration, no N+1 over
   /// boards) — for the dashboard.
   Future<int> countByBranch({String? accountantId, String? branchId}) async {
@@ -439,7 +453,10 @@ class SubscriberRepository {
       'subscribers',
       where: clauses.isEmpty ? null : clauses.join(' AND '),
       whereArgs: args.isEmpty ? null : args,
-      orderBy: 'name ASC',
+      // v22 item 5: subscribers ALWAYS in CREATION order (oldest→newest),
+      // language-independent — created_at primary, rowid tiebreaker for legacy
+      // NULL rows. Replaces 'name ASC' (unstable Arabic collation).
+      orderBy: 'created_at ASC, rowid ASC',
       limit: limit,
       offset: offset,
     );
@@ -447,10 +464,15 @@ class SubscriberRepository {
   }
 
   Future<List<Subscriber>> getByCircuit(String circuitId,
-      {String? accountantId, String? branchId}) async {
+      {String? accountantId, String? branchId, String? query}) async {
     final db = await _dbHelper.database;
     final clauses = <String>['circuit_id = ?'];
     final args = <dynamic>[circuitId];
+    // v22 item 1: search composes with the circuit scope.
+    if (query != null && query.isNotEmpty) {
+      clauses.add('(name LIKE ? OR phone LIKE ?)');
+      args.addAll(['%$query%', '%$query%']);
+    }
     if (accountantId != null) {
       clauses.add('accountant_id = ?');
       args.add(accountantId);
@@ -459,16 +481,24 @@ class SubscriberRepository {
       clauses.add('branch_id = ?');
       args.add(branchId);
     }
-    final List<Map<String, dynamic>> maps =
-        await db.query('subscribers', where: clauses.join(' AND '), whereArgs: args);
+    final List<Map<String, dynamic>> maps = await db.query('subscribers',
+        where: clauses.join(' AND '),
+        whereArgs: args,
+        // v22 item 5: creation order, language-independent.
+        orderBy: 'created_at ASC, rowid ASC');
     return List.generate(maps.length, (i) => Subscriber.fromMap(maps[i]));
   }
 
   Future<List<Subscriber>> getByBoard(String boardId,
-      {String? accountantId, String? branchId}) async {
+      {String? accountantId, String? branchId, String? query}) async {
     final db = await _dbHelper.database;
     final clauses = <String>['board_id = ?'];
     final args = <dynamic>[boardId];
+    // v22 item 1: search composes with the board scope.
+    if (query != null && query.isNotEmpty) {
+      clauses.add('(name LIKE ? OR phone LIKE ?)');
+      args.addAll(['%$query%', '%$query%']);
+    }
     if (accountantId != null) {
       clauses.add('accountant_id = ?');
       args.add(accountantId);
@@ -477,8 +507,11 @@ class SubscriberRepository {
       clauses.add('branch_id = ?');
       args.add(branchId);
     }
-    final List<Map<String, dynamic>> maps =
-        await db.query('subscribers', where: clauses.join(' AND '), whereArgs: args);
+    final List<Map<String, dynamic>> maps = await db.query('subscribers',
+        where: clauses.join(' AND '),
+        whereArgs: args,
+        // v22 item 5: creation order, language-independent.
+        orderBy: 'created_at ASC, rowid ASC');
     return List.generate(maps.length, (i) => Subscriber.fromMap(maps[i]));
   }
 
@@ -500,13 +533,24 @@ class SubscriberRepository {
     String? accountantId,
     String? branchId,
     String? category,
+    String? query,
+    String? receiptAccountantId,
   }) {
     const main = DbHelper.kMainBranchId;
     final args = <dynamic>[month];
     // Receipts sub-query is branch-scoped (a shared subscriber id can carry
     // receipts in >1 branch — count only this branch's). null = all branches.
-    final String innerScope = branchId == null ? '' : 'AND branch_id = ?';
+    // v22 item 6: receiptAccountantId additionally scopes the INNER receipts to
+    // one COLLECTOR (receipts.accountant_id) — "paid" then means "collected by
+    // that accountant" for the owner's per-accountant report. This is distinct
+    // from [accountantId], which filters the OUTER s.accountant_id (subscriber
+    // ownership — mostly NULL because subscribers are shared).
+    String innerScope = branchId == null ? '' : 'AND branch_id = ?';
     if (branchId != null) args.add(branchId);
+    if (receiptAccountantId != null) {
+      innerScope += ' AND accountant_id = ?';
+      args.add(receiptAccountantId);
+    }
     args.add(month); // monthly_prices join month
     final outerScopes = <String>[];
     if (accountantId != null) {
@@ -517,11 +561,16 @@ class SubscriberRepository {
       outerScopes.add('AND s.branch_id = ?');
       args.add(branchId);
     }
-    // R5: category-tab filter (null = all). MUST stay last so the appended arg
-    // matches this clause's position in the WHERE.
+    // R5: category-tab filter. Order matters: each clause's arg is appended in
+    // the same position as its `?` in the WHERE (category, then query, last).
     if (category != null) {
       outerScopes.add("AND IFNULL(s.category, 'standard') = ?");
       args.add(category);
+    }
+    // v22 item 1: search composes with the paid/unpaid filter.
+    if (query != null && query.isNotEmpty) {
+      outerScopes.add('AND (s.name LIKE ? OR s.phone LIKE ?)');
+      args.addAll(['%$query%', '%$query%']);
     }
     final String sql =
         """
@@ -549,6 +598,7 @@ class SubscriberRepository {
     String? accountantId,
     String? branchId,
     String? category,
+    String? query,
     int? limit,
     int? offset,
   }) async {
@@ -559,11 +609,13 @@ class SubscriberRepository {
       accountantId: accountantId,
       branchId: branchId,
       category: category,
+      query: query,
     );
     final args = [...q.args];
-    String tail = '';
+    // v22 item 5: creation order (was unordered — SQLite gave no guarantee).
+    String tail = ' ORDER BY s.created_at ASC, s.rowid ASC';
     if (limit != null) {
-      tail = ' LIMIT ?';
+      tail += ' LIMIT ?';
       args.add(limit);
       if (offset != null) {
         tail += ' OFFSET ?';
@@ -574,6 +626,70 @@ class SubscriberRepository {
     return List.generate(maps.length, (i) => Subscriber.fromMap(maps[i]));
   }
 
+  /// v22 item 2: the ids of PAID subscribers for [month] in [branchId] — ONE
+  /// query for the whole list (no per-row N+1), so every subscriber row can
+  /// paint its green/red payment dot via `paidIds.contains(sub.id)`. Same
+  /// category-aware derived-status SQL as [getByPaymentStatus].
+  Future<Set<String>> paidSubscriberIds({
+    required String month,
+    String? branchId,
+  }) async {
+    final db = await _dbHelper.database;
+    final q = _paymentStatusFrom(month: month, isPaid: true, branchId: branchId);
+    final rows = await db.rawQuery('SELECT s.id ${q.sql}', q.args);
+    return rows.map((r) => r['id'] as String).toSet();
+  }
+
+  /// v22 item 10: paid/unpaid subscriber counts PER BOARD for [month] — one
+  /// GROUP BY query for the whole boards grid (no per-board N+1). Same
+  /// category-aware derived-status rule as [getByPaymentStatus]: paid = a price
+  /// exists AND coverage (cash + discount) >= amps × price; everything else
+  /// (including a missing price) is unpaid. Args follow the ? placeholders:
+  /// inner receipts month [, branch], mp join month, [outer branch].
+  Future<Map<String, ({int paid, int unpaid})>> paymentCountsByBoard({
+    required String month,
+    String? branchId,
+  }) async {
+    final db = await _dbHelper.database;
+    const main = DbHelper.kMainBranchId;
+    final args = <dynamic>[month];
+    final String innerScope = branchId == null ? '' : 'AND branch_id = ?';
+    if (branchId != null) args.add(branchId);
+    args.add(month); // monthly_prices join month
+    final String outerScope = branchId == null ? '' : 'WHERE s.branch_id = ?';
+    if (branchId != null) args.add(branchId);
+    final rows = await db.rawQuery("""
+      SELECT s.board_id AS bid,
+             COUNT(*) AS total,
+             SUM(CASE WHEN mp.price_per_amp IS NOT NULL
+                       AND (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0))
+                           >= (s.amps * mp.price_per_amp)
+                 THEN 1 ELSE 0 END) AS paid
+      FROM subscribers s
+      LEFT JOIN (
+        SELECT subscriber_id,
+               SUM(paid_amount) as total_paid,
+               SUM(IFNULL(discount_value, 0)) as total_discount
+        FROM receipts
+        WHERE month = ? AND status = 'valid' $innerScope
+        GROUP BY subscriber_id
+      ) r ON s.id = r.subscriber_id
+      LEFT JOIN monthly_prices mp
+        ON mp.month = ?
+        AND mp.category = IFNULL(s.category, 'standard')
+        AND IFNULL(mp.branch_id, '$main') = IFNULL(s.branch_id, '$main')
+      $outerScope
+      GROUP BY s.board_id
+    """, args);
+    final map = <String, ({int paid, int unpaid})>{};
+    for (final row in rows) {
+      final int total = (row['total'] as int?) ?? 0;
+      final int paid = ((row['paid'] as num?) ?? 0).toInt();
+      map[row['bid'] as String] = (paid: paid, unpaid: total - paid);
+    }
+    return map;
+  }
+
   /// COUNT of paid/unpaid subscribers WITHOUT hydrating rows (was building and
   /// discarding the full List just for .length — twice per dashboard refresh).
   Future<int> countByPaymentStatus({
@@ -582,6 +698,7 @@ class SubscriberRepository {
     String? accountantId,
     String? branchId,
     String? category,
+    String? receiptAccountantId,
   }) async {
     final db = await _dbHelper.database;
     final q = _paymentStatusFrom(
@@ -590,6 +707,7 @@ class SubscriberRepository {
       accountantId: accountantId,
       branchId: branchId,
       category: category,
+      receiptAccountantId: receiptAccountantId,
     );
     final r = await db.rawQuery('SELECT COUNT(*) as c ${q.sql}', q.args);
     return (r.isNotEmpty ? r.first['c'] as int? : 0) ?? 0;

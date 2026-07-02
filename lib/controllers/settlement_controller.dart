@@ -45,6 +45,36 @@ class SettlementController extends GetxController {
   double _d(dynamic v) => ((v as num?) ?? 0).toDouble();
 
   @override
+  void onInit() {
+    super.onInit();
+    // v22 item 7: re-scope the wallet when the acting user changes — zero the
+    // previous account's balances/history on logout (user == null) and reload
+    // for the new one, matching the other feature controllers.
+    ever(_auth.currentUser, (user) {
+      if (user == null) {
+        _resetWallet();
+      } else {
+        load();
+      }
+    });
+  }
+
+  /// Zeroes all wallet figures + history (logout cleanup).
+  void _resetWallet() {
+    cashCollected.value = 0;
+    cashSettled.value = 0;
+    cashBalance.value = 0;
+    hasPendingCash.value = false;
+    cardCollected.value = 0;
+    cardSettled.value = 0;
+    cardBalance.value = 0;
+    hasPendingCard.value = false;
+    history.clear();
+    hasMore.value = false;
+    update();
+  }
+
+  @override
   void onReady() {
     super.onReady();
     load(pull: true);

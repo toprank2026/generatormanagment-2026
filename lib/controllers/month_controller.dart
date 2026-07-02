@@ -26,4 +26,9 @@ class MonthController extends GetxController {
     selectedMonth.value = month;
     update();
   }
+
+  /// v22 item 7: logout cleanup — back to the current calendar month so the
+  /// next account starts where a fresh launch would (spec: launch = now).
+  void resetToCurrentMonth() =>
+      setMonth(DateFormat('yyyy-MM').format(DateTime.now()));
 }
