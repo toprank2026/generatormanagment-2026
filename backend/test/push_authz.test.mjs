@@ -130,16 +130,27 @@ test('push rejects an UNKNOWN entity -> 400 BAD_ENTITY', async () => {
 // ---------------------------------------------------------------------------
 // Accountant permission gating per entity.
 // ---------------------------------------------------------------------------
-test('accountant cannot push an entity its permissions lack (subscribers) -> 403', async () => {
+// v25 WEDGE FIX: an unauthorized record is SKIPPED (accepted/no-op so the
+// device drains its outbox) instead of failing the whole batch with a 403 —
+// one auto-created row (ensureMain's Main-branch) used to permanently poison
+// an accountant device's outbox (push always failed -> pull never ran).
+// Authorization is STILL enforced: the record must never land in the mirror.
+test('accountant pushing an entity its permissions lack -> SKIPPED (200, not in mirror)', async () => {
   const owner = await registerOwner();
   const acct = await makeAccountant(owner, { permissions: ['expenses'] }); // no 'subscribers'
 
-  const denied = await api('POST', '/api/sync/push', {
+  const skipped = await api('POST', '/api/sync/push', {
     token: acct.token,
     body: { records: [rec('subscribers', 'a-s1', { id: 'a-s1', name: 'X', amps: 1, status: 'active' })] },
   });
-  assert.equal(denied.status, 403, `expected 403, got ${denied.status} ${JSON.stringify(denied.data)}`);
-  assert.equal(denied.data.code, 'PERMISSION_DENIED');
+  assert.equal(skipped.status, 200, `expected 200 skip, got ${skipped.status} ${JSON.stringify(skipped.data)}`);
+  assert.equal(skipped.data.count, 1, 'skipped record still counts so the outbox drains');
+
+  // The unauthorized row must NOT be in the owner mirror.
+  const pull = await api('GET', '/api/sync/pull', { token: owner.token });
+  assert.equal(pull.status, 200);
+  const ids = new Set(pull.data.records.map((r) => r.localId));
+  assert.ok(!ids.has('a-s1'), 'unauthorized subscriber must not enter the mirror');
 
   // receipts are always allowed even with no matching permission.
   const receiptOk = await api('POST', '/api/sync/push', {
@@ -156,7 +167,7 @@ test('accountant cannot push an entity its permissions lack (subscribers) -> 403
   assert.equal(expenseOk.status, 200);
 });
 
-test('accountant can NEVER push owner-only identity tables (branches/accountants) -> 403', async () => {
+test('accountant pushing owner-only identity tables -> SKIPPED (200, not in mirror)', async () => {
   const owner = await registerOwner();
   const acct = await makeAccountant(owner, { permissions: ['subscribers', 'boards', 'expenses', 'prices'] });
 
@@ -164,21 +175,51 @@ test('accountant can NEVER push owner-only identity tables (branches/accountants
     token: acct.token,
     body: { records: [rec('branches', 'b-x', { id: 'b-x', name: 'X' })] },
   });
-  assert.equal(branches.status, 403);
-  assert.equal(branches.data.code, 'ENTITY_FORBIDDEN');
+  assert.equal(branches.status, 200);
+  assert.equal(branches.data.count, 1);
 
   const accountants = await api('POST', '/api/sync/push', {
     token: acct.token,
     body: { records: [rec('accountants', 'acc-x', { id: 'acc-x' })] },
   });
-  assert.equal(accountants.status, 403);
-  assert.equal(accountants.data.code, 'ENTITY_FORBIDDEN');
+  assert.equal(accountants.status, 200);
+  assert.equal(accountants.data.count, 1);
+
+  const pull = await api('GET', '/api/sync/pull', { token: owner.token });
+  const ids = new Set(pull.data.records.map((r) => r.localId));
+  assert.ok(!ids.has('b-x') && !ids.has('acc-x'), 'identity rows must not enter the mirror');
+});
+
+// v25 regression: THE production wedge — the device auto-creates the Main
+// branch row at app boot; an accountant-first device pushes it alongside real
+// work. The batch must succeed, the real work must land, the identity row
+// must be dropped.
+test('mixed accountant batch: forbidden branches row is skipped, receipt still lands', async () => {
+  const owner = await registerOwner();
+  const acct = await makeAccountant(owner, { permissions: [] });
+
+  const mixed = await api('POST', '/api/sync/push', {
+    token: acct.token,
+    body: {
+      records: [
+        rec('branches', 'main', { id: 'main', name: 'الفرع الرئيسي', is_main: 1, active: 1 }),
+        rec('receipts', 'wedge-r1', { uuid: 'wedge-r1', receipt_no: 7, subscriber_id: 's-w', month: '2026-07', paid_amount: 25, status: 'valid' }),
+      ],
+    },
+  });
+  assert.equal(mixed.status, 200, `mixed batch must not 403, got ${mixed.status} ${JSON.stringify(mixed.data)}`);
+  assert.equal(mixed.data.count, 2, 'both records counted so the device outbox drains');
+
+  const pull = await api('GET', '/api/sync/pull', { token: owner.token });
+  const byId = new Map(pull.data.records.map((r) => [r.localId, r]));
+  assert.ok(byId.has('wedge-r1'), 'the receipt must land in the mirror');
+  assert.ok(!byId.has('main'), 'the forbidden branches row must NOT land in the mirror');
 });
 
 // ---------------------------------------------------------------------------
 // Branch confinement: cross-branch write rejected; own-branch stamped.
 // ---------------------------------------------------------------------------
-test('branch-confined accountant cannot write ANOTHER branch -> 403 BRANCH_FORBIDDEN', async () => {
+test('branch-confined accountant writing ANOTHER branch -> SKIPPED (200, not in mirror)', async () => {
   const owner = await registerOwner();
   const acct = await makeAccountant(owner, { branchId: 'branch-A', permissions: ['subscribers'] });
 
@@ -186,8 +227,13 @@ test('branch-confined accountant cannot write ANOTHER branch -> 403 BRANCH_FORBI
     token: acct.token,
     body: { records: [rec('subscribers', 'x-sub', { id: 'x-sub', name: 'Hijack', amps: 1, status: 'active', branch_id: 'branch-B' })] },
   });
-  assert.equal(cross.status, 403, `expected 403, got ${cross.status} ${JSON.stringify(cross.data)}`);
-  assert.equal(cross.data.code, 'BRANCH_FORBIDDEN');
+  // v25: skipped (accepted/no-op) instead of failing the batch — the forgery
+  // still never reaches the mirror.
+  assert.equal(cross.status, 200, `expected 200 skip, got ${cross.status} ${JSON.stringify(cross.data)}`);
+  assert.equal(cross.data.count, 1);
+  const pull = await api('GET', '/api/sync/pull', { token: owner.token });
+  const ids = new Set(pull.data.records.map((r) => r.localId));
+  assert.ok(!ids.has('x-sub'), 'cross-branch row must not enter the mirror');
 });
 
 test('branch-confined accountant push is server-stamped (branch_id + accountant_id forced)', async () => {

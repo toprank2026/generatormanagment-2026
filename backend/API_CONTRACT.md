@@ -247,6 +247,15 @@ tombstones.** Each business row may carry its REAL modification time in
   the old apply-always behavior is kept, so today's clients are unaffected.
 - A SKIPPED record is still **counted** in the `count` response (treated as
   accepted) so the device drains its outbox and does not loop re-pushing it.
+- **v25 — unauthorized records are SKIPPED, not batch-fatal:** when an
+  accountant pushes a record its authorization forbids (owner-only identity
+  entities `branches`/`accountants` → was `ENTITY_FORBIDDEN`; a missing entity
+  permission → was `PERMISSION_DENIED`; a cross-branch row → was
+  `BRANCH_FORBIDDEN`), the record is skipped-and-counted exactly like a stale
+  upsert and NEVER enters the mirror. Previously these threw a 403 that failed
+  the WHOLE batch — one device-auto-created row (the boot-time Main-branch
+  `ensureMain` insert) permanently wedged an accountant device's sync (push
+  always failed → pull never ran → only clearing app data recovered).
 
 Other errors: `400 code=BAD_RECORDS` (records not an array),
 `400 code=BAD_RECORD` (missing `entity`/`localId`), `403 code=FEATURE_DISABLED`

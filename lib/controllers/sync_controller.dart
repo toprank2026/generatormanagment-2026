@@ -12,6 +12,7 @@ import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/core/logger.dart';
 import 'package:generatormanagment/core/sync_service.dart';
+import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/branch_model.dart';
 import 'package:generatormanagment/views/widgets/sync_progress_overlay.dart';
 
@@ -117,6 +118,33 @@ class SyncController extends GetxController {
     pendingCount.value = await _sync.pendingCount();
   }
 
+  /// v25 WEDGE FIX (client side): drop outbox rows an ACCOUNTANT session can
+  /// never push — the owner-only identity entities (`branches`, `accountants`).
+  /// The device auto-creates the Main-branch row at app boot (ensureMain fires
+  /// the sync trigger BEFORE anyone logs in); under an accountant JWT the
+  /// backend rejects that row (403 ENTITY_FORBIDDEN), and one rejected row
+  /// fails the WHOLE batch — so push always failed, pull (which pushes first)
+  /// never ran, the dashboard showed zeros with "1 pending change" stuck
+  /// forever, and the v17 logout guard blocked the wipe. These rows are
+  /// device-local bootstrap artifacts; the owner's own device pushes the real
+  /// ones. Runs before every accountant push/pull (cheap targeted DELETE —
+  /// same direct-outbox precedent as the restore flows). The backend now also
+  /// SKIPS such rows, so this is belt-and-braces for devices talking to an
+  /// older backend.
+  Future<void> _purgeAccountantForbiddenRows() async {
+    try {
+      if (!Get.isRegistered<AuthController>() ||
+          !Get.find<AuthController>().isAccountant) {
+        return;
+      }
+      final db = await DbHelper().database;
+      await db.delete(
+        'sync_outbox',
+        where: "entity IN ('branches', 'accountants')",
+      );
+    } catch (_) {/* best-effort — never block a sync on the purge */}
+  }
+
   /// v22 item 7: logout cleanup — forget the previous session's sync markers
   /// (timestamps + error banner) so the next account starts with a clean sync
   /// status instead of the previous account's, then re-read the (now empty)
@@ -194,6 +222,7 @@ class SyncController extends GetxController {
     final bool big = showOverlay && pendingCount.value > largeThreshold;
     try {
       if (big) SyncProgress.show('sync_uploading'.tr);
+      await _purgeAccountantForbiddenRows(); // v25: drop unpushable rows first
       await _sync.push();
       lastSyncAt.value = DateTime.now().toIso8601String();
       lastSyncError.value = null; // success clears any prior error
@@ -205,13 +234,18 @@ class SyncController extends GetxController {
         // The OWNER's ACTIVE plan genuinely disables sync — not transient.
         lastSyncError.value = 'plan';
         if (!silent) Get.snackbar('sync'.tr, 'sync_disabled_plan'.tr);
-      } else if (e.isAuthError) {
+      } else if (e.statusCode == 401 ||
+          (e.statusCode == 403 && code == 'BLOCKED')) {
         // v18: a 401 (stale/invalid token) or a 403 BLOCKED means the SESSION
         // is dead — NOT a plan limit. This is what wrongly showed "sync not
         // available in your plan" and left the user stuck. Recover via the auth
         // recheck, which signs out to the login screen (involuntary logout: it
         // KEEPS local data + the outbox), so a fresh token is issued and the
         // pending changes push after re-login.
+        // v25: ONLY those two mean session-death. Other 403s (ENTITY_FORBIDDEN /
+        // PERMISSION_DENIED / BRANCH_FORBIDDEN — the server rejecting a pushed
+        // record) were falling in here via isAuthError (any 401/403) and showed
+        // a false "session expired" on every heartbeat while the token was fine.
         lastSyncError.value = 'auth';
         if (!silent) Get.snackbar('sync'.tr, 'session_expired_relogin'.tr);
         try {
@@ -257,6 +291,7 @@ class SyncController extends GetxController {
       // Preserve local changes first. Push unconditionally — the cached
       // pendingCount can be stale (refreshed only on the heartbeat); push()
       // early-returns when the outbox is truly empty.
+      await _purgeAccountantForbiddenRows(); // v25: drop unpushable rows first
       await _sync.push();
       final n = await _sync.pull(receiptsMonth: _receiptsMonth);
       lastPullAt.value = DateTime.now().toIso8601String();

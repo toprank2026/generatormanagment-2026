@@ -141,7 +141,29 @@ const push = asyncHandler(async (req, res) => {
       throw new HttpError(400, `unknown entity: ${rec.entity}`, 'BAD_ENTITY');
     }
     // Accountant authorization + server-stamp branch/accountant (mutates rec.data).
-    authorizeRecord(req.user, rec);
+    // v25 WEDGE FIX: an UNAUTHORIZED record is SKIPPED, never allowed to fail
+    // the whole batch. The device auto-creates owner-only identity rows (e.g.
+    // ensureMain's Main-branch row fires the sync trigger at app BOOT, before
+    // anyone logs in); pushed under an accountant JWT it 403'd here and
+    // permanently poisoned that device's outbox: every push failed, so pull
+    // (which pushes first) never ran — dashboard all zeros, "1 pending change"
+    // forever, and the v17 logout guard blocked the wipe (only clearing app
+    // data escaped). Skipping counts the record as accepted so the device
+    // DRAINS its outbox; the row simply never enters the mirror (the owner's
+    // own device pushes the real one). Tampered-client 400s above still fail.
+    try {
+      authorizeRecord(req.user, rec);
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 403) {
+        console.warn(
+          `[sync] skipped unauthorized ${rec.entity}/${rec.localId} from ` +
+            `${req.user?.username || req.user?._id} (${err.code})`
+        );
+        count += 1; // accepted/no-op so the device clears its outbox
+        continue;
+      }
+      throw err;
+    }
 
     const deleted = Boolean(rec.deleted);
     const updatedAt = rec.updatedAt ? new Date(rec.updatedAt) : new Date();
