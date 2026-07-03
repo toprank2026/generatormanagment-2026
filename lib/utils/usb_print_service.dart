@@ -187,6 +187,29 @@ class UsbPrintService {
   }
 
   // ----------------------------------------------------------------------
+  // v24: PUBLIC render delegates for the LAN transport. LanPrintService reuses
+  // this exact renderer so the LAN receipt is pixel-identical to USB — these
+  // are pure pass-throughs; nothing about the USB pipeline itself changes.
+  // ----------------------------------------------------------------------
+
+  /// v24: exposes the shared receipt renderer (header → table → QR → footer)
+  /// for other transports. Delegates to the private [_buildReceiptImages].
+  Future<List<img.Image>> buildReceiptImages(
+    Receipt receipt,
+    Subscriber sub,
+    String accountantName,
+  ) =>
+      _buildReceiptImages(receipt, sub, accountantName);
+
+  /// v24: exposes the single-line text renderer (used for test slips).
+  Future<img.Image> buildTextImage(
+    String text,
+    double fontSize, {
+    bool center = false,
+  }) =>
+      _textImage(text, fontSize, center: center);
+
+  // ----------------------------------------------------------------------
   // Rendering — mirrors BluetoothPrintService so the USB receipt has the SAME
   // shape (centered header, bordered 2-column table, QR, footer). Each piece is
   // rendered to its own image, exactly like the Bluetooth service.

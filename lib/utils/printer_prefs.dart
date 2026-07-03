@@ -28,12 +28,24 @@ class PrinterPrefs {
   /// Number of copies to print per receipt (clamped to 1 or 2).
   static int get copies => _copies == 1 ? 1 : 2;
 
-  /// v21 item 1: which transport to print on — 'bluetooth' (default, unchanged)
-  /// or 'usb' (direct USB thermal). The Bluetooth path/settings are untouched.
+  /// v21 item 1: which transport to print on — 'bluetooth' (default, unchanged),
+  /// 'usb' (direct USB thermal), or v24 'lan' (Ethernet/Wi-Fi TCP). The
+  /// Bluetooth and USB paths/settings are untouched by the LAN addition.
   static const String keyPrinterType = 'printer_type';
   static String _printerType = 'bluetooth';
-  static String get printerType => _printerType == 'usb' ? 'usb' : 'bluetooth';
+  static String get printerType => _printerType == 'usb'
+      ? 'usb'
+      : (_printerType == 'lan' ? 'lan' : 'bluetooth');
   static bool get isUsb => _printerType == 'usb';
+  static bool get isLan => _printerType == 'lan';
+
+  /// v24: saved LAN/Ethernet printer endpoint (empty ip = none saved).
+  static const String keyLanIp = 'printer_lan_ip';
+  static const String keyLanPort = 'printer_lan_port';
+  static String _lanIp = '';
+  static int _lanPort = 9100;
+  static String get lanIp => _lanIp;
+  static int get lanPort => _lanPort;
 
   /// The currently selected paper width in millimetres (58 or 80).
   static int get widthMm => _widthMm;
@@ -54,15 +66,36 @@ class PrinterPrefs {
     final prefs = await SharedPreferences.getInstance();
     _widthMm = _normalize(prefs.getInt(keyPaperWidth) ?? defaultWidthMm);
     _copies = (prefs.getInt(keyCopies) ?? 2) == 1 ? 1 : 2;
-    _printerType = prefs.getString(keyPrinterType) == 'usb' ? 'usb' : 'bluetooth';
+    final t = prefs.getString(keyPrinterType);
+    _printerType = t == 'usb' ? 'usb' : (t == 'lan' ? 'lan' : 'bluetooth');
+    _lanIp = prefs.getString(keyLanIp) ?? '';
+    _lanPort = prefs.getInt(keyLanPort) ?? 9100;
     return _widthMm;
   }
 
-  /// v21: persists the printer transport ('bluetooth' | 'usb').
+  /// v21/v24: persists the printer transport ('bluetooth' | 'usb' | 'lan').
   static Future<void> setPrinterType(String t) async {
-    _printerType = t == 'usb' ? 'usb' : 'bluetooth';
+    _printerType = t == 'usb' ? 'usb' : (t == 'lan' ? 'lan' : 'bluetooth');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(keyPrinterType, _printerType);
+  }
+
+  /// v24: persists the discovered LAN printer endpoint.
+  static Future<void> setLan(String ip, int port) async {
+    _lanIp = ip;
+    _lanPort = port;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(keyLanIp, ip);
+    await prefs.setInt(keyLanPort, port);
+  }
+
+  /// v24: forgets the saved LAN printer.
+  static Future<void> clearLan() async {
+    _lanIp = '';
+    _lanPort = 9100;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(keyLanIp);
+    await prefs.remove(keyLanPort);
   }
 
   /// Persists [mm] (58 or 80) and updates the cache.

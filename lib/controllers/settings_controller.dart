@@ -18,6 +18,7 @@ import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/repositories/auth_repository.dart';
 import 'package:generatormanagment/data/repositories/backup_repository.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
+import 'package:generatormanagment/utils/lan_print_service.dart';
 import 'package:generatormanagment/utils/printer_prefs.dart';
 import 'package:generatormanagment/views/widgets/sync_progress_overlay.dart';
 import 'package:uuid/uuid.dart';
@@ -48,13 +49,18 @@ class SettingsController extends GetxController {
   var paperWidthMm = PrinterPrefs.defaultWidthMm.obs;
   // v20 item 3: copies printed per receipt (1 or 2); default 2.
   var printCopies = 2.obs;
-  // v21 item 1: printer transport ('bluetooth' | 'usb') + the selected USB
-  // device. The Bluetooth printer fields above are untouched.
+  // v21 item 1: printer transport ('bluetooth' | 'usb' | v24 'lan') + the
+  // selected USB device. The Bluetooth printer fields above are untouched.
   var printerType = 'bluetooth'.obs;
   var usbDeviceName = ''.obs;
   var usbDeviceId = ''.obs;
   static const String _keyUsbName = 'usb_device_name';
   static const String _keyUsbId = 'usb_device_id';
+  // v24: LAN/Ethernet printer endpoint + discovery state.
+  var lanIp = ''.obs;
+  var lanPort = 9100.obs;
+  var lanSearching = false.obs;
+  var lanStatus = ''.obs; // coarse progress line while discovering
 
   // Persistence Keys
   static const String _keyLang = 'lang_code';
@@ -125,6 +131,54 @@ class SettingsController extends GetxController {
     printerType.value = PrinterPrefs.printerType;
     usbDeviceName.value = prefs.getString(_keyUsbName) ?? "";
     usbDeviceId.value = prefs.getString(_keyUsbId) ?? "";
+    // v24: saved LAN endpoint (also primed by PrinterPrefs.load above).
+    lanIp.value = PrinterPrefs.lanIp;
+    lanPort.value = PrinterPrefs.lanPort;
+    update();
+  }
+
+  /// v24: discover a LAN thermal printer (fresh mDNS + subnet sweep) and save
+  /// it. Returns true when one was found. Progress lands in [lanStatus].
+  /// Uses [LanPrintService.search] — latched against in-flight print jobs so a
+  /// settings search can never race a print's own discovery/transfer.
+  Future<bool> searchLanPrinter() async {
+    if (lanSearching.value) return false;
+    lanSearching.value = true;
+    lanStatus.value = 'lan_searching'.tr;
+    try {
+      final found = await LanPrintService().search(
+        onStatus: (s) => lanStatus.value = s,
+      );
+      if (found != null) {
+        lanIp.value = found.ip;
+        lanPort.value = found.port;
+        update();
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false; // incl. lan_busy while a print job runs — shows not-found
+    } finally {
+      lanStatus.value = '';
+      lanSearching.value = false;
+    }
+  }
+
+  /// v24: manually save a LAN printer endpoint (the escape hatch for subnets
+  /// the /24 scan can't reach — VLANs, >/24 masks, AP isolation). The user
+  /// reads the IP off the printer's self-test page.
+  Future<void> setManualLan(String ip, int port) async {
+    await PrinterPrefs.setLan(ip, port);
+    lanIp.value = ip;
+    lanPort.value = port;
+    update();
+  }
+
+  /// v24: forget the saved LAN printer.
+  Future<void> forgetLanPrinter() async {
+    await PrinterPrefs.clearLan();
+    lanIp.value = '';
+    lanPort.value = 9100;
     update();
   }
 

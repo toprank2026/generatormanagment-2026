@@ -4,6 +4,9 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- v24: mDNS discovery of LAN thermal printers (best-effort; the subnet
+         scan fallback works without it). -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
     <!-- v21: direct USB thermal printing (usb_serial) needs USB host support. -->
     <uses-feature android:name="android.hardware.usb.host" android:required="false"/>
     <application

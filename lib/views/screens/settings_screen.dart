@@ -12,6 +12,7 @@ import 'package:generatormanagment/views/screens/branches_screen.dart';
 import 'package:generatormanagment/data/models/account.dart';
 import 'package:generatormanagment/data/repositories/device_repository.dart';
 import 'package:generatormanagment/utils/bluetooth_print_service.dart';
+import 'package:generatormanagment/utils/lan_print_service.dart';
 import 'package:generatormanagment/utils/usb_print_service.dart';
 import 'package:generatormanagment/utils/printer_prefs.dart';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
@@ -32,6 +33,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    // v24: re-read printer prefs (idempotent) — a LAN endpoint auto-discovered
+    // during a print is persisted in PrinterPrefs but the controller obs only
+    // refresh here, so opening Settings always shows the real saved printer.
+    controller.loadPrinterSettings();
     // Refresh cloud backups for logged-in owners.
     if (auth.isLoggedIn.value) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -355,7 +360,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               child: Column(
                 children: [
-                  // v21 item 1: choose the printer transport (Bluetooth | USB).
+                  // v21 item 1 / v24: choose the printer transport
+                  // (Bluetooth | USB | LAN).
                   ListTile(
                     leading:
                         const Icon(Icons.cable, color: Color(0xFF1565C0)),
@@ -364,21 +370,94 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       () => ToggleButtons(
                         borderRadius: BorderRadius.circular(8),
                         constraints: const BoxConstraints(
-                            minHeight: 36, minWidth: 56),
+                            minHeight: 36, minWidth: 48),
                         isSelected: [
-                          controller.printerType.value != 'usb',
+                          controller.printerType.value != 'usb' &&
+                              controller.printerType.value != 'lan',
                           controller.printerType.value == 'usb',
+                          controller.printerType.value == 'lan',
                         ],
-                        onPressed: (i) => controller
-                            .savePrinterType(i == 0 ? 'bluetooth' : 'usb'),
+                        onPressed: (i) => controller.savePrinterType(
+                            i == 0 ? 'bluetooth' : (i == 1 ? 'usb' : 'lan')),
                         children: const [
                           Icon(Icons.bluetooth, size: 20),
                           Icon(Icons.usb, size: 20),
+                          Icon(Icons.lan, size: 20),
                         ],
                       ),
                     ),
                   ),
                   const Divider(height: 1),
+                  // v24: LAN printer section (only when LAN is selected) —
+                  // endpoint + status, Search, and Forget.
+                  Obx(() {
+                    if (controller.printerType.value != 'lan') {
+                      return const SizedBox.shrink();
+                    }
+                    final bool has = controller.lanIp.value.isNotEmpty;
+                    final bool searching = controller.lanSearching.value;
+                    return Column(
+                      children: [
+                        ListTile(
+                          leading: Icon(Icons.lan,
+                              color: has ? Colors.green : Colors.grey),
+                          title: Text(has
+                              ? '${controller.lanIp.value}:${controller.lanPort.value}'
+                              : 'no_lan_printer'.tr),
+                          subtitle: Text(searching
+                              ? (controller.lanStatus.value.isEmpty
+                                  ? 'lan_searching'.tr
+                                  : controller.lanStatus.value)
+                              : (has
+                                  ? 'lan_printer_saved'.tr
+                                  : 'lan_search_hint'.tr)),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (searching)
+                                const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2),
+                                )
+                              else ...[
+                                IconButton(
+                                  tooltip: 'lan_search'.tr,
+                                  icon: const Icon(Icons.search,
+                                      color: Colors.blue),
+                                  onPressed: () =>
+                                      _searchLanPrinter(controller),
+                                ),
+                                // v24: manual ip:port entry — the escape hatch
+                                // when the scan can't reach the printer
+                                // (VLAN / >/24 subnet / AP isolation).
+                                IconButton(
+                                  tooltip: 'lan_manual'.tr,
+                                  icon: const Icon(Icons.edit,
+                                      color: Colors.blueGrey),
+                                  onPressed: () =>
+                                      _manualLanDialog(controller),
+                                ),
+                              ],
+                              if (has && !searching)
+                                IconButton(
+                                  tooltip: 'lan_forget'.tr,
+                                  icon: const Icon(Icons.link_off,
+                                      color: Colors.redAccent),
+                                  onPressed: () =>
+                                      controller.forgetLanPrinter(),
+                                ),
+                            ],
+                          ),
+                          onTap: searching
+                              ? null
+                              : () => _searchLanPrinter(controller),
+                        ),
+                        const Divider(height: 1),
+                      ],
+                    );
+                  }),
                   // USB printer picker (only when USB is selected).
                   Obx(() {
                     if (controller.printerType.value != 'usb') {
@@ -400,10 +479,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
                     );
                   }),
-                  // Bluetooth printer tile (hidden when USB is selected — the
-                  // Bluetooth flow itself is unchanged).
+                  // Bluetooth printer tile (hidden when USB or LAN is selected
+                  // — the Bluetooth flow itself is unchanged).
                   Obx(() {
-                    if (controller.printerType.value == 'usb') {
+                    if (controller.printerType.value == 'usb' ||
+                        controller.printerType.value == 'lan') {
                       return const SizedBox.shrink();
                     }
                     final hasPrinter =
@@ -777,8 +857,93 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  /// v23 item 5: print a test slip on the ACTIVE transport (USB or Bluetooth),
-  /// so the user can confirm the printer works right after pairing/selecting.
+  /// v24: run LAN discovery from the settings tile with result snackbars.
+  Future<void> _searchLanPrinter(SettingsController controller) async {
+    final found = await controller.searchLanPrinter();
+    if (found) {
+      Get.snackbar('success'.tr,
+          '${'lan_printer_found'.tr}: ${controller.lanIp.value}:${controller.lanPort.value}',
+          backgroundColor: Colors.green,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM);
+    } else {
+      Get.snackbar('error'.tr, 'lan_printer_not_found'.tr,
+          backgroundColor: Colors.redAccent,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM);
+    }
+  }
+
+  /// v24: manual LAN endpoint entry ("192.168.1.100" or "192.168.1.100:9100")
+  /// — the escape hatch when discovery can't reach the printer. Validates the
+  /// IPv4 shape, saves regardless of reachability (a transient probe failure
+  /// must not block configuration), and closes via the dialog's own route.
+  void _manualLanDialog(SettingsController controller) {
+    final ctrl = TextEditingController(
+      text: controller.lanIp.value.isEmpty
+          ? ''
+          : '${controller.lanIp.value}:${controller.lanPort.value}',
+    );
+    Get.dialog(
+      Builder(builder: (context) {
+        return AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text('lan_manual'.tr),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            keyboardType: TextInputType.url,
+            textDirection: TextDirection.ltr,
+            decoration: InputDecoration(
+              hintText: '192.168.1.100:9100',
+              helperText: 'lan_ip_hint'.tr,
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('cancel'.tr),
+            ),
+            FilledButton(
+              style:
+                  FilledButton.styleFrom(backgroundColor: const Color(0xFF1565C0)),
+              onPressed: () async {
+                final raw = ctrl.text.trim();
+                final parts = raw.split(':');
+                final ip = parts[0].trim();
+                final int port = parts.length > 1
+                    ? (int.tryParse(parts[1].trim()) ?? 9100)
+                    : 9100;
+                final ipOk = RegExp(
+                        r'^(25[0-5]|2[0-4]\d|1?\d{1,2})(\.(25[0-5]|2[0-4]\d|1?\d{1,2})){3}$')
+                    .hasMatch(ip);
+                if (!ipOk || port < 1 || port > 65535) {
+                  Get.snackbar('error'.tr, 'lan_invalid_ip'.tr,
+                      backgroundColor: Colors.redAccent,
+                      colorText: Colors.white,
+                      snackPosition: SnackPosition.BOTTOM);
+                  return; // keep the dialog open for correction
+                }
+                await controller.setManualLan(ip, port);
+                if (context.mounted) Navigator.of(context).pop();
+                Get.snackbar('success'.tr, '${'lan_printer_found'.tr}: $ip:$port',
+                    backgroundColor: Colors.green,
+                    colorText: Colors.white,
+                    snackPosition: SnackPosition.BOTTOM);
+              },
+              child: Text('save'.tr),
+            ),
+          ],
+        );
+      }),
+    );
+  }
+
+  /// v23 item 5 / v24: print a test slip on the ACTIVE transport (USB,
+  /// LAN or Bluetooth), so the user can confirm the printer works right
+  /// after pairing/selecting.
   Future<void> _testPrint(SettingsController controller) async {
     Get.snackbar('test_print'.tr, 'printing'.tr,
         snackPosition: SnackPosition.BOTTOM,
@@ -790,6 +955,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ? null
               : controller.usbDeviceId.value,
         );
+      } else if (PrinterPrefs.isLan) {
+        await LanPrintService().printTest();
       } else {
         await BluetoothPrintService().printTest();
       }

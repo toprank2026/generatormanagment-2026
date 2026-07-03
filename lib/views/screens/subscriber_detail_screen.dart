@@ -9,6 +9,7 @@ import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/utils/pdf_service.dart';
 import 'package:generatormanagment/utils/bluetooth_print_service.dart';
+import 'package:generatormanagment/utils/lan_print_service.dart';
 import 'package:generatormanagment/utils/usb_print_service.dart';
 import 'package:generatormanagment/utils/printer_prefs.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
@@ -388,6 +389,26 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
             ? null
             : settings.usbDeviceId.value,
       );
+    } else if (PrinterPrefs.isLan) {
+      // v24: LAN/Ethernet thermal printing (same rendered receipt as USB/BT).
+      // PrinterPrefs.lanIp is the always-current saved endpoint (the obs can
+      // lag behind an auto-discovery); onStatus keeps the user informed during
+      // a network search, which can take ~10-20s.
+      Get.snackbar(
+        'printing'.tr,
+        "${'sending_to'.tr} ${PrinterPrefs.lanIp.isEmpty ? 'lan_printer'.tr : PrinterPrefs.lanIp}...",
+        duration: const Duration(seconds: 2),
+      );
+      await LanPrintService().printReceipt(
+        receipt,
+        widget.subscriber,
+        accountantName,
+        onStatus: (_) => Get.snackbar('printing'.tr, 'lan_searching'.tr,
+            duration: const Duration(seconds: 4)),
+      );
+      // Reflect an auto-discovered endpoint in the settings obs.
+      settings.lanIp.value = PrinterPrefs.lanIp;
+      settings.lanPort.value = PrinterPrefs.lanPort;
     } else if (settings.printerAddress.value.isNotEmpty) {
       Get.snackbar(
         'printing'.tr,
@@ -408,6 +429,13 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
           .printReceipt(receipt, widget.subscriber, accountantName: accountantName);
     }
     } catch (e) {
+      // v24: a re-tap while a LAN job is still searching/streaming is NOT a
+      // failure — the first job is in flight and may yet print.
+      if (e.toString().contains('lan_busy')) {
+        Get.snackbar('printing'.tr, 'lan_print_in_progress'.tr,
+            snackPosition: SnackPosition.BOTTOM);
+        return;
+      }
       // A print failure must not be silent (or swallow the collected payment) —
       // the receipt is already saved; just report the print problem.
       Get.snackbar('error'.tr, '${'print_failed'.tr}: $e',
