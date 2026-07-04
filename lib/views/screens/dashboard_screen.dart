@@ -75,9 +75,11 @@ class DashboardScreen extends StatelessWidget {
                 ),
                 child: Stack(
                   children: [
-                    // Background Pattern
+                    // Background Pattern — v26 item 3: the transparent bolt
+                    // moved from the RIGHT side to the LEFT (physical sides;
+                    // nothing else about the card changed).
                     Positioned(
-                      right: -30,
+                      left: -30,
                       top: -30,
                       child: Icon(
                         Icons.flash_on,

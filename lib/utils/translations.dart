@@ -19,11 +19,14 @@ class Messages extends Translations {
       'payments': 'Payments',
       'expenses': 'Expenses',
       'dashboard': 'Dashboard',
-      'collected_revenue': 'Collected Revenue',
+      // v26: label SWAP requested by the owner (their business terminology):
+      // the collected-cash figure is titled "Net Profit" and the
+      // collected-minus-expenses figure is titled "Collected Revenue".
+      'collected_revenue': 'Net Profit',
       'remaining_fees': 'Remaining Fees',
       'total_subscribers': 'Total Subscribers',
       'total_expenses': 'Total Expenses',
-      'net_profit': 'Net Profit',
+      'net_profit': 'Collected Revenue',
       'amps': 'Amps',
       'backup_data': 'Backup Data (Export)',
       'restore_data': 'Restore Data (Import)',
@@ -126,6 +129,8 @@ class Messages extends Translations {
       'amps_to_discount': 'Amps to discount',
       'discount_amount': 'Discount amount',
       'amount_to_pay': 'Amount to pay',
+      // v26 item 2: per-row due amount in the subscriber lists.
+      'amount_due': 'Amount due',
       'no_price_set': 'No price set for this tariff this month — set it first',
       'pricing_start_date': 'Start date',
       // P3 — sync upload error reason
@@ -528,11 +533,12 @@ class Messages extends Translations {
       'payments': 'المدفوعات',
       'expenses': 'المصروفات',
       'dashboard': 'لوحة التحكم',
-      'collected_revenue': 'الإيرادات المحصلة',
+      // v26: label SWAP requested by the owner (see the en_US note).
+      'collected_revenue': 'صافي الربح',
       'remaining_fees': 'الرسوم المتبقية',
       'total_subscribers': 'إجمالي المشتركين',
       'total_expenses': 'إجمالي المصروفات',
-      'net_profit': 'صافي الربح',
+      'net_profit': 'الإيرادات المحصلة',
       'amps': 'أمبير',
       'backup_data': 'نسخ احتياطي للبيانات (تصدير)',
       'restore_data': 'استعادة البيانات (استيراد)',
@@ -635,6 +641,8 @@ class Messages extends Translations {
       'amps_to_discount': 'عدد الأمبيرات المخصومة',
       'discount_amount': 'مبلغ الخصم',
       'amount_to_pay': 'المبلغ المطلوب',
+      // v26 item 2: per-row due amount in the subscriber lists.
+      'amount_due': 'المبلغ الواجب تحصيله',
       'no_price_set': 'لا يوجد سعر محدد لهذه الفئة هذا الشهر — حدّده أولاً',
       'pricing_start_date': 'تاريخ البدء',
       // P3 — سبب فشل رفع المزامنة

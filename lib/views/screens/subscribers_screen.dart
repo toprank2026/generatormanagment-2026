@@ -4,6 +4,7 @@ import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/views/screens/add_subscriber_screen.dart';
 import 'package:generatormanagment/views/screens/subscriber_detail_screen.dart';
 
@@ -311,6 +312,35 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                                       style: TextStyle(
                                         color: Colors.grey[600],
                                         fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            // v26 item 2: the amount still to collect from
+                            // this subscriber for the selected month (batch
+                            // coverage+price maps — no per-row queries).
+                            // Hidden when the month has no price for the
+                            // subscriber's category (not yet billable).
+                            if (ctrl.dueFor(sub) != null)
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.payments_outlined,
+                                    size: 14,
+                                    color: Colors.grey[500],
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      "${'amount_due'.tr}: ${fmtAmount(ctrl.dueFor(sub)!)} ${'iqd'.tr}",
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: (ctrl.dueFor(sub) ?? 0) > 0
+                                            ? Colors.red[700]
+                                            : Colors.green[700],
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),

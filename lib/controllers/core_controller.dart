@@ -1,6 +1,8 @@
 import 'package:get/get.dart';
 import 'package:uuid/uuid.dart';
+import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
@@ -38,9 +40,16 @@ class CoreController extends GetxController {
   // month (one GROUP BY query per boards load) — shown under each board name.
   final Map<String, ({int paid, int unpaid})> boardPaidCounts =
       <String, ({int paid, int unpaid})>{};
+  // v26 item 2: per-subscriber COVERAGE (cash+discount) for the selected month
+  // and the month's per-branch category prices — so every list row can show
+  // the amount still to collect, with zero per-row queries.
+  final Map<String, double> _rowCoverage = <String, double>{};
+  final Map<String, Map<String, double>> _rowPricesByBranch =
+      <String, Map<String, double>>{};
 
-  /// Refreshes the row metadata (paid-ids set + circuit-name map) for the
-  /// active branch + globally-selected month. Called on page-1 list loads.
+  /// Refreshes the row metadata (paid-ids set + circuit-name map + coverage +
+  /// prices) for the active branch + globally-selected month. Called on page-1
+  /// list loads.
   Future<void> _loadRowMeta() async {
     try {
       final month = Get.find<MonthController>().selectedMonth.value;
@@ -48,13 +57,37 @@ class CoreController extends GetxController {
           month: month, branchId: _branchScope);
       final allCircuits =
           await _circuitRepo.getAllInBranch(branchId: _branchScope);
+      final coverage = await _subscriberRepo.coverageBySubscriber(
+          month: month, branchId: _branchScope);
+      final prices = await MonthlyPriceRepository().pricesForMonthByBranch(month);
       paidIds
         ..clear()
         ..addAll(paid);
       circuitNames
         ..clear()
         ..addEntries(allCircuits.map((c) => MapEntry(c.id, c.name)));
+      _rowCoverage
+        ..clear()
+        ..addAll(coverage);
+      _rowPricesByBranch
+        ..clear()
+        ..addAll(prices);
     } catch (_) {/* row badges are best-effort; the list itself still loads */}
+  }
+
+  /// v26 item 2: the amount still to collect from [sub] for the selected month
+  /// (due = amps × its category's price − coverage, clamped at 0). Returns null
+  /// when the month has NO price for the subscriber's branch+category (not yet
+  /// billable — the row hides the line; the no-price banner explains why).
+  /// Same price/coverage rules as the paid/unpaid dot, so the two never
+  /// contradict each other on a row.
+  double? dueFor(Subscriber sub) {
+    final branchKey = sub.branchId ?? DbHelper.kMainBranchId;
+    final price = _rowPricesByBranch[branchKey]?[
+        SubscriberCategory.normalize(sub.category)];
+    if (price == null) return null;
+    final due = sub.amps * price - (_rowCoverage[sub.id] ?? 0);
+    return due < 0 ? 0 : due;
   }
 
   // Pagination (subscribers). Large page (R1/D1): effectively "show all" for

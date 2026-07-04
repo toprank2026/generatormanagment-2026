@@ -2505,18 +2505,22 @@ function viewMyReports(){
     // v14: collection-rate gauge removed from the report.
     wrap.appendChild(repChartCard("المسددون وغير المسددين",repDonut(paid,unpaid,totalSubs)));
 
-    var bars=[{label:"المحصّل",value:collected,color:"#1565C0"}];
+    /* v26: label SWAP requested by the owner (their business terminology, in
+       lockstep with the app's reports screen): the collected-cash figure is
+       titled "صافي الربح" and the collected-minus-expenses figure is titled
+       "الإيرادات المحصلة". Values/bindings unchanged. */
+    var bars=[{label:"صافي الربح",value:collected,color:"#1565C0"}];
     if(hasExpenses) bars.push({label:"المصروفات",value:expenses,color:"#FB8C00"});
-    if(hasNet) bars.push({label:"صافي الربح",value:net,color:"#00897B"});
+    if(hasNet) bars.push({label:"الإيرادات المحصلة",value:net,color:"#00897B"});
     wrap.appendChild(repChartCard("المحصّل والمصروفات والأرباح",repBars(bars)));
 
     var cards=[
       {label:"المتوقع",value:fmtPrice(expected),icon:"account_balance_wallet",chip:"blue"},
-      {label:"المحصّل",value:fmtPrice(collected),icon:"check_circle",chip:"green"},
+      {label:"صافي الربح",value:fmtPrice(collected),icon:"check_circle",chip:"green"},
       {label:"المتبقي",value:fmtPrice(remaining),icon:"hourglass_top",chip:"red"}
     ];
     if(hasExpenses) cards.push({label:"المصروفات",value:fmtPrice(expenses),icon:"payments",chip:"orange"});
-    if(hasNet) cards.push({label:"صافي الربح",value:fmtPrice(net),icon:"trending_up",chip:"teal",neg:net<0});
+    if(hasNet) cards.push({label:"الإيرادات المحصلة",value:fmtPrice(net),icon:"trending_up",chip:"teal",neg:net<0});
     // Ampere price per tariff: three cards (Gold / Regular / Commercial) from the
     // categoryPrices map. Gracefully falls back to a single سعر الأمبير card on
     // older backends that don't return categoryPrices (mirrors the optional-field

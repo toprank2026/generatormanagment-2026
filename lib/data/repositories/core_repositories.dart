@@ -649,6 +649,35 @@ class SubscriberRepository {
     return rows.map((r) => r['id'] as String).toSet();
   }
 
+  /// v26 item 2: per-subscriber COVERAGE (cash + waived discount) for [month]
+  /// in ONE grouped query — feeds the per-row "amount due" line in the
+  /// subscriber lists without an N+1. Same coverage rule as
+  /// [getByPaymentStatus] (valid receipts only, branch-scoped).
+  Future<Map<String, double>> coverageBySubscriber({
+    required String month,
+    String? branchId,
+  }) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>['month = ?', "status = 'valid'"];
+    final args = <dynamic>[month];
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
+    final rows = await db.rawQuery(
+      'SELECT subscriber_id, '
+      'SUM(paid_amount) + SUM(IFNULL(discount_value, 0)) AS coverage '
+      'FROM receipts WHERE ${clauses.join(' AND ')} GROUP BY subscriber_id',
+      args,
+    );
+    final map = <String, double>{};
+    for (final r in rows) {
+      map[r['subscriber_id'] as String] =
+          ((r['coverage'] as num?) ?? 0).toDouble();
+    }
+    return map;
+  }
+
   /// v22 item 10: paid/unpaid subscriber counts PER BOARD for [month] — one
   /// GROUP BY query for the whole boards grid (no per-board N+1). Same
   /// category-aware derived-status rule as [getByPaymentStatus]: paid = a price
