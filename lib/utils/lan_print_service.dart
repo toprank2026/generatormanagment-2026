@@ -160,8 +160,9 @@ class LanPrintService {
         bytes.addAll(gen.imageRaster(im));
       }
       bytes.addAll(gen.feed(2));
+      // v28 item 16: auto-cut EACH receipt separately (was one cut at the end).
+      if (withCut) bytes.addAll(gen.cut());
     }
-    if (withCut) bytes.addAll(gen.cut()); // auto-cut
     return bytes;
   }
 

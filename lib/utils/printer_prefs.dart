@@ -123,7 +123,7 @@ class PrinterPrefs {
     'sec_discount',
     'sec_remaining',
     'sec_accountant',
-    'sec_qr',
+    // v28 item 1: QR is MANDATORY now — no toggle (always printed).
     'sec_footer',
   ];
   static final Map<String, bool> _sections = {};

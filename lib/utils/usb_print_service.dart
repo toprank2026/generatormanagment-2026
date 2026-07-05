@@ -109,8 +109,9 @@ class UsbPrintService {
           bytes.addAll(gen.imageRaster(im));
         }
         bytes.addAll(gen.feed(2));
+        // v28 item 16: auto-cut EACH receipt separately (was one cut at the end).
+        bytes.addAll(gen.cut());
       }
-      bytes.addAll(gen.cut()); // auto-cut
 
       // 4) Send the bytes over USB (native handles permission + bulk write).
       //    The .timeout is a backstop so a never-returning native call (e.g. the
@@ -216,7 +217,42 @@ class UsbPrintService {
   // rendered to its own image, exactly like the Bluetooth service.
   // ----------------------------------------------------------------------
 
-  /// Builds the ordered list of receipt images (header → table rows → QR →
+  /// v28 item 9: expressive icon per receipt section (shared by BT + USB/LAN).
+  /// Referenced as const IconData so the icon tree-shaker keeps the glyphs.
+  static const Map<String, IconData> sectionIcons = {
+    'sec_station': Icons.bolt,
+    'sec_receipt_no': Icons.confirmation_number,
+    'sec_date': Icons.event,
+    'sec_subscriber': Icons.person,
+    'sec_month': Icons.calendar_month,
+    'sec_board': Icons.dashboard,
+    'sec_circuit': Icons.settings_input_component,
+    'sec_amps': Icons.electric_bolt,
+    'sec_price': Icons.sell,
+    'sec_category': Icons.category,
+    'sec_paid': Icons.payments,
+    'sec_method': Icons.credit_card,
+    'sec_discount': Icons.discount,
+    'sec_remaining': Icons.account_balance_wallet,
+    'sec_accountant': Icons.badge,
+  };
+
+  static String _iconGlyph(IconData i) => String.fromCharCode(i.codePoint);
+
+  /// Loads the app logo (`images/blue.png`) as a ui.Image sized to [target]px.
+  Future<ui.Image?> _loadLogo(int target) async {
+    try {
+      final data = await rootBundle.load('images/blue.png');
+      final codec = await ui.instantiateImageCodec(
+          data.buffer.asUint8List(), targetWidth: target);
+      final frame = await codec.getNextFrame();
+      return frame.image;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Builds the ordered list of receipt images (header → table rows → QR block →
   /// footer), 1:1 with the rows the Bluetooth `printReceipt` emits.
   Future<List<img.Image>> _buildReceiptImages(
     Receipt receipt,
@@ -236,24 +272,31 @@ class UsbPrintService {
         ? (await CircuitRepository().nameById(sub.circuitId) ?? '')
         : '';
 
-    // Header.
-    final String gName = _generatorName();
-    if (PrinterPrefs.showSection('sec_station') && gName.isNotEmpty) {
-      out.add(await _textImage(gName, 30, center: true));
-    }
+    // Header (v28 items A1-A3): the app logo + "تطبيق / flash" column at the TOP
+    // beside the generator (station) name.
+    final String gName =
+        PrinterPrefs.showSection('sec_station') ? _generatorName() : '';
+    out.add(await _headerBlockImage(gName));
     out.add(await _textImage('وصل استلام', 20, center: true));
 
-    // Bordered table — each row gated by its section.
-    final List<List<String>> rows = [];
+    // Bordered ROUNDED table — each row gated by its section + an expressive
+    // icon (v28 items 9/12). A row = (sectionKey, label, value).
+    final List<({String key, String label, String value})> rows = [];
     void add(String key, String label, String value) {
-      if (PrinterPrefs.showSection(key)) rows.add([label, value]);
+      if (PrinterPrefs.showSection(key)) {
+        rows.add((key: key, label: label, value: value));
+      }
     }
     add('sec_receipt_no', 'رقم الوصل', receipt.receiptNo.toString());
     add('sec_date', 'التاريخ', df.format(DateTime.parse(receipt.issuedAt)));
     add('sec_subscriber', 'المشترك', sub.name);
     add('sec_month', 'الشهر', receipt.month);
-    if (boardName.isNotEmpty) rows.add(['البورد', boardName]);
-    if (circuitName.isNotEmpty) rows.add(['الجوزة', circuitName]);
+    if (boardName.isNotEmpty) {
+      rows.add((key: 'sec_board', label: 'البورد', value: boardName));
+    }
+    if (circuitName.isNotEmpty) {
+      rows.add((key: 'sec_circuit', label: 'الجوزة', value: circuitName));
+    }
     add('sec_amps', 'الأمبيرات', receipt.ampsSnapshot.toString());
     add('sec_price', 'سعر الأمبير', fmtAmount(receipt.priceSnapshot));
     add('sec_category', 'نوع الاشتراك',
@@ -264,25 +307,39 @@ class UsbPrintService {
     add('sec_remaining', 'المتبقي', '${fmtAmount(receipt.remainingAfter)} د.ع');
     if (accountantName.isNotEmpty &&
         PrinterPrefs.showSection('sec_accountant')) {
-      rows.add(['المحاسب', accountantName]);
+      rows.add((key: 'sec_accountant', label: 'المحاسب', value: accountantName));
     }
     for (int i = 0; i < rows.length; i++) {
-      out.add(await _tableRowImage(rows[i][0], rows[i][1], top: i == 0));
-    }
-
-    // QR (opens this receipt in the admin panel). Skipped only if it fails.
-    if (PrinterPrefs.showSection('sec_qr')) {
-      try {
-        out.add(await _qrImage(_receiptQrUrl(receipt)));
-      } catch (_) {/* QR is best-effort, like the Bluetooth path */}
+      out.add(await _tableRowImage(rows[i].label, rows[i].value,
+          iconKey: rows[i].key, top: i == 0, bottom: i == rows.length - 1));
     }
 
     // Footer.
     if (PrinterPrefs.showSection('sec_footer')) {
+      out.add(await _spacerImage(8));
       out.add(await _textImage('شكراً لكم!', 20, center: true));
       out.add(await _textImage('Powered by Flash', 18, center: true));
     }
+
+    // v28 (revised): QR is MANDATORY and sits at the BOTTOM CENTER, framed +
+    // rounded, at a clearly-scannable size (separated from the table + footer).
+    out.add(await _spacerImage(14));
+    try {
+      out.add(await _qrBlockImage(_receiptQrUrl(receipt)));
+    } catch (_) {/* best-effort, like the Bluetooth path */}
     return out;
+  }
+
+  /// A blank [h]px-tall white strip — visual spacing between raster blocks.
+  Future<img.Image> _spacerImage(int h) async {
+    final double width = PrinterPrefs.pixelWidth;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawRect(
+        Rect.fromLTWH(0, 0, width, h.toDouble()), Paint()..color = Colors.white);
+    final uiImage =
+        await recorder.endRecording().toImage(width.toInt(), h);
+    return _uiToImg(uiImage);
   }
 
   /// Renders one centered/right-aligned Arabic text line to an image.
@@ -317,92 +374,235 @@ class UsbPrintService {
     return _uiToImg(uiImage);
   }
 
-  /// Renders one bordered 2-column row (label | value) — identical geometry to
-  /// `BluetoothPrintService._printTableRow` so the table looks the same.
+  /// Renders one bordered 2-column row (label | value) with a section ICON and
+  /// ROUNDED outer corners (v28 items 9/12) — identical geometry to
+  /// `BluetoothPrintService._printTableRow` so BT and USB/LAN match.
   Future<img.Image> _tableRowImage(
     String label,
     String value, {
     double fontSize = 22,
+    String? iconKey,
     bool top = false,
+    bool bottom = false,
   }) async {
     final double width = PrinterPrefs.pixelWidth;
     const double pad = 10;
     const double rowGap = 8;
+    const double radius = 14;
     final double divX = width * 0.45; // value column width
 
-    TextPainter mk(String t, TextAlign align, double maxW) {
-      return TextPainter(
+    // v28 (RTL): the section ICON is anchored at the FAR RIGHT of the row and the
+    // label is right-aligned immediately to its left — painted as SEPARATE runs
+    // so the BiDi algorithm can never reorder the Material glyph to the wrong
+    // side of the Arabic label. Every row shares the same icon x so the icons
+    // line up in a clean right-hand column.
+    const double iconGap = 6;
+    final IconData? ic = iconKey == null ? null : sectionIcons[iconKey];
+    TextPainter? iconTp;
+    if (ic != null) {
+      iconTp = TextPainter(
         text: TextSpan(
-          text: t,
+          text: _iconGlyph(ic),
           style: TextStyle(
+            fontFamily: ic.fontFamily,
+            package: ic.fontPackage,
             color: Colors.black,
             fontSize: fontSize,
-            fontWeight: FontWeight.bold,
           ),
         ),
-        textDirection: ui.TextDirection.rtl,
-        textAlign: align,
-      )..layout(maxWidth: maxW);
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
     }
+    final double iconW = iconTp?.width ?? 0;
+    final double iconSlot = iconTp != null ? iconW + iconGap : 0;
 
-    final lp = mk(label, TextAlign.right, width - divX - pad * 2);
-    final vp = mk(value, TextAlign.left, divX - pad * 2);
-    final double rh =
-        (lp.height > vp.height ? lp.height : vp.height) + rowGap * 2;
+    final lp = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: TextStyle(
+            color: Colors.black,
+            fontSize: fontSize,
+            fontWeight: FontWeight.bold),
+      ),
+      textDirection: ui.TextDirection.rtl,
+      textAlign: TextAlign.right,
+    )..layout(maxWidth: width - divX - pad * 2 - iconSlot);
+    final vp = TextPainter(
+      text: TextSpan(
+          text: value,
+          style: TextStyle(
+              color: Colors.black,
+              fontSize: fontSize,
+              fontWeight: FontWeight.bold)),
+      textDirection: ui.TextDirection.rtl,
+      // v28 (RTL): values start from the RIGHT of their column too (hug the
+      // divider) so ALL table data reads right-to-left.
+      textAlign: TextAlign.right,
+    )..layout(maxWidth: divX - pad * 2);
+    final double rh = [lp.height, vp.height, iconTp?.height ?? 0]
+            .reduce((a, b) => a > b ? a : b) +
+        rowGap * 2;
     final int h = rh.ceil() + 1;
+    final double hh = h.toDouble();
 
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     canvas.drawRect(
-      Rect.fromLTWH(0, 0, width, h.toDouble()),
-      Paint()..color = Colors.white,
-    );
-    final line = Paint()
+        Rect.fromLTWH(0, 0, width, hh), Paint()..color = Colors.white);
+    final border = Paint()
       ..color = Colors.black
-      ..strokeWidth = 1.4
+      ..strokeWidth = 1.6
       ..style = PaintingStyle.stroke;
-    final double hh = h.toDouble();
-    canvas.drawLine(const Offset(1, 0), Offset(1, hh), line); // left
-    canvas.drawLine(Offset(width - 1, 0), Offset(width - 1, hh), line); // right
-    canvas.drawLine(Offset(0, hh - 1), Offset(width, hh - 1), line); // bottom
-    canvas.drawLine(Offset(divX, 0), Offset(divX, hh), line); // divider
-    if (top) canvas.drawLine(const Offset(0, 1), Offset(width, 1), line);
+    // Outer border as an RRect: round ONLY the table's outer corners (top row =
+    // top corners, bottom row = bottom corners), straight elsewhere.
+    final rrect = RRect.fromRectAndCorners(
+      Rect.fromLTWH(1, top ? 1 : 0, width - 2, hh - (top ? 1 : 0) - (bottom ? 1 : 0)),
+      topLeft: top ? const Radius.circular(radius) : Radius.zero,
+      topRight: top ? const Radius.circular(radius) : Radius.zero,
+      bottomLeft: bottom ? const Radius.circular(radius) : Radius.zero,
+      bottomRight: bottom ? const Radius.circular(radius) : Radius.zero,
+    );
+    canvas.drawRRect(rrect, border);
+    canvas.drawLine(Offset(divX, 2), Offset(divX, hh - 2), border); // divider
 
-    lp.paint(canvas, Offset(divX + pad, rowGap));
-    vp.paint(canvas, Offset(pad, rowGap));
+    // Icon at the far right, label right-aligned flush to its left, value
+    // right-aligned against the divider — all vertically centered. A TextPainter
+    // laid out with minWidth 0 collapses to its NATURAL width, so textAlign.right
+    // is a no-op; we position each run by its painted width to actually
+    // right-anchor it (this is what makes the row read right-to-left).
+    if (iconTp != null) {
+      iconTp.paint(
+          canvas, Offset(width - pad - iconW, (hh - iconTp.height) / 2));
+    }
+    lp.paint(canvas,
+        Offset(width - pad - iconSlot - lp.width, (hh - lp.height) / 2));
+    vp.paint(canvas, Offset(divX - pad - vp.width, (hh - vp.height) / 2));
 
-    final picture = recorder.endRecording();
-    final uiImage = await picture.toImage(width.toInt(), h);
+    final uiImage = await recorder.endRecording().toImage(width.toInt(), h);
     return _uiToImg(uiImage);
   }
 
-  /// Renders [data] as a centered QR image — identical to the Bluetooth path.
-  Future<img.Image> _qrImage(String data) async {
+  /// v28 (revised A1-A3): the TOP header block — the app logo + a "تطبيق / flash"
+  /// column beside the generator (station) name, centered on the paper. When
+  /// [gName] is empty (station section hidden / no name) it is just the branded
+  /// logo + app name.
+  Future<img.Image> _headerBlockImage(String gName) async {
     final double paper = PrinterPrefs.pixelWidth;
-    const double qr = 160; // v23 item 5: QR reduced slightly (was 190)
-    final double off = (paper - qr) / 2;
-    final code = bc.Barcode.qrCode(
-      errorCorrectLevel: bc.BarcodeQRCorrectionLevel.medium,
-    );
+    const double logoSz = 64; // v28: slightly larger for visibility
+    const double gap = 12;
+    final ui.Image? logo = await _loadLogo(logoSz.toInt());
+
+    TextPainter mkText(String t, double fs, {double? maxW, bool center = false}) {
+      final tp = TextPainter(
+        text: TextSpan(
+            text: t,
+            style: TextStyle(
+                color: Colors.black, fontSize: fs, fontWeight: FontWeight.bold)),
+        textDirection: ui.TextDirection.rtl,
+        textAlign: center ? TextAlign.center : TextAlign.right,
+      );
+      tp.layout(maxWidth: maxW ?? double.infinity);
+      return tp;
+    }
+
+    // "تطبيق" over "flash" column.
+    final tApp = mkText('تطبيق', 16);
+    final tFlash = mkText('flash', 16);
+    final double appW = tApp.width > tFlash.width ? tApp.width : tFlash.width;
+    final double appH = tApp.height + tFlash.height + 2;
+
+    // Generator/station name wraps within the width left of the branding.
+    final double leftGroupW = logoSz + gap + appW;
+    final double nameMaxW =
+        (paper - leftGroupW - gap * 2 - 8).clamp(60.0, paper).toDouble();
+    final TextPainter? namePainter =
+        gName.isEmpty ? null : mkText(gName, 26, maxW: nameMaxW, center: true);
+    final double nameW = namePainter?.width ?? 0;
+    final double nameH = namePainter?.height ?? 0;
+
+    final double contentH =
+        [logoSz, appH, nameH].reduce((a, b) => a > b ? a : b);
+    final double blockH = contentH + 18;
+    final double groupW =
+        leftGroupW + (namePainter != null ? gap + nameW : 0);
+    final double startX = ((paper - groupW) / 2).clamp(0, paper).toDouble();
 
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     canvas.drawRect(
-      Rect.fromLTWH(0, 0, paper, qr + 8),
-      Paint()..color = Colors.white,
-    );
+        Rect.fromLTWH(0, 0, paper, blockH), Paint()..color = Colors.white);
+
+    // 1) Logo.
+    final double logoY = (blockH - logoSz) / 2;
+    if (logo != null) {
+      canvas.drawImageRect(
+        logo,
+        Rect.fromLTWH(0, 0, logo.width.toDouble(), logo.height.toDouble()),
+        Rect.fromLTWH(startX, logoY, logoSz, logoSz),
+        Paint(),
+      );
+    }
+    // 2) تطبيق / flash column.
+    final double appX = startX + logoSz + gap;
+    final double appY = (blockH - appH) / 2;
+    tApp.paint(canvas, Offset(appX, appY));
+    tFlash.paint(canvas, Offset(appX, appY + tApp.height + 2));
+    // 3) Generator name beside the branding.
+    if (namePainter != null) {
+      namePainter.paint(
+          canvas, Offset(appX + appW + gap, (blockH - nameH) / 2));
+    }
+
+    final uiImage =
+        await recorder.endRecording().toImage(paper.toInt(), blockH.toInt());
+    return _uiToImg(uiImage);
+  }
+
+  /// v28 (revised A4-A5): the QR BLOCK — a clearly-scannable QR in a rounded
+  /// square frame, CENTERED at the bottom of the receipt. Mandatory.
+  Future<img.Image> _qrBlockImage(String data) async {
+    final double paper = PrinterPrefs.pixelWidth;
+    // v28: reduced QR (58mm → 148px ≈ 18.5mm, 80mm → 156px) — clearly smaller
+    // than the old 200/260 but kept at ~4 printer-dots per module so the
+    // near-capacity V5 receipt-URL QR stays reliably scannable under thermal
+    // dot-gain (120px = 3.24 dots/module risked intermittent scans on 58mm).
+    final double qr = PrinterPrefs.is80mm ? 156 : 148;
+    const double framePad = 12; // padding between QR and its frame
+    final double frame = qr + framePad * 2;
+    final double blockH = frame + 16;
+    final double startX = ((paper - frame) / 2).clamp(0, paper).toDouble();
+    final double frameY = (blockH - frame) / 2;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawRect(
+        Rect.fromLTWH(0, 0, paper, blockH), Paint()..color = Colors.white);
+
+    // Rounded square frame around the centered QR.
+    final rframe = RRect.fromRectAndRadius(
+        Rect.fromLTWH(startX, frameY, frame, frame),
+        const Radius.circular(14));
+    canvas.drawRRect(
+        rframe,
+        Paint()
+          ..color = Colors.black
+          ..strokeWidth = 1.8
+          ..style = PaintingStyle.stroke);
+    final code = bc.Barcode.qrCode(
+        errorCorrectLevel: bc.BarcodeQRCorrectionLevel.medium);
     final black = Paint()..color = Colors.black;
     for (final el in code.make(data, width: qr, height: qr)) {
       if (el is bc.BarcodeBar && el.black) {
         canvas.drawRect(
-          Rect.fromLTWH(off + el.left, 4 + el.top, el.width, el.height),
+          Rect.fromLTWH(startX + framePad + el.left, frameY + framePad + el.top,
+              el.width, el.height),
           black,
         );
       }
     }
 
-    final picture = recorder.endRecording();
-    final uiImage = await picture.toImage(paper.toInt(), (qr + 8).toInt());
+    final uiImage =
+        await recorder.endRecording().toImage(paper.toInt(), blockH.toInt());
     return _uiToImg(uiImage);
   }
 

@@ -580,8 +580,10 @@ var API={
   myRecent:function(limit,page){ return api("GET","/api/account/recent?limit="+(limit||10)+"&page="+(page||1)); },
   // Flash v11: owner approves/rejects an accountant wallet settlement request
   // (mutates the owner mirror row in place; the accountant pulls the decision).
-  decideSettlement:function(localId,status,note){
+  decideSettlement:function(localId,status,note,amount){
     var body={status:status,note:note};
+    // v28 item 12: salary approvals carry the owner-entered amount.
+    if(amount!=null) body.amount=amount;
     // When viewing a BRANCH account, the settlement lives in that branch's mirror
     // — tell the backend which one (else it 404s "Settlement not found").
     if(typeof acctBranch!=="undefined" && acctBranch.id) body.branchId=acctBranch.id;
@@ -1659,7 +1661,7 @@ var SYNC_COLUMNS={
     {label:"المحاسب",get:function(d){ return syncText(d.accountant_id); }},
     {label:"المبلغ",get:function(d){ return d.amount!=null?fmtPrice(d.amount):"—"; }},
     // v12: payment method ('cash'→نقدي, 'card'→بطاقة, default نقدي).
-    {label:"الطريقة",get:function(d){ return d.method==="card"?"بطاقة":"نقدي"; }},
+    {label:"الطريقة",get:function(d){ return settlementMethodLabel(d.method); }},
     {label:"الحالة",get:function(d){ return settlementStatusBadge(d.status); }},
     {label:"تاريخ الطلب",get:function(d){ return d.requested_at?fmtDate(d.requested_at):"—"; }}
   ]
@@ -1668,6 +1670,11 @@ var SYNC_COLUMNS={
 var EXPENSE_CATEGORY_LABELS={Fuel:"وقود",Oil:"زيت",Maintenance:"صيانة",Salaries:"رواتب",Rent:"إيجار",Other:"أخرى"};
 function expenseCategoryLabel(cat){
   return EXPENSE_CATEGORY_LABELS[cat]||syncText(cat);
+}
+// v28 item 12 (Flutter parity): settlement method label — the salary wallet
+// (v27) must read "راتب" here, not fall through to "نقدي".
+function settlementMethodLabel(m){
+  return m==="salary"?"راتب":(m==="card"?"بطاقة":"نقدي");
 }
 // Arabic status badge for a settlement ('pending'|'approved'|'rejected').
 var SETTLEMENT_STATUS_LABELS={pending:"قيد الانتظار",approved:"موافق عليه",rejected:"مرفوض"};
@@ -2666,13 +2673,28 @@ function viewMyEntity(entity,relField,relValue){
   function settlementActions(r){
     var d=(r&&r.data)||{};
     if(d.status!=="pending") return [];
-    function decide(status,okMsg){
-      API.decideSettlement(r.localId,status).then(function(){
+    function decide(status,okMsg,amount){
+      API.decideSettlement(r.localId,status,undefined,amount).then(function(){
         toast(okMsg,"ok"); load();
       }).catch(function(err){ toast(err.message||"تعذّر تنفيذ الإجراء","err"); });
     }
+    // v28 item 12 (Flutter parity): approving a SALARY request first asks the
+    // owner for the amount (the accountant requested it with none). Cash/card
+    // approvals keep the accountant's own amount and skip the prompt.
+    function approve(){
+      if(d.method==="salary"){
+        var raw=window.prompt("مبلغ الراتب (د.ع):","");
+        if(raw===null) return;                 // cancelled
+        // Strip ASCII + Arabic grouping separators/whitespace before parsing.
+        var amt=parseFloat(String(raw).replace(/[,،٬\s]/g,""));
+        if(!isFinite(amt)||amt<=0){ toast("أدخل مبلغاً صحيحاً","err"); return; }
+        decide("approved","تمت الموافقة على التسوية",amt);
+      } else {
+        decide("approved","تمت الموافقة على التسوية");
+      }
+    }
     return [
-      el("button",{class:"btn sm success",onclick:function(){ decide("approved","تمت الموافقة على التسوية"); }},["موافقة"]),
+      el("button",{class:"btn sm success",onclick:approve},["موافقة"]),
       el("button",{class:"btn sm danger ghost",onclick:function(){ decide("rejected","تم رفض التسوية"); }},["رفض"])
     ];
   }
@@ -2968,7 +2990,7 @@ function entityDetailContent(entity,rec,d,maps){
   } else if(entity==="settlements"){
     row("المحاسب",nameOf("accountants",d.accountant_id));
     row("المبلغ",d.amount!=null?fmtPrice(d.amount):null);
-    row("الطريقة",d.method==="card"?"بطاقة":"نقدي");
+    row("الطريقة",settlementMethodLabel(d.method));
     badgeRow("الحالة",settlementStatusBadge(d.status));
     row("تاريخ الطلب",d.requested_at?fmtDate(d.requested_at):null);
     mark("accountant_id","amount","method","status","requested_at");

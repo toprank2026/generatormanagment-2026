@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart' show Colors;
 import 'package:get/get.dart';
+import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
@@ -36,6 +37,9 @@ class SettlementController extends GetxController {
   // = Σ APPROVED salary settlements (informational).
   final salaryReceived = 0.0.obs;
   final hasPendingSalary = false.obs;
+  // v28 item 11/12: this CALENDAR MONTH's salary status for the accountant —
+  // null (can request) | 'pending' | 'approved' ("تم استلام الراتب", disabled).
+  final salaryMonthStatus = RxnString();
 
   final isLoading = false.obs;
   final isRequesting = false.obs; // v14: loading while a settlement request saves
@@ -76,6 +80,7 @@ class SettlementController extends GetxController {
     hasPendingCard.value = false;
     salaryReceived.value = 0;
     hasPendingSalary.value = false;
+    salaryMonthStatus.value = null;
     history.clear();
     hasMore.value = false;
     update();
@@ -132,6 +137,11 @@ class SettlementController extends GetxController {
       // is cash/card; salary lives in the synced settlements table).
       hasPendingSalary.value = await _repo.hasPending(id, 'salary');
       salaryReceived.value = await _repo.approvedSum(id, 'salary');
+      // v28 item 11/12: this month's salary status (blocks re-request + drives
+      // the "تم استلام الراتب" button state after approval).
+      final curMonth = DateFormat('yyyy-MM').format(DateTime.now());
+      salaryMonthStatus.value =
+          await _repo.salaryStatusForMonth(id, curMonth);
       _page = 1;
       final page = await _repo.history(id, limit: _perPage + 1, offset: 0);
       hasMore.value = page.length > _perPage;
@@ -177,6 +187,16 @@ class SettlementController extends GetxController {
     if (await _repo.hasPending(id, method)) {
       Get.snackbar('settlement'.tr, 'wallet_pending_exists'.tr);
       return false;
+    }
+    // v28 item 11: a salary settlement is allowed only ONCE per calendar month
+    // (a pending or already-approved salary this month blocks a new request).
+    if (isSalary) {
+      final curMonth = DateFormat('yyyy-MM').format(DateTime.now());
+      final st = await _repo.salaryStatusForMonth(id, curMonth);
+      if (st != null) {
+        Get.snackbar('settlement'.tr, 'salary_once_per_month'.tr);
+        return false;
+      }
     }
     // v14: loading until the request is saved + synced (prevents double-tap).
     isRequesting.value = true;

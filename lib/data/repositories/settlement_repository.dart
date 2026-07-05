@@ -171,6 +171,40 @@ class SettlementRepository {
     return ((r.isNotEmpty ? r.first['s'] as num? : 0) ?? 0).toDouble();
   }
 
+  /// v28 item 11: the status of THIS accountant's salary settlement for [month]
+  /// (local `yyyy-MM`), or null when none exists. Enforces "one salary request
+  /// per month": returns 'pending' or 'approved' to block a new request, and
+  /// drives the "تم استلام الراتب" button state after approval. A 'rejected' row
+  /// does NOT block (the owner declined it, so the month is still open).
+  /// Additive, read-only.
+  ///
+  /// `requested_at` is stored UTC, but [month] is the accountant's LOCAL calendar
+  /// month, so we parse each row to local time and compare there — otherwise a
+  /// request made in the first local hours of a month (persisted under the
+  /// PREVIOUS UTC month) would slip past a raw UTC-prefix match and a duplicate
+  /// salary could be requested at the month boundary.
+  Future<String?> salaryStatusForMonth(String accountantId, String month) async {
+    final db = await _dbHelper.database;
+    final rows = await db.rawQuery(
+      "SELECT status, requested_at FROM settlements "
+      "WHERE accountant_id = ? AND COALESCE(method,'cash') = 'salary' "
+      "AND status IN ('pending','approved') "
+      "ORDER BY requested_at DESC",
+      [accountantId],
+    );
+    for (final r in rows) {
+      final raw = r['requested_at'] as String?;
+      if (raw == null) continue;
+      final dt = DateTime.tryParse(raw);
+      if (dt == null) continue;
+      final local = dt.toLocal();
+      final m = '${local.year.toString().padLeft(4, '0')}-'
+          '${local.month.toString().padLeft(2, '0')}';
+      if (m == month) return r['status'] as String?;
+    }
+    return null;
+  }
+
   /// v16: owner/admin decision on a settlement. Updates the LOCAL row
   /// (status + decided_at/by) and — because [Settlement.toMap] stamps a fresh
   /// `updated_at` — the sync triggers queue it so a `SyncController.poke()`

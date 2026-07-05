@@ -239,6 +239,87 @@ test('settlements: bad status -> 400; unknown localId -> 404; non-owner -> 403',
 });
 
 // ---------------------------------------------------------------------------
+// v28 item 12 — a SALARY settlement is requested with no amount; the owner sets
+// it on approval (panel parity with the Flutter owner flow). A valid positive
+// `amount` in the decision body is stamped onto data.amount; it is ignored on
+// reject and when non-positive/invalid.
+// ---------------------------------------------------------------------------
+test('salary decision: approve stamps the owner-entered amount onto the mirror row', async () => {
+  const owner = await registerOwner();
+  const acct = await makeAccountant(owner);
+
+  const reqIso = new Date(Date.now() - 60000).toISOString();
+  const push = await api('POST', '/api/sync/push', {
+    token: acct.token,
+    body: {
+      records: [
+        {
+          entity: 'settlements',
+          localId: 'sal-1',
+          deleted: false,
+          updatedAt: reqIso,
+          data: {
+            id: 'sal-1',
+            accountant_id: acct.created.localId,
+            amount: 0, // salary requested with NO amount
+            method: 'salary',
+            status: 'pending',
+            requested_at: reqIso,
+            updated_at: reqIso,
+          },
+        },
+      ],
+    },
+  });
+  assert.equal(push.status, 200);
+
+  // Owner approves WITH an amount → data.amount is set.
+  const decide = await api('POST', '/api/account/settlements/sal-1/decision', {
+    token: owner.token,
+    body: { status: 'approved', amount: 500000 },
+  });
+  assert.equal(decide.status, 200, `salary approve should 200, got ${decide.status} ${JSON.stringify(decide.data)}`);
+  assert.equal(decide.data.settlement.status, 'approved');
+  assert.equal(decide.data.settlement.amount, 500000, 'owner-entered salary amount is stamped');
+
+  // Accountant pull reflects the amount.
+  const pull = await api('GET', '/api/sync/pull?since=1970-01-01T00:00:00.000Z', { token: acct.token });
+  const rec = pull.data.records.find((r) => r.localId === 'sal-1');
+  assert.ok(rec, 'pull must include the salary settlement');
+  assert.equal(rec.data.amount, 500000, 'pull reflects the owner-entered salary amount');
+});
+
+test('salary decision: a non-positive/invalid amount is ignored (stays as requested)', async () => {
+  const owner = await registerOwner();
+  const acct = await makeAccountant(owner);
+
+  const reqIso = new Date(Date.now() - 60000).toISOString();
+  await api('POST', '/api/sync/push', {
+    token: acct.token,
+    body: {
+      records: [
+        {
+          entity: 'settlements',
+          localId: 'sal-2',
+          deleted: false,
+          updatedAt: reqIso,
+          data: { id: 'sal-2', accountant_id: acct.created.localId, amount: 0, method: 'salary', status: 'pending', requested_at: reqIso, updated_at: reqIso },
+        },
+      ],
+    },
+  });
+
+  // Reject carries an amount → amount must NOT change (only approvals set it).
+  const rej = await api('POST', '/api/account/settlements/sal-2/decision', {
+    token: owner.token,
+    body: { status: 'rejected', amount: 999 },
+  });
+  assert.equal(rej.status, 200);
+  assert.equal(rej.data.settlement.status, 'rejected');
+  assert.equal(rej.data.settlement.amount, 0, 'reject does not stamp an amount');
+});
+
+// ---------------------------------------------------------------------------
 // TASK 5 — payment_method round-trips through sync + appears on the public receipt.
 // ---------------------------------------------------------------------------
 test('payment_method round-trips through sync and shows on the public receipt', async () => {

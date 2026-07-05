@@ -193,17 +193,22 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
               label: Text(
                 c.isRequesting.value
                     ? 'saving'.tr
-                    : (pending
-                        ? 'wallet_pending_exists'.tr
-                        : (isSalary
-                            ? 'request_salary_settlement'.tr
-                            : 'request_settlement'.tr)),
+                    // v28 item 12: after approval this month → "تم استلام الراتب".
+                    : (isSalary && c.salaryMonthStatus.value == 'approved'
+                        ? 'salary_received_done'.tr
+                        : (pending
+                            ? 'wallet_pending_exists'.tr
+                            : (isSalary
+                                ? 'request_salary_settlement'.tr
+                                : 'request_settlement'.tr))),
                 overflow: TextOverflow.ellipsis,
               ),
-              // Salary requests have no balance gate (item 3).
+              // Salary: no balance gate (item 3); disabled once this month's
+              // salary is pending/approved (item 11/12).
               onPressed: (pending ||
                       c.isRequesting.value ||
-                      (!isSalary && balance <= 0))
+                      (!isSalary && balance <= 0) ||
+                      (isSalary && c.salaryMonthStatus.value != null))
                   ? null
                   : () => c.requestSettlement(method),
             ),

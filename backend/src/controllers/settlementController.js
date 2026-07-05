@@ -33,11 +33,20 @@ const DECISIONS = new Set(['approved', 'rejected']);
  * ("Settlement not found").
  */
 const decide = asyncHandler(async (req, res) => {
-  const { status, note, branchId } = req.body || {};
+  const { status, note, branchId, amount } = req.body || {};
 
   if (!status || !DECISIONS.has(status)) {
     throw new HttpError(400, "status must be 'approved' or 'rejected'", 'BAD_STATUS');
   }
+
+  // v28 item 12 (panel parity): a SALARY settlement is requested with no amount;
+  // the owner enters it on approval. When a valid positive amount is supplied we
+  // stamp it onto data.amount (mirrors the Flutter owner flow / SettlementRepo.
+  // decide). Additive + backward-compatible: existing callers omit it.
+  const approveAmount =
+    status === 'approved' && amount != null && Number.isFinite(Number(amount)) && Number(amount) > 0
+      ? Number(amount)
+      : null;
 
   const nowIso = new Date().toISOString();
 
@@ -63,6 +72,7 @@ const decide = asyncHandler(async (req, res) => {
     updatedAt: new Date(),
   };
   if (note !== undefined) set['data.note'] = note;
+  if (approveAmount != null) set['data.amount'] = approveAmount;
 
   const updated = await SyncRecord.findOneAndUpdate(
     { user: mirrorUserId, entity: 'settlements', localId: req.params.localId },

@@ -20,92 +20,101 @@ class ExpensesScreen extends StatefulWidget {
 class _ExpensesScreenState extends State<ExpensesScreen> {
   final ExpenseController controller = Get.find<ExpenseController>();
   final AuthController auth = Get.find<AuthController>();
-  final ScrollController _scrollController = ScrollController();
 
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
-      controller.loadMore();
-    }
-  }
+  // v28 item 13: pagination now rides the NestedScrollView via a
+  // NotificationListener in build() — no dedicated ScrollController needed.
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFE3F2FD),
-      appBar: AppBar(
-        title: Text(
-          'expenses'.tr,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        backgroundColor: const Color(0xFF1565C0),
-        iconTheme: const IconThemeData(color: Colors.white),
-        elevation: 0,
-        centerTitle: true,
-      ),
-      body: SafeArea(child: Column(
-        children: [
-          // Header: Total & Date
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: const BoxDecoration(
-              color: Color(0xFF1565C0),
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
-            ),
-            child: Column(
-              children: [
-                // R9: month is READ-ONLY here — selected only on Monthly Pricing
-                // and shown across the app as information.
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.calendar_month,
-                        color: Colors.white70, size: 18),
-                    const SizedBox(width: 6),
-                    Obx(
-                      () => Text(
-                        controller.selectedMonth.value,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 16,
+      // v28 item 13: collapsing header — the blue total/month container is a
+      // FlexibleSpaceBar that shrinks into the toolbar as the list scrolls
+      // (Master/Sliver App Bar behaviour). Pagination now rides a
+      // NotificationListener since the inner list no longer owns a controller
+      // (it must share NestedScrollView's coordinated primary controller so the
+      // header can collapse).
+      body: SafeArea(
+        child: NestedScrollView(
+          headerSliverBuilder: (context, innerBoxIsScrolled) => [
+            SliverAppBar(
+              pinned: true,
+              // Headroom for the month row + label + 32px amount (fits default
+              // and modestly-scaled system fonts without a RenderFlex overflow).
+              expandedHeight: 190,
+              backgroundColor: const Color(0xFF1565C0),
+              iconTheme: const IconThemeData(color: Colors.white),
+              elevation: 0,
+              centerTitle: true,
+              title: Text(
+                'expenses'.tr,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              flexibleSpace: FlexibleSpaceBar(
+                collapseMode: CollapseMode.parallax,
+                background: Container(
+                  padding: const EdgeInsets.fromLTRB(24, 72, 24, 22),
+                  alignment: Alignment.bottomCenter,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF1565C0),
+                    borderRadius:
+                        BorderRadius.vertical(bottom: Radius.circular(30)),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // R9: month is READ-ONLY here — selected only on Monthly
+                      // Pricing and shown across the app as information.
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.calendar_month,
+                              color: Colors.white70, size: 18),
+                          const SizedBox(width: 6),
+                          Obx(
+                            () => Text(
+                              controller.selectedMonth.value,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        'total_expenses'.tr,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 8),
+                      Obx(
+                        () => Text(
+                          "IQD ${fmtAmount(controller.totalExpenses.value)}",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                Text(
-                  'total_expenses'.tr,
-                  style: const TextStyle(color: Colors.white70),
-                ),
-                const SizedBox(height: 8),
-                Obx(
-                  () => Text(
-                    "IQD ${fmtAmount(controller.totalExpenses.value)}",
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
+          ],
+          body: NotificationListener<ScrollNotification>(
+            onNotification: (n) {
+              if (n.metrics.pixels >= n.metrics.maxScrollExtent - 200) {
+                controller.loadMore();
+              }
+              return false;
+            },
+            child: Column(
+              children: [
 
           // v22 item 6: owner/admin-only accountant filter — browse ONE
           // accountant's expenses (null = all). Accountants are always scoped
@@ -265,7 +274,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         );
                       }
                       return ListView.separated(
-                        controller: _scrollController,
+                        // v28 item 13: no controller — shares NestedScrollView's
+                        // primary controller so the header collapses; pagination
+                        // is handled by the NotificationListener above.
                         itemCount:
                             controller.expenses.length +
                             (controller.expensesMoreLoading.value ? 1 : 0),
@@ -361,8 +372,11 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               ),
             ),
           ),
-        ],
-      )),
+              ],
+            ),
+          ),
+        ),
+      ),
       floatingActionButton: Obx(
         () => auth.can(Perm.expenses)
             ? FloatingActionButton(
