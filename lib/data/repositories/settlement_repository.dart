@@ -77,19 +77,40 @@ class SettlementRepository {
   /// v16: ALL settlements (owner/admin view) with the accountant's display
   /// name, pending first then newest — backs the in-app settlement-approval
   /// screen (Admin-only). Read-only join; never mutates.
+  /// v27 item 6: optional [month] ('YYYY-MM' → requested_at prefix) and
+  /// [accountantId] filters (both additive; omitting them keeps the old
+  /// all-time / all-accountants behavior exactly).
   Future<List<({Settlement settlement, String accountantName})>> listAllForOwner({
     int limit = 100,
     int offset = 0,
+    String? month,
+    String? accountantId,
   }) async {
     final db = await _dbHelper.database;
+    final where = <String>[];
+    final args = <dynamic>[];
+    if (month != null && month.isNotEmpty) {
+      // v27 review: a month filter must NEVER hide a PENDING approval (a
+      // pending request from another month would otherwise be silently missed).
+      // Pending rows always surface; the summary banner stays month-scoped.
+      where.add("(s.requested_at LIKE ? OR s.status = 'pending')");
+      args.add('$month%');
+    }
+    if (accountantId != null && accountantId.isNotEmpty) {
+      where.add("s.accountant_id = ?");
+      args.add(accountantId);
+    }
+    final whereSql = where.isEmpty ? '' : 'WHERE ${where.join(' AND ')} ';
+    args.addAll([limit, offset]);
     final maps = await db.rawQuery(
       "SELECT s.*, COALESCE(NULLIF(a.name,''), a.username, '') AS _acct_name "
       "FROM settlements s "
       "LEFT JOIN accountants a ON a.id = s.accountant_id "
+      "$whereSql"
       "ORDER BY CASE s.status WHEN 'pending' THEN 0 ELSE 1 END, "
       "s.requested_at DESC "
       "LIMIT ? OFFSET ?",
-      [limit, offset],
+      args,
     );
     return maps
         .map((m) => (
@@ -97,6 +118,32 @@ class SettlementRepository {
               accountantName: (m['_acct_name'] ?? '').toString(),
             ))
         .toList();
+  }
+
+  /// v27 item 6: Σ APPROVED settlements of [method] in [month] (requested_at
+  /// prefix), optionally scoped to one [accountantId]. Feeds the summary
+  /// banner's "salary received" figure. Additive, read-only.
+  /// NOTE: [month] matches the UTC `requested_at` prefix, so at a month boundary
+  /// it can differ by a few hours from the local calendar month (banner-only;
+  /// no stored balance / sync is affected).
+  Future<double> approvedSumForMonth(String month, String method,
+      {String? accountantId}) async {
+    final db = await _dbHelper.database;
+    final where = <String>[
+      "status = 'approved'",
+      "COALESCE(method,'cash') = ?",
+      "requested_at LIKE ?",
+    ];
+    final args = <dynamic>[method, '$month%'];
+    if (accountantId != null && accountantId.isNotEmpty) {
+      where.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    final r = await db.rawQuery(
+      "SELECT SUM(amount) AS s FROM settlements WHERE ${where.join(' AND ')}",
+      args,
+    );
+    return ((r.isNotEmpty ? r.first['s'] as num? : 0) ?? 0).toDouble();
   }
 
   /// v16: count of PENDING settlements (Admin badge on the Settings tile).
@@ -110,15 +157,32 @@ class SettlementRepository {
         0;
   }
 
+  /// v27 item 3: Σ APPROVED settlement amounts of [method] for [accountantId]
+  /// (the salary wallet's "received" figure + the settlement summary banner).
+  /// Additive, read-only.
+  Future<double> approvedSum(String accountantId, String method) async {
+    final db = await _dbHelper.database;
+    final r = await db.rawQuery(
+      "SELECT SUM(amount) AS s FROM settlements "
+      "WHERE accountant_id = ? AND status = 'approved' "
+      "AND COALESCE(method,'cash') = ?",
+      [accountantId, method],
+    );
+    return ((r.isNotEmpty ? r.first['s'] as num? : 0) ?? 0).toDouble();
+  }
+
   /// v16: owner/admin decision on a settlement. Updates the LOCAL row
   /// (status + decided_at/by) and — because [Settlement.toMap] stamps a fresh
   /// `updated_at` — the sync triggers queue it so a `SyncController.poke()`
   /// pushes the decision to the mirror; the accountant then PULLS it. [status]
   /// is 'approved' | 'rejected'. (Offline-first: mirrors the Owner Panel, no
-  /// direct API call.)
-  Future<void> decide(Settlement s, String status, {String? decidedBy}) async {
+  /// direct API call.) v27 item 3: [amount], when given, is set on approval —
+  /// used for salary settlements where the owner enters the amount at approval.
+  Future<void> decide(Settlement s, String status,
+      {String? decidedBy, double? amount}) async {
     final db = await _dbHelper.database;
     s.status = status;
+    if (amount != null) s.amount = amount;
     s.decidedAt = DateTime.now().toUtc().toIso8601String();
     if (decidedBy != null) s.decidedBy = decidedBy;
     await db.update('settlements', s.toMap(),

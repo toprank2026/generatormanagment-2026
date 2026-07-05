@@ -216,6 +216,40 @@ class _SubscribersScreenState extends State<SubscribersScreen>
 
           return Column(
             children: [
+              // v27 item 1: total-amps summary card, board pages only.
+              if (widget.boardId != null)
+                Obx(() => Container(
+                      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.blue.withValues(alpha: 0.06),
+                              blurRadius: 8),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.flash_on,
+                              color: Color(0xFFF9A825)),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              '${'board_total_amps'.tr}: '
+                              '${fmtAmount(controller.boardAmpsTotal.value)} '
+                              '${'ampere'.tr}',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                  color: Color(0xFF1565C0)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )),
               Expanded(
                 child: ListView.separated(
                   controller: _scrollController,

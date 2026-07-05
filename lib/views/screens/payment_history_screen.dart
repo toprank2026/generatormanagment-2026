@@ -328,10 +328,26 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                             style:
                                 const TextStyle(fontWeight: FontWeight.bold),
                           ),
-                          subtitle: Text(
-                            "${r.month}  •  ${DateFormat('MMM d, yyyy', Get.locale?.toString()).format(DateTime.parse(r.issuedAt))}",
-                            style: TextStyle(
-                                color: Colors.grey[600], fontSize: 12),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "${r.month}  •  ${DateFormat('MMM d, yyyy', Get.locale?.toString()).format(DateTime.parse(r.issuedAt))}",
+                                style: TextStyle(
+                                    color: Colors.grey[600], fontSize: 12),
+                              ),
+                              // v27 item 5: card-only staff note (never printed).
+                              if ((r.paymentNote ?? '').isNotEmpty)
+                                Text(
+                                  "${'card_note'.tr}: ${r.paymentNote}",
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: Color(0xFF6A1B9A),
+                                      fontSize: 11,
+                                      fontStyle: FontStyle.italic),
+                                ),
+                            ],
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,

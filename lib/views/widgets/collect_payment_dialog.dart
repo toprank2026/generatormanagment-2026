@@ -34,6 +34,9 @@ Future<Receipt?> showCollectPaymentDialog({
   final amountCtrl = TextEditingController(text: due.toStringAsFixed(0));
   final discAmpsCtrl = TextEditingController();
   final discValCtrl = TextEditingController();
+  // v27 item 5: optional STAFF-ONLY note, shown only for card payments; never
+  // printed and never subscriber-facing.
+  final noteCtrl = TextEditingController();
 
   double computeDiscount() {
     if (!full || discountType == 'none') return 0;
@@ -137,6 +140,21 @@ Future<Receipt?> showCollectPaymentDialog({
                     ),
                   ],
                 ),
+                // v27 item 5: optional card-only note (staff-facing; never
+                // printed / never shown to subscribers).
+                if (paymentMethod == 'card') ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: noteCtrl,
+                    maxLines: 2,
+                    minLines: 1,
+                    decoration: InputDecoration(
+                      labelText: '${'card_note'.tr} ${'optional'.tr}',
+                      hintText: 'card_note_hint'.tr,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 if (!full) ...[
                   // Partial: editable amount, no discount.
@@ -251,6 +269,11 @@ Future<Receipt?> showCollectPaymentDialog({
                           discountValueInput:
                               double.tryParse(discValCtrl.text.trim()) ?? 0,
                           paymentMethod: paymentMethod,
+                          // v27 item 5: note kept only for card payments.
+                          paymentNote: (paymentMethod == 'card' &&
+                                  noteCtrl.text.trim().isNotEmpty)
+                              ? noteCtrl.text.trim()
+                              : null,
                         );
                         if (context.mounted) {
                           Navigator.of(context).pop<Receipt?>(receipt);

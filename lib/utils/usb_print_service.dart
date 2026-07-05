@@ -14,6 +14,7 @@ import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/core/api_config.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/utils/printer_prefs.dart';
 
@@ -225,43 +226,62 @@ class UsbPrintService {
     final df = DateFormat('yyyy-MM-dd HH:mm');
     final List<img.Image> out = [];
 
+    // v27 item 7: board + circuit names (additive lookups) + per-section gates
+    // (PrinterPrefs.showSection) — IDENTICAL to the Bluetooth path so USB & LAN
+    // honour the same "printed receipt settings".
+    final String boardName = PrinterPrefs.showSection('sec_board')
+        ? (await BoardRepository().nameById(sub.boardId) ?? '')
+        : '';
+    final String circuitName = PrinterPrefs.showSection('sec_circuit')
+        ? (await CircuitRepository().nameById(sub.circuitId) ?? '')
+        : '';
+
     // Header.
     final String gName = _generatorName();
-    if (gName.isNotEmpty) {
+    if (PrinterPrefs.showSection('sec_station') && gName.isNotEmpty) {
       out.add(await _textImage(gName, 30, center: true));
     }
     out.add(await _textImage('وصل استلام', 20, center: true));
 
-    // Bordered table — the SAME rows (incl. payment method + discount).
-    final List<List<String>> rows = [
-      ['رقم الوصل', receipt.receiptNo.toString()],
-      ['التاريخ', df.format(DateTime.parse(receipt.issuedAt))],
-      ['المشترك', sub.name],
-      ['الشهر', receipt.month],
-      ['الأمبيرات', receipt.ampsSnapshot.toString()],
-      ['سعر الأمبير', fmtAmount(receipt.priceSnapshot)],
-      [
-        'نوع الاشتراك',
-        SubscriberCategory.arabicLabel(receipt.categorySnapshot ?? sub.category),
-      ],
-      ['المدفوع', '${fmtAmount(receipt.paidAmount)} د.ع'],
-      ['طريقة الدفع', receiptPaymentMethodText(receipt)],
-      ['الخصم', receiptDiscountText(receipt)],
-      ['المتبقي', '${fmtAmount(receipt.remainingAfter)} د.ع'],
-    ];
-    if (accountantName.isNotEmpty) rows.add(['المحاسب', accountantName]);
+    // Bordered table — each row gated by its section.
+    final List<List<String>> rows = [];
+    void add(String key, String label, String value) {
+      if (PrinterPrefs.showSection(key)) rows.add([label, value]);
+    }
+    add('sec_receipt_no', 'رقم الوصل', receipt.receiptNo.toString());
+    add('sec_date', 'التاريخ', df.format(DateTime.parse(receipt.issuedAt)));
+    add('sec_subscriber', 'المشترك', sub.name);
+    add('sec_month', 'الشهر', receipt.month);
+    if (boardName.isNotEmpty) rows.add(['البورد', boardName]);
+    if (circuitName.isNotEmpty) rows.add(['الجوزة', circuitName]);
+    add('sec_amps', 'الأمبيرات', receipt.ampsSnapshot.toString());
+    add('sec_price', 'سعر الأمبير', fmtAmount(receipt.priceSnapshot));
+    add('sec_category', 'نوع الاشتراك',
+        SubscriberCategory.arabicLabel(receipt.categorySnapshot ?? sub.category));
+    add('sec_paid', 'المدفوع', '${fmtAmount(receipt.paidAmount)} د.ع');
+    add('sec_method', 'طريقة الدفع', receiptPaymentMethodText(receipt));
+    add('sec_discount', 'الخصم', receiptDiscountText(receipt));
+    add('sec_remaining', 'المتبقي', '${fmtAmount(receipt.remainingAfter)} د.ع');
+    if (accountantName.isNotEmpty &&
+        PrinterPrefs.showSection('sec_accountant')) {
+      rows.add(['المحاسب', accountantName]);
+    }
     for (int i = 0; i < rows.length; i++) {
       out.add(await _tableRowImage(rows[i][0], rows[i][1], top: i == 0));
     }
 
     // QR (opens this receipt in the admin panel). Skipped only if it fails.
-    try {
-      out.add(await _qrImage(_receiptQrUrl(receipt)));
-    } catch (_) {/* QR is best-effort, like the Bluetooth path */}
+    if (PrinterPrefs.showSection('sec_qr')) {
+      try {
+        out.add(await _qrImage(_receiptQrUrl(receipt)));
+      } catch (_) {/* QR is best-effort, like the Bluetooth path */}
+    }
 
     // Footer.
-    out.add(await _textImage('شكراً لكم!', 20, center: true));
-    out.add(await _textImage('Powered by Flash', 18, center: true));
+    if (PrinterPrefs.showSection('sec_footer')) {
+      out.add(await _textImage('شكراً لكم!', 20, center: true));
+      out.add(await _textImage('Powered by Flash', 18, center: true));
+    }
     return out;
   }
 

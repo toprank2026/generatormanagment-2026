@@ -34,7 +34,7 @@ class DbHelper {
     final String path = testPath ?? await _defaultPath();
     return await openDatabase(
       path,
-      version: 12,
+      version: 13,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -304,6 +304,13 @@ class DbHelper {
       // (credit-card) wallet.
       await _addColumn(db, 'settlements', 'method', "TEXT DEFAULT 'cash'");
     }
+    if (oldVersion < 13) {
+      // v13 (Flash v27 item 5): optional staff-only note on CARD payments.
+      // Nullable + additive — rides the whole-row sync automatically and is
+      // NEVER printed on receipts. (settlements.method also gains the value
+      // 'salary' in v27 — free-form TEXT, no schema change needed.)
+      await _addColumn(db, 'receipts', 'payment_note', 'TEXT');
+    }
   }
 
   Future<String> _defaultPath() async {
@@ -441,6 +448,7 @@ class DbHelper {
         status TEXT DEFAULT 'valid', -- valid, refunded
         qr_token TEXT,
         payment_method TEXT DEFAULT 'cash', -- v11: 'cash' | 'card'
+        payment_note TEXT, -- v13 (v27): optional staff-only CARD note, never printed
         FOREIGN KEY (subscriber_id) REFERENCES subscribers (id)
       )
     ''');

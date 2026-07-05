@@ -70,6 +70,11 @@ class PrinterPrefs {
     _printerType = t == 'usb' ? 'usb' : (t == 'lan' ? 'lan' : 'bluetooth');
     _lanIp = prefs.getString(keyLanIp) ?? '';
     _lanPort = prefs.getInt(keyLanPort) ?? 9100;
+    // v27 item 7: receipt-section toggles (default ON).
+    _sections.clear();
+    for (final k in sectionKeys) {
+      _sections[k] = prefs.getBool('print_sec_$k') ?? true;
+    }
     return _widthMm;
   }
 
@@ -96,6 +101,41 @@ class PrinterPrefs {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(keyLanIp);
     await prefs.remove(keyLanPort);
+  }
+
+  /// v27 item 7: which receipt SECTIONS are printed (applies to Bluetooth, USB
+  /// AND LAN equally — they share the renderer). Every section defaults to ON;
+  /// a user can hide any of them. Persisted under 'print_sec_<key>'. The keys
+  /// match the translation keys (sec_station … sec_footer).
+  static const List<String> sectionKeys = [
+    'sec_station',
+    'sec_receipt_no',
+    'sec_date',
+    'sec_subscriber',
+    'sec_month',
+    'sec_board',
+    'sec_circuit',
+    'sec_amps',
+    'sec_price',
+    'sec_category',
+    'sec_paid',
+    'sec_method',
+    'sec_discount',
+    'sec_remaining',
+    'sec_accountant',
+    'sec_qr',
+    'sec_footer',
+  ];
+  static final Map<String, bool> _sections = {};
+
+  /// Whether receipt section [key] is enabled (default true).
+  static bool showSection(String key) => _sections[key] ?? true;
+
+  /// Persists a section on/off and updates the cache.
+  static Future<void> setSection(String key, bool on) async {
+    _sections[key] = on;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('print_sec_$key', on);
   }
 
   /// Persists [mm] (58 or 80) and updates the cache.

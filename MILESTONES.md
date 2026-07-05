@@ -171,6 +171,19 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Settings UI** — 3-way transport toggle (BT | USB | LAN); LAN tile with IP:port + status, **Search** (latched against in-flight prints, live progress), **manual IP entry** (VLAN/>24-subnet escape hatch, validated), **Forget**, and the Test-print tile covers LAN too. Print sites show search progress, reflect auto-discovered endpoints, and treat a re-tap during an in-flight LAN job as "in progress", not a failure.
 - ✅ Spec (`specs/flash-v24/`) + adversarial review workflow (9 raised, **8 confirmed & fixed** — incl. the RST-truncation and wrong-endpoint-persistence mediums); analyze 0/0; Flutter 90; `CHANGE_WIFI_MULTICAST_STATE` added; Flash-API release APK. **Bluetooth/USB printing byte-for-byte unchanged.**
 
+## Flash v26 (report label swap · per-row due · dashboard bolt)
+- ✅ Reports: collected-cash titled "صافي الربح", collected−expenses titled "الإيرادات المحصلة" (values unchanged); "المبلغ الواجب تحصيله" under each subscriber row (batch coverage+price, no N+1); dashboard blue-card bolt moved right→left.
+
+## Flash v27 / "M22" (7 additive enhancements)
+- ✅ **Board total amperes** — a "إجمالي أمبيرات البورد: N أمبير" card atop the board-scoped subscriber list (one SQL SUM, branch-scoped).
+- ✅ **Expense input** — live thousands-separator formatting (`ThousandsInputFormatter`) + quick +00/+000/+0000 buttons; parse strips separators.
+- ✅ **Third wallet: طلب تسوية راتب** — accountant requests a salary settlement with NO amount; the owner enters the amount on approval (`settlements.method='salary'`, free-form TEXT — no schema change). All wallet cards shortened + responsive (phone/tablet).
+- ✅ **Report labels (M22)** — collected-cash → "الوارد الكلي", net → "صافي الربح" (values only, app + owner panel).
+- ✅ **Card-payment note** — optional staff-only "ملاحظة" shown ONLY for card payments (new nullable `receipts.payment_note`, SQLite v12→**v13** additive migration; rides whole-row sync, no backend change); visible in payment history + owner-panel receipt detail; **NEVER printed** on any receipt.
+- ✅ **Settlement improvements** — accountant/admin month navigation + accountant filter; a responsive summary banner (collected / salary received / **net = collected − salary − expenses**) with SafeArea; existing records list below.
+- ✅ **Printed-receipt settings** — new "إعدادات الوصل المطبوع" page: a per-section checkbox (default all ON) applied EQUALLY to Bluetooth, USB and LAN (shared renderer), persisted in additive `print_sec_*` prefs; **board name + circuit number added** to printed receipts. PDF untouched.
+- ✅ Production-safe/additive throughout (no renamed/removed tables/columns/APIs/models/prefs keys; nullable migration; no re-login); analyze 0/0; Flutter 90; adversarial review; Flash-API release APK.
+
 ## Backlog
 - ⬜ Localize backend plan names/descriptions (currently English server data).
 - ⬜ DB migration path (schema v1, `onCreate` only); index on `expenses.date`.

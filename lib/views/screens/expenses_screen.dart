@@ -7,6 +7,7 @@ import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/utils/money.dart';
+import 'package:generatormanagment/utils/thousands_input_formatter.dart';
 import 'package:generatormanagment/views/widgets/date_field.dart';
 
 class ExpensesScreen extends StatefulWidget {
@@ -437,8 +438,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               TextField(
                 controller: amountCtrl,
                 keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
+                  decimal: false,
                 ),
+                // v27 item 2: live thousands separators while typing.
+                inputFormatters: [ThousandsInputFormatter()],
                 decoration: InputDecoration(
                   labelText: 'amount'.tr,
                   prefixText: "IQD ",
@@ -446,6 +449,32 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
+              ),
+              const SizedBox(height: 8),
+              // v27 item 2: quick-append-zeros buttons for big amounts.
+              Row(
+                children: [
+                  for (final z in const [100, 1000, 10000])
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: OutlinedButton(
+                          onPressed: () {
+                            final cur =
+                                parseGroupedAmount(amountCtrl.text) ?? 0;
+                            final v = (cur == 0 ? 1 : cur) * z;
+                            amountCtrl.text = ThousandsInputFormatter()
+                                .formatEditUpdate(
+                                    const TextEditingValue(),
+                                    TextEditingValue(
+                                        text: v.toInt().toString()))
+                                .text;
+                          },
+                          child: Text('+${'0' * (z.toString().length - 1)}'),
+                        ),
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 16),
 
@@ -473,7 +502,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 child: FilledButton(
                   onPressed: () {
                     if (amountCtrl.text.isNotEmpty) {
-                      double? val = double.tryParse(amountCtrl.text);
+                      double? val = parseGroupedAmount(amountCtrl.text);
                       if (val != null) {
                         controller.addExpense(
                           category: selectedCategory,

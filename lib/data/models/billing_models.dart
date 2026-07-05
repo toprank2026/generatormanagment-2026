@@ -82,6 +82,9 @@ class Receipt {
   String? qrToken;
   // v11: how the cash was received — 'cash' | 'card'.
   String paymentMethod;
+  // v13/v27 item 5: optional STAFF-ONLY note for card payments (e.g. "received
+  // on an external bank account"). Never printed, never subscriber-facing.
+  String? paymentNote;
 
   Receipt({
     required this.uuid,
@@ -103,6 +106,7 @@ class Receipt {
     this.status = 'valid',
     this.qrToken,
     this.paymentMethod = 'cash',
+    this.paymentNote,
   });
 
   /// True when a discount was applied to this receipt (P5).
@@ -129,6 +133,7 @@ class Receipt {
       'status': status,
       'qr_token': qrToken,
       'payment_method': paymentMethod,
+      'payment_note': paymentNote,
       'updated_at': DateTime.now().toUtc().toIso8601String(), // conflict resolution
     };
   }
@@ -154,6 +159,7 @@ class Receipt {
       status: map['status'],
       qrToken: map['qr_token'],
       paymentMethod: (map['payment_method'] ?? 'cash').toString(),
+      paymentNote: map['payment_note'],
     );
   }
 }

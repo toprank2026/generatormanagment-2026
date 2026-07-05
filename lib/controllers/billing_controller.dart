@@ -205,6 +205,7 @@ class BillingController extends GetxController {
     double discountAmps = 0,
     double discountValueInput = 0,
     String paymentMethod = 'cash', // v11: 'cash' | 'card'
+    String? paymentNote, // v27 item 5: card-only staff note (never printed)
   }) async {
     // v13: billing is ACCOUNTANT-ONLY. The owner/admin role cannot bill (gated
     // here at the single write choke point too, not just the UI). Silent no-op
@@ -221,6 +222,7 @@ class BillingController extends GetxController {
         discountAmps: discountAmps,
         discountValueInput: discountValueInput,
         paymentMethod: paymentMethod,
+        paymentNote: paymentNote,
       );
     } finally {
       _collecting = false;
@@ -235,6 +237,7 @@ class BillingController extends GetxController {
     double discountAmps = 0,
     double discountValueInput = 0,
     String paymentMethod = 'cash',
+    String? paymentNote,
   }) async {
     // The receipt belongs to the SUBSCRIBER's branch (correct even when
     // collecting from the consolidated view, where the active branch is null).
@@ -304,6 +307,8 @@ class BillingController extends GetxController {
       discountValue: discountValue,
       discountAmps: discountAmpsRec,
       paymentMethod: paymentMethod,
+      // v27 item 5: only card payments carry a note (staff-only, never printed).
+      paymentNote: paymentMethod == 'card' ? paymentNote : null,
       issuedAt: DateTime.now().toIso8601String(),
     );
 

@@ -46,6 +46,8 @@ class CoreController extends GetxController {
   final Map<String, double> _rowCoverage = <String, double>{};
   final Map<String, Map<String, double>> _rowPricesByBranch =
       <String, Map<String, double>>{};
+  // v27 item 1: total amps of the board whose subscriber list is showing.
+  final boardAmpsTotal = 0.0.obs;
 
   /// Refreshes the row metadata (paid-ids set + circuit-name map + coverage +
   /// prices) for the active branch + globally-selected month. Called on page-1
@@ -524,7 +526,12 @@ class CoreController extends GetxController {
     _currentQuery = query;
     currentPage.value = page;
     try {
-      if (page == 1) await _loadRowMeta(); // v22 items 2+9
+      if (page == 1) {
+        await _loadRowMeta(); // v22 items 2+9
+        // v27 item 1: board total amps (ignores search — it's the whole board).
+        boardAmpsTotal.value = await _subscriberRepo.sumAmpsByBoard(boardId,
+            branchId: _branchScope);
+      }
       final result = await _subscriberRepo.getByBoard(
         boardId,
         accountantId: null,

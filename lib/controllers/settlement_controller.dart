@@ -31,6 +31,11 @@ class SettlementController extends GetxController {
   final cardSettled = 0.0.obs;
   final cardBalance = 0.0.obs;
   final hasPendingCard = false.obs;
+  // Salary wallet (v27 item 3) — the accountant requests a salary settlement
+  // with NO amount; the owner enters the amount on approval. `salaryReceived`
+  // = Σ APPROVED salary settlements (informational).
+  final salaryReceived = 0.0.obs;
+  final hasPendingSalary = false.obs;
 
   final isLoading = false.obs;
   final isRequesting = false.obs; // v14: loading while a settlement request saves
@@ -69,6 +74,8 @@ class SettlementController extends GetxController {
     cardSettled.value = 0;
     cardBalance.value = 0;
     hasPendingCard.value = false;
+    salaryReceived.value = 0;
+    hasPendingSalary.value = false;
     history.clear();
     hasMore.value = false;
     update();
@@ -121,6 +128,10 @@ class SettlementController extends GetxController {
       }
       hasPendingCash.value = await _repo.hasPending(id, 'cash');
       hasPendingCard.value = await _repo.hasPending(id, 'card');
+      // v27 item 3: salary wallet (local-only figures — the server wallet API
+      // is cash/card; salary lives in the synced settlements table).
+      hasPendingSalary.value = await _repo.hasPending(id, 'salary');
+      salaryReceived.value = await _repo.approvedSum(id, 'salary');
       _page = 1;
       final page = await _repo.history(id, limit: _perPage + 1, offset: 0);
       hasMore.value = page.length > _perPage;
@@ -153,8 +164,13 @@ class SettlementController extends GetxController {
   Future<bool> requestSettlement(String method) async {
     final id = _acctId;
     if (id == null) return false;
-    final bal = method == 'card' ? cardBalance.value : cashBalance.value;
-    if (bal <= 0) {
+    // v27 item 3: a SALARY request carries NO amount (the owner enters it on
+    // approval) — so it skips the balance gate that cash/card use.
+    final bool isSalary = method == 'salary';
+    final bal = isSalary
+        ? 0.0
+        : (method == 'card' ? cardBalance.value : cashBalance.value);
+    if (!isSalary && bal <= 0) {
       Get.snackbar('settlement'.tr, 'wallet_no_balance'.tr);
       return false;
     }

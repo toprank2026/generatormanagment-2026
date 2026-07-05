@@ -6,6 +6,7 @@ import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/core/api_config.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/utils/printer_prefs.dart';
 import 'package:intl/intl.dart';
@@ -69,6 +70,17 @@ class BluetoothPrintService {
       throw Exception('printer_not_connected');
     }
 
+    // v27 item 7: resolve the board + circuit display names once (additive
+    // lookups; empty when the row is disabled or the id isn't found). Each
+    // receipt SECTION is gated by PrinterPrefs.showSection — applies equally to
+    // Bluetooth, USB and LAN (they share these gates).
+    final String boardName = PrinterPrefs.showSection('sec_board')
+        ? (await BoardRepository().nameById(sub.boardId) ?? '')
+        : '';
+    final String circuitName = PrinterPrefs.showSection('sec_circuit')
+        ? (await CircuitRepository().nameById(sub.circuitId) ?? '')
+        : '';
+
     // v20 item 3: print 1 OR 2 copies, from the printer settings (was hard-coded
     // 2). Each iteration emits a full receipt with its own tear-off feed.
     final int copies = PrinterPrefs.copies;
@@ -78,56 +90,60 @@ class BluetoothPrintService {
     // Header: generator/business name (set at sign-up). v15: never "TopRank";
     // print nothing when there is no generator name.
     final gName = _generatorName();
-    if (gName.isNotEmpty) {
+    if (PrinterPrefs.showSection('sec_station') && gName.isNotEmpty) {
       await printArabicText(gName, "", fontSize: 30, textAlign: 1);
       await Future.delayed(const Duration(milliseconds: 100));
     }
     await printArabicText("وصل استلام", "", fontSize: 20, textAlign: 1);
     await Future.delayed(const Duration(milliseconds: 120));
 
-    // All receipt data inside a bordered table.
+    // All receipt data inside a bordered table — each row gated by its section.
     final df = DateFormat('yyyy-MM-dd HH:mm');
-    final rows = <List<String>>[
-      ["رقم الوصل", receipt.receiptNo.toString()],
-      ["التاريخ", df.format(DateTime.parse(receipt.issuedAt))],
-      ["المشترك", sub.name],
-      ["الشهر", receipt.month],
-      ["الأمبيرات", receipt.ampsSnapshot.toString()],
-      ["سعر الأمبير", fmtAmount(receipt.priceSnapshot)],
-      // The tariff type the ampere price belongs to (gold / standard / commercial).
-      [
-        "نوع الاشتراك",
-        SubscriberCategory.arabicLabel(receipt.categorySnapshot ?? sub.category)
-      ],
-      ["المدفوع", "${fmtAmount(receipt.paidAmount)} د.ع"],
-      // v11: payment method (cash / card).
-      ["طريقة الدفع", receiptPaymentMethodText(receipt)],
-      // P5: Discount section — type + value, or "no discount".
-      ["الخصم", receiptDiscountText(receipt)],
-      ["المتبقي", "${fmtAmount(receipt.remainingAfter)} د.ع"],
-    ];
-    if (accountantName.isNotEmpty) rows.add(["المحاسب", accountantName]);
+    final rows = <List<String>>[];
+    void add(String key, String label, String value) {
+      if (PrinterPrefs.showSection(key)) rows.add([label, value]);
+    }
+    add('sec_receipt_no', "رقم الوصل", receipt.receiptNo.toString());
+    add('sec_date', "التاريخ", df.format(DateTime.parse(receipt.issuedAt)));
+    add('sec_subscriber', "المشترك", sub.name);
+    add('sec_month', "الشهر", receipt.month);
+    // v27 item 7: NEW printed rows — board + circuit names.
+    if (boardName.isNotEmpty) rows.add(["البورد", boardName]);
+    if (circuitName.isNotEmpty) rows.add(["الجوزة", circuitName]);
+    add('sec_amps', "الأمبيرات", receipt.ampsSnapshot.toString());
+    add('sec_price', "سعر الأمبير", fmtAmount(receipt.priceSnapshot));
+    add('sec_category', "نوع الاشتراك",
+        SubscriberCategory.arabicLabel(receipt.categorySnapshot ?? sub.category));
+    add('sec_paid', "المدفوع", "${fmtAmount(receipt.paidAmount)} د.ع");
+    add('sec_method', "طريقة الدفع", receiptPaymentMethodText(receipt));
+    add('sec_discount', "الخصم", receiptDiscountText(receipt));
+    add('sec_remaining', "المتبقي", "${fmtAmount(receipt.remainingAfter)} د.ع");
+    if (accountantName.isNotEmpty &&
+        PrinterPrefs.showSection('sec_accountant')) {
+      rows.add(["المحاسب", accountantName]);
+    }
     await printArabicTable(rows);
     await Future.delayed(const Duration(milliseconds: 150));
 
     // QR Code → opens this receipt's details in the admin panel. Rendered as an
     // image (handles long URLs reliably, unlike the native QR command).
-    try {
-      await _printQrImage(_receiptQrUrl(receipt));
-      await Future.delayed(const Duration(milliseconds: 100));
-    } catch (e) {
-      bluetooth.printCustom("ID: ${receipt.uuid}", 1, 1);
+    if (PrinterPrefs.showSection('sec_qr')) {
+      try {
+        await _printQrImage(_receiptQrUrl(receipt));
+        await Future.delayed(const Duration(milliseconds: 100));
+      } catch (e) {
+        bluetooth.printCustom("ID: ${receipt.uuid}", 1, 1);
+      }
     }
 
-    bluetooth.printNewLine();
-    await printArabicText("شكراً لكم!", "", fontSize: 20, textAlign: 1);
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    // v20 item 3: footer branding trimmed — "Powered by Flash" only (the logo
-    // and phone number were removed; the extra blank tear-off lines reduced to
-    // one) to shorten the receipt.
-    await printArabicText("Powered by Flash", "", fontSize: 18, textAlign: 1);
-    await Future.delayed(const Duration(milliseconds: 80));
+    if (PrinterPrefs.showSection('sec_footer')) {
+      bluetooth.printNewLine();
+      await printArabicText("شكراً لكم!", "", fontSize: 20, textAlign: 1);
+      await Future.delayed(const Duration(milliseconds: 100));
+      // v20 item 3: footer branding trimmed — "Powered by Flash" only.
+      await printArabicText("Powered by Flash", "", fontSize: 18, textAlign: 1);
+      await Future.delayed(const Duration(milliseconds: 80));
+    }
     bluetooth.printNewLine(); // single tear-off feed
     } // end copy loop
   }

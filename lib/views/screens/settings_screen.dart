@@ -7,6 +7,7 @@ import 'package:generatormanagment/views/screens/subscription_screen.dart';
 import 'package:generatormanagment/views/screens/accountant_settlements_screen.dart';
 import 'package:generatormanagment/views/screens/accountants_screen.dart';
 import 'package:generatormanagment/views/screens/edit_account_screen.dart';
+import 'package:generatormanagment/views/screens/print_receipt_settings_screen.dart';
 import 'package:generatormanagment/views/screens/my_wallet_screen.dart';
 import 'package:generatormanagment/views/screens/branches_screen.dart';
 import 'package:generatormanagment/data/models/account.dart';
@@ -577,6 +578,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     subtitle: Text('test_print_subtitle'.tr),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => _testPrint(controller),
+                  ),
+                  const Divider(height: 1),
+                  // v27 item 7: choose which sections print (all transports).
+                  ListTile(
+                    leading: const Icon(Icons.receipt_long,
+                        color: Color(0xFF1565C0)),
+                    title: Text('print_settings'.tr),
+                    subtitle: Text('print_settings_subtitle'.tr),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () =>
+                        Get.to(() => const PrintReceiptSettingsScreen()),
                   ),
                 ],
               ),

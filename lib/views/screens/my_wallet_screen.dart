@@ -83,6 +83,19 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
                 pending: c.hasPendingCard.value,
                 method: 'card',
               ),
+              const SizedBox(height: 12),
+              // v27 item 3: salary wallet — request a salary settlement with NO
+              // amount; the owner enters the amount on approval.
+              _walletCard(
+                title: 'salary_wallet'.tr,
+                icon: Icons.account_balance_wallet,
+                gradient: const [Color(0xFF6A1B9A), Color(0xFFAB47BC)],
+                balance: c.salaryReceived.value,
+                collected: c.salaryReceived.value,
+                settled: c.salaryReceived.value,
+                pending: c.hasPendingSalary.value,
+                method: 'salary',
+              ),
               const SizedBox(height: 22),
               Text('settlement_history'.tr,
                   style: const TextStyle(
@@ -119,44 +132,56 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
     required bool pending,
     required String method,
   }) {
+    // v27 item 3: shorter, RESPONSIVE cards — tablets get a bit more room.
+    final bool tablet = Get.mediaQuery.size.shortestSide >= 600;
+    final bool isSalary = method == 'salary';
+    final double pad = tablet ? 16 : 12;
+    final double balanceFont = tablet ? 26 : 22;
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: EdgeInsets.all(pad),
       decoration: BoxDecoration(
         gradient: LinearGradient(colors: gradient),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              Icon(icon, color: Colors.white),
+              Icon(icon, color: Colors.white, size: 20),
               const SizedBox(width: 8),
-              Text(title,
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
+              Expanded(
+                child: Text(title,
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+              // Salary carries no running balance — show the received total.
+              Text('${fmtAmount(balance)} ${'iqd'.tr}',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: balanceFont,
+                      fontWeight: FontWeight.bold)),
             ],
           ),
           const SizedBox(height: 8),
-          Text('${fmtAmount(balance)} ${'iqd'.tr}',
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _miniStat('wallet_collected'.tr, collected),
-              _miniStat('wallet_settled'.tr, settled),
-            ],
+            children: isSalary
+                ? [_miniStat('salary_received'.tr, settled)]
+                : [
+                    _miniStat('wallet_collected'.tr, collected),
+                    _miniStat('wallet_settled'.tr, settled),
+                  ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
+            height: 40,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: gradient.first,
+                padding: EdgeInsets.zero,
               ),
               // v14: loading state while the request saves (disabled + spinner).
               icon: c.isRequesting.value
@@ -164,13 +189,21 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.request_quote),
-              label: Text(c.isRequesting.value
-                  ? 'saving'.tr
-                  : (pending
-                      ? 'wallet_pending_exists'.tr
-                      : 'request_settlement'.tr)),
-              onPressed: (pending || balance <= 0 || c.isRequesting.value)
+                  : const Icon(Icons.request_quote, size: 18),
+              label: Text(
+                c.isRequesting.value
+                    ? 'saving'.tr
+                    : (pending
+                        ? 'wallet_pending_exists'.tr
+                        : (isSalary
+                            ? 'request_salary_settlement'.tr
+                            : 'request_settlement'.tr)),
+                overflow: TextOverflow.ellipsis,
+              ),
+              // Salary requests have no balance gate (item 3).
+              onPressed: (pending ||
+                      c.isRequesting.value ||
+                      (!isSalary && balance <= 0))
                   ? null
                   : () => c.requestSettlement(method),
             ),
@@ -181,6 +214,7 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
   }
 
   Widget _miniStat(String label, double v) => Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(fmtAmount(v),
               style: const TextStyle(
@@ -197,7 +231,12 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
     final statusKey = s.isApproved
         ? 'status_approved'
         : (s.isRejected ? 'status_rejected' : 'status_pending');
-    final methodLabel = s.method == 'card' ? 'pay_card'.tr : 'pay_cash'.tr;
+    final methodLabel = s.method == 'salary'
+        ? 'salary_wallet'.tr
+        : (s.method == 'card' ? 'pay_card'.tr : 'pay_cash'.tr);
+    final methodIcon = s.method == 'salary'
+        ? Icons.account_balance_wallet
+        : (s.method == 'card' ? Icons.credit_card : Icons.payments);
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -205,9 +244,7 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
       child: ListTile(
         leading: CircleAvatar(
             backgroundColor: color.withValues(alpha: 0.12),
-            child: Icon(
-                s.method == 'card' ? Icons.credit_card : Icons.payments,
-                color: color)),
+            child: Icon(methodIcon, color: color)),
         title: Text('${fmtAmount(s.amount)} ${'iqd'.tr} · $methodLabel',
             style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text(s.requestedAt == null

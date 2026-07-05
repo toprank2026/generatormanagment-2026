@@ -386,8 +386,12 @@ const getWallet = asyncHandler(async (req, res) => {
   const settled = { cash: 0, card: 0 };
   for (const s of setts) {
     const d = s.data || {};
-    const method = (d.method || 'cash') === 'card' ? 'card' : 'cash';
-    settled[method] += Number(d.amount) || 0;
+    const m = d.method || 'cash';
+    // v27 item 3: 'salary' is a SEPARATE wallet — it must never subtract from
+    // the cash or card balance. Bucket only exact cash/card (null -> cash),
+    // matching the app's local wallet() COALESCE(method,'cash') IN (cash,card).
+    if (m !== 'cash' && m !== 'card') continue;
+    settled[m] += Number(d.amount) || 0;
   }
 
   const wallet = (m) => ({

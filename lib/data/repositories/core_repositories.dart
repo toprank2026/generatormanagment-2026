@@ -86,6 +86,14 @@ class BoardRepository {
     });
   }
 
+  /// v27 item 7: board display name by id (printed receipt lookup). Additive.
+  Future<String?> nameById(String id) async {
+    final db = await _dbHelper.database;
+    final m = await db.query('boards',
+        columns: ['name'], where: 'id = ?', whereArgs: [id], limit: 1);
+    return m.isEmpty ? null : m.first['name'] as String?;
+  }
+
   Future<List<Board>> getAll(
       {int limit = -1,
       int offset = 0,
@@ -210,6 +218,14 @@ class CircuitRepository {
       return await txn.delete('circuits',
           where: 'id = ? AND accountant_id = ?', whereArgs: [id, accountantId]);
     });
+  }
+
+  /// v27 item 7: circuit display name by id (printed receipt lookup). Additive.
+  Future<String?> nameById(String id) async {
+    final db = await _dbHelper.database;
+    final m = await db.query('circuits',
+        columns: ['name'], where: 'id = ?', whereArgs: [id], limit: 1);
+    return m.isEmpty ? null : m.first['name'] as String?;
   }
 
   Future<List<Circuit>> getByBoardId(
@@ -831,6 +847,28 @@ class SubscriberRepository {
           ((row['amps'] as num?) ?? 0).toDouble();
     }
     return map;
+  }
+
+  /// v27 item 1: Σ amps of all subscribers on [boardId] (branch-scoped) — the
+  /// board page's "total board amps" summary. One SQL SUM, additive.
+  Future<double> sumAmpsByBoard(String boardId,
+      {String? accountantId, String? branchId}) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>['board_id = ?'];
+    final args = <dynamic>[boardId];
+    if (accountantId != null) {
+      clauses.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
+    final r = await db.rawQuery(
+      'SELECT SUM(amps) AS s FROM subscribers WHERE ${clauses.join(' AND ')}',
+      args,
+    );
+    return ((r.isNotEmpty ? r.first['s'] as num? : 0) ?? 0).toDouble();
   }
 
   Future<int> countByBoard(String boardId,
