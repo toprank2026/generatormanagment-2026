@@ -357,6 +357,40 @@
   .rep-bar-track{height:150px;width:34px;display:flex;align-items:flex-end;background:#f1f4f8;border-radius:8px;overflow:hidden}
   .rep-bar-fill{width:100%;border-radius:8px 8px 0 0}
   .rep-bar-lbl{color:var(--muted);font-size:12.5px;font-weight:700;text-align:center}
+
+  /* owner settlements screen (#/my/settlements): mirrors the app's
+     accountant-settlements screen — 3 summary cards + settlement tiles. */
+  .set-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+  .set-sum{background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:12px 8px;text-align:center;min-width:0}
+  .set-sum .s-ic{font-size:22px;display:flex;justify-content:center;margin-bottom:4px}
+  .set-sum .s-val{font-weight:800;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .set-sum .s-lbl{color:var(--muted);font-size:11px;font-weight:700;margin-top:2px}
+  .set-pending{font-weight:800;color:#fb8c00;margin:2px 2px 10px}
+  .set-tile{background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:12px;margin-bottom:10px}
+  .set-tile .st-row{display:flex;align-items:center;gap:12px}
+  .set-avatar{width:42px;height:42px;border-radius:99px;display:grid;place-items:center;flex:none;font-size:22px}
+  .set-mid{flex:1;min-width:0}
+  .set-mid .st-name{font-weight:800;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .set-mid .st-amount{font-size:14px;font-weight:700;margin-top:2px}
+  .set-mid .st-date{color:var(--muted);font-size:12px;margin-top:2px}
+  .set-actions{display:flex;gap:10px;margin-top:12px}
+  .set-actions .btn{flex:1}
+  .set-empty{text-align:center;color:var(--muted);padding:44px 0}
+  .set-empty .e-ic{font-size:56px;color:var(--border);display:block;margin-bottom:8px}
+  /* per-accountant salary chip in the monthly report */
+  .acc-salary{display:flex;align-items:center;gap:8px;margin-top:10px;padding:9px 11px;border-radius:10px;background:#f3e8fd;font-size:13px;font-weight:800;color:#5b21a8}
+  .acc-salary .as-ic{display:inline-flex;font-size:20px}
+  .acc-salary.pending{background:#fff3e0;color:#b25e00}
+  .acc-salary.none{background:#f3f5f8;color:var(--muted)}
+
+  /* responsive: the owner app-shell adapts phone → tablet → desktop.
+     (phone-first stays 100% width; tablet/desktop widen + more columns.) */
+  @media(max-width:360px){ body.owner-mode .app-grid{grid-template-columns:1fr} }
+  @media(min-width:768px){ .app-wrap,.app-sheet{max-width:760px} }
+  @media(min-width:1100px){
+    .app-wrap,.app-sheet{max-width:940px}
+    body.owner-mode .app-grid{grid-template-columns:repeat(3,1fr)}
+  }
 </style>
 </head>
 <body>
@@ -738,6 +772,26 @@ function acctData(entity,opts){
   if(bid && isBranchScopedEntity(entity)) o=Object.assign({},o,{branchId:bid});
   return API.myData(entity,o);
 }
+// v28: fetch ALL settlement rows across pages (the mirror caps a page at 200 and
+// has NO server-side month filter for settlements), so a month-scoped summary /
+// salary total never misses rows outside the newest-page window when stepping
+// back to older months. Bounded by MAX_PAGES so it can't run away. [extra] adds
+// filters (e.g. {relField:'accountant_id',relValue}). Resolves to a records[].
+function fetchAllSettlements(extra){
+  var out=[], page=1, LIMIT=200, MAX_PAGES=25;
+  function next(){
+    var o={page:page,limit:LIMIT};
+    if(extra){ for(var k in extra) o[k]=extra[k]; }
+    return acctData("settlements",o).then(function(res){
+      var recs=normalizeList(res,"records");
+      out=out.concat(recs);
+      var total=(res&&typeof res.total==="number")?res.total:out.length;
+      if(recs.length>0 && out.length<total && page<MAX_PAGES){ page++; return next(); }
+      return out;
+    });
+  }
+  return next().catch(function(){ return out; });
+}
 // The currently-selected branch {name, phone, kind} (account switcher first,
 // then the legacy local-branch filter), or null when no branch is active. The
 // account-branch carries its own phone; a legacy local branch has only a name.
@@ -944,6 +998,7 @@ var OWNER_TABS=[
   {href:"#/my/reports",label:"التقارير",icon:"bar_chart",match:function(r){ return r.indexOf("#/my/reports")===0; }}
 ];
 var OWNER_MORE=[
+  {href:"#/my/settlements",label:"التسويات",icon:"account_balance_wallet"},
   {href:"#/my/data/boards",label:"البوردات",icon:"grid_view"},
   {href:"#/my/data/circuits",label:"الجوزات",icon:"electrical_services"},
   {href:"#/my/data/monthly_prices",label:"أسعار الأشهر",icon:"calendar_month"}
@@ -1037,6 +1092,7 @@ var routes=[
   // Owner self-service area (#/my…) — the signed-in owner's own data only.
   {re:/^#\/my$/, view:viewMyDashboard, owner:true},
   {re:/^#\/my\/reports$/, view:viewMyReports, owner:true},
+  {re:/^#\/my\/settlements$/, view:viewMySettlements, owner:true},
   {re:/^#\/my\/data\/receipts\/detail\/([^\/]+)$/, view:viewMyReceiptDetail, owner:true},
   // v23 (§9): generic clean detail for any entity (receipts keep the richer view above).
   {re:/^#\/my\/data\/([^\/]+)\/detail\/([^\/]+)$/, view:viewMyEntityDetail, owner:true},
@@ -2292,7 +2348,7 @@ function viewMyDashboard(){
         {label:"الوصولات",value:counts.receipts,icon:"receipt_long",chip:"orange",href:"#/my/data/receipts"},
         {label:"المحاسبون",value:counts.accountants,icon:"badge",chip:"purple"},
         {label:"الفروع",value:counts.branches,icon:"account_tree",chip:"indigo",href:"#/my/data/branches"},
-        {label:"التسويات",value:counts.settlements,icon:"account_balance_wallet",chip:"teal",href:"#/my/data/settlements"}
+        {label:"التسويات",value:counts.settlements,icon:"account_balance_wallet",chip:"teal",href:"#/my/settlements"}
       ];
     } else {
       cards=[
@@ -2302,7 +2358,7 @@ function viewMyDashboard(){
         {label:"الوصولات",value:counts.receipts,icon:"receipt_long",chip:"orange",href:"#/my/data/receipts"},
         {label:"المحاسبون",value:counts.accountants,icon:"badge",chip:"purple"},
         {label:"الفروع",value:counts.branches,icon:"account_tree",chip:"indigo",href:"#/my/data/branches"},
-        {label:"التسويات",value:counts.settlements,icon:"account_balance_wallet",chip:"teal",href:"#/my/data/settlements"}
+        {label:"التسويات",value:counts.settlements,icon:"account_balance_wallet",chip:"teal",href:"#/my/settlements"}
       ];
     }
     var grid=el("div",{class:"app-grid"});
@@ -2465,13 +2521,34 @@ function viewMyReports(){
       return accountants;
     }).catch(function(){ accountants=[]; return accountants; });
   }
+  // v28 (item 3): {accountantId -> {approved:Σ amount, pending:bool}} for salary
+  // settlements in [mon] (requested_at/decided_at month prefix).
+  function buildSalaryMap(records,mon){
+    var map={};
+    (records||[]).forEach(function(r){
+      var d=(r&&r.data)||{};
+      if(d.method!=="salary") return;
+      var t=d.requested_at||d.decided_at; if(!t) return;
+      var dt=new Date(t);
+      var m=isNaN(dt)?String(t).slice(0,7):(dt.getFullYear()+"-"+("0"+(dt.getMonth()+1)).slice(-2));
+      if(m!==mon) return;
+      var key=d.accountant_id; if(key==null) return;
+      var e=map[key]||(map[key]={approved:0,pending:false});
+      if(d.status==="approved") e.approved+=repNum(d.amount);
+      else if(d.status==="pending") e.pending=true;
+    });
+    return map;
+  }
   function load(){
     var reqMonth=month, reqAcc=accountantId, reqBranch=ownerBranch.id+"|"+acctBranch.id;
     paint(loadingBlock("جارٍ تحميل تقرير "+reqMonth+"…"));
-    Promise.all([acctStats(reqMonth,reqAcc),ensureAccountants()]).then(function(both){
+    Promise.all([acctStats(reqMonth,reqAcc),ensureAccountants(),fetchAllSettlements()]).then(function(both){
       if(reqMonth!==month||reqAcc!==accountantId||reqBranch!==(ownerBranch.id+"|"+acctBranch.id)) return;   // stale after a switch
       var mainStats=both[0];
       var accts=both[1]||[];
+      // v28 (item 3): per-accountant salary status/value for the month, from the
+      // salary settlements (best-effort; the report still renders if this fails).
+      var salaryByAcct=buildSalaryMap(both[2]||[],reqMonth);
       // v14 (item 3): also fetch each accountant's OWN stats for the per-accountant
       // breakdown (best-effort; a failed one renders blank, the report still shows).
       return Promise.all(accts.map(function(a){
@@ -2480,7 +2557,7 @@ function viewMyReports(){
           .catch(function(){ return {acct:a,dash:null}; });
       })).then(function(perAcct){
         if(reqMonth!==month||reqAcc!==accountantId||reqBranch!==(ownerBranch.id+"|"+acctBranch.id)) return; // stale
-        paint(reportBody(mainStats,perAcct));
+        paint(reportBody(mainStats,perAcct,salaryByAcct));
       });
     }).catch(function(err){
       if(err.status===401) return;
@@ -2489,7 +2566,7 @@ function viewMyReports(){
       paint(errorBlock(err,load));
     });
   }
-  function reportBody(res,perAcct){
+  function reportBody(res,perAcct,salaryByAcct){
     var dash=(res&&res.dashboard)||null;
     var wrap=el("div");
     if(!dash){
@@ -2569,6 +2646,16 @@ function viewMyReports(){
       wrap.appendChild(el("div",{class:"app-section-title",text:"حسب المحاسب"}));
       perAcct.forEach(function(pa){
         var d=pa.dash||{};
+        // v28 (item 3): salary status/value card for this accountant this month.
+        var sal=(salaryByAcct||{})[pa.acct.id];
+        var salaryChip;
+        if(sal&&sal.approved>0){
+          salaryChip=el("div",{class:"acc-salary"},[el("span",{class:"as-ic"},[mi("account_balance_wallet")]),el("span",{text:"الراتب المستلم: "+fmtPrice(sal.approved)})]);
+        } else if(sal&&sal.pending){
+          salaryChip=el("div",{class:"acc-salary pending"},[el("span",{class:"as-ic"},[mi("hourglass_top")]),el("span",{text:"راتب قيد الانتظار"})]);
+        } else {
+          salaryChip=el("div",{class:"acc-salary none"},[el("span",{class:"as-ic"},[mi("account_balance_wallet")]),el("span",{text:"لا يوجد راتب هذا الشهر"})]);
+        }
         wrap.appendChild(el("div",{class:"card app-card",style:"margin-bottom:10px"},[
           el("div",{class:"card-b"},[
             el("div",{style:"font-weight:700;margin-bottom:8px"},[pa.acct.name||"—"]),
@@ -2576,12 +2663,181 @@ function viewMyReports(){
               el("div",{class:"app-stat"},[el("div",{class:"app-chip green"},[mi("check_circle")]),el("div",{class:"num sm",text:repNum(d.paidCount)}),el("div",{class:"lbl",text:"المسددون"})]),
               el("div",{class:"app-stat"},[el("div",{class:"app-chip red"},[mi("error")]),el("div",{class:"num sm",text:repNum(d.unpaidCount)}),el("div",{class:"lbl",text:"غير المسددين"})]),
               el("div",{class:"app-stat"},[el("div",{class:"app-chip blue"},[mi("payments")]),el("div",{class:"num sm",text:fmtPrice(repNum(d.collected))}),el("div",{class:"lbl",text:"المحصّل"})])
-            ])
+            ]),
+            salaryChip
           ])
         ]));
       });
     }
     return wrap;
+  }
+  load();
+}
+
+/* ---------- owner settlements screen (#/my/settlements) ----------
+   Mirrors the Flutter accountant-settlements screen: a month stepper +
+   accountant filter, three summary cards (الوارد الكلي / الراتب المستلم /
+   صافي الإيرادات), then settlement tiles with inline approve/reject. Salary
+   received is summed CLIENT-side from approved salary settlements (the mirror
+   has no month filter for settlements); collected/expenses come from the
+   month+accountant-scoped /api/account/stats dashboard. Branch-aware via
+   acctData/acctStats/API.decideSettlement (they target the active branch). */
+function viewMySettlements(){
+  var month=repMonthNow();
+  var accountantId="";       // "" = all accountants
+  var accountants=null;      // [{id,name}] once loaded
+  var acctNameMap={};        // id -> display name (for tiles)
+
+  function monthPicker(){
+    return el("div",{class:"card app-card rep-month"},[
+      el("button",{class:"rep-chev",text:"‹",title:"الشهر السابق",onclick:function(){ month=repMonthShift(month,-1); load(); }}),
+      el("div",{class:"rep-month-lbl",text:month}),
+      el("button",{class:"rep-chev",text:"›",title:"الشهر التالي",onclick:function(){ month=repMonthShift(month,1); load(); }})
+    ]);
+  }
+  function accountantFilter(){
+    var opts=[el("option",{value:"",selected:(accountantId==="")?"":false,text:"كل المحاسبين"})];
+    (accountants||[]).forEach(function(a){
+      opts.push(el("option",{value:a.id,selected:(String(a.id)===String(accountantId))?"":false,text:a.name}));
+    });
+    var sel=el("select",{class:"rep-acc-select",onchange:function(){ accountantId=this.value; load(); }},opts);
+    return el("div",{class:"card app-card rep-acc"},[
+      el("span",{class:"rep-acc-ic"},[mi("badge")]),
+      el("span",{class:"rep-acc-lbl",text:"المحاسب"}),
+      sel
+    ]);
+  }
+  function ensureAccountants(){
+    if(accountants!==null) return Promise.resolve(accountants);
+    return acctData("accountants",{page:1,limit:200}).then(function(res){
+      accountants=normalizeList(res,"records").map(function(r){
+        var d=(r&&r.data)||{};
+        var id=(d.id!=null?d.id:r.localId);
+        var nm=(r&&r.label)||d.name||d.username||String(id||"");
+        if(id!=null){ acctNameMap[id]=nm; if(r.localId!=null) acctNameMap[r.localId]=nm; }
+        return {id:id,name:nm};
+      }).filter(function(a){ return a.id!=null && a.id!==""; });
+      return accountants;
+    }).catch(function(){ accountants=[]; return accountants; });
+  }
+  function paint(inner){
+    var content=el("div");
+    content.appendChild(el("div",{class:"app-section-title",text:"تسويات المحاسبين"}));
+    content.appendChild(monthPicker());
+    content.appendChild(accountantFilter());
+    content.appendChild(inner);
+    shell("#/my/settlements",content);
+  }
+  // A settlement's request month (requested_at, else decided_at) === selected?
+  function inMonth(d){
+    var t=(d&&(d.requested_at||d.decided_at))||""; if(!t) return false;
+    var dt=new Date(t);
+    var m=isNaN(dt)?String(t).slice(0,7):(dt.getFullYear()+"-"+("0"+(dt.getMonth()+1)).slice(-2));
+    return m===month;
+  }
+  function summaryCards(collected,salary,net){
+    function cell(icon,color,val,lbl){
+      return el("div",{class:"set-sum"},[
+        el("div",{class:"s-ic",style:"color:"+color},[mi(icon)]),
+        el("div",{class:"s-val",style:"color:"+color,text:fmtPrice(val)}),
+        el("div",{class:"s-lbl",text:lbl})
+      ]);
+    }
+    return el("div",{class:"set-summary"},[
+      cell("account_balance_wallet","#1565C0",collected,"الوارد الكلي"),
+      cell("payments","#7b3ff2",salary,"الراتب المستلم"),
+      cell("trending_up",net<0?"#d32f2f":"#00897b",net,"صافي الإيرادات")
+    ]);
+  }
+  function methodInfo(m){
+    if(m==="salary") return {label:"راتب",icon:"account_balance_wallet"};
+    if(m==="card") return {label:"بطاقة",icon:"credit_card"};
+    return {label:"نقدي",icon:"payments"};
+  }
+  function decide(localId,status,okMsg,amount){
+    API.decideSettlement(localId,status,undefined,amount).then(function(){
+      toast(okMsg,"ok"); load();
+    }).catch(function(err){ toast(err.message||"تعذّر تنفيذ الإجراء","err"); });
+  }
+  function tile(r){
+    var d=(r&&r.data)||{};
+    var st=d.status||"pending";
+    var color=st==="approved"?"#2e7d32":(st==="rejected"?"#d32f2f":"#fb8c00");
+    var bg=st==="approved"?"#e8f5e9":(st==="rejected"?"#fdecec":"#fff3e0");
+    var info=methodInfo(d.method);
+    var name=acctNameMap[d.accountant_id]||(d.accountant_id==null?"المالك":"محاسب");
+    var pendingSalary=(d.method==="salary"&&st==="pending");
+    var amountText=pendingSalary?("— · "+info.label):(fmtPrice(d.amount)+" · "+info.label);
+    var when=d.requested_at?fmtDate(d.requested_at):"";
+    var kids=[
+      el("div",{class:"st-row"},[
+        el("div",{class:"set-avatar",style:"background:"+bg+";color:"+color},[mi(info.icon)]),
+        el("div",{class:"set-mid"},[
+          el("div",{class:"st-name",text:name}),
+          el("div",{class:"st-amount",text:amountText}),
+          when?el("div",{class:"st-date",text:when}):null
+        ]),
+        settlementStatusBadge(st)
+      ])
+    ];
+    if(st==="pending"){
+      function approve(){
+        if(d.method==="salary"){
+          var raw=window.prompt("مبلغ الراتب (د.ع):","");
+          if(raw===null) return;
+          var amt=parseFloat(String(raw).replace(/[,،٬\s]/g,""));
+          if(!isFinite(amt)||amt<=0){ toast("أدخل مبلغاً صحيحاً","err"); return; }
+          decide(r.localId,"approved","تمت الموافقة على التسوية",amt);
+        } else {
+          decide(r.localId,"approved","تمت الموافقة على التسوية");
+        }
+      }
+      kids.push(el("div",{class:"set-actions"},[
+        el("button",{class:"btn sm danger ghost",onclick:function(){ decide(r.localId,"rejected","تم رفض التسوية"); }},["رفض"]),
+        el("button",{class:"btn sm success",onclick:approve},["موافقة"])
+      ]));
+    }
+    return el("div",{class:"set-tile"},kids);
+  }
+  function load(){
+    var reqMonth=month, reqAcc=accountantId, reqBranch=ownerBranch.id+"|"+acctBranch.id;
+    paint(loadingBlock("جارٍ تحميل التسويات…"));
+    var setFilter=accountantId?{relField:"accountant_id",relValue:accountantId}:null;
+    Promise.all([acctStats(reqMonth,reqAcc),ensureAccountants(),fetchAllSettlements(setFilter)]).then(function(all){
+      if(reqMonth!==month||reqAcc!==accountantId||reqBranch!==(ownerBranch.id+"|"+acctBranch.id)) return; // stale
+      var dash=(all[0]&&all[0].dashboard)||{};
+      var rows=(all[2]||[]).filter(function(r){ return inMonth((r&&r.data)||{}); });
+      var salary=0;
+      rows.forEach(function(r){
+        var d=(r&&r.data)||{};
+        if(d.method==="salary"&&d.status==="approved") salary+=repNum(d.amount);
+      });
+      var collected=repNum(dash.collected);
+      var net=collected-salary-repNum(dash.expensesTotal);
+      // Newest first (requested_at is an ISO string; string compare = chrono).
+      rows.sort(function(a,b){
+        var ta=((a&&a.data)||{}).requested_at||"", tb=((b&&b.data)||{}).requested_at||"";
+        return tb<ta?-1:(tb>ta?1:0);
+      });
+      var inner=el("div");
+      inner.appendChild(summaryCards(collected,salary,net));
+      var pendingN=rows.filter(function(r){ return ((r&&r.data)||{}).status==="pending"; }).length;
+      if(pendingN>0) inner.appendChild(el("div",{class:"set-pending",text:"قيد الانتظار: "+pendingN}));
+      if(!rows.length){
+        inner.appendChild(el("div",{class:"set-empty"},[
+          el("span",{class:"e-ic"},[mi("receipt_long")]),
+          el("div",{text:"لا توجد تسويات لهذا الشهر"})
+        ]));
+      } else {
+        rows.forEach(function(r){ inner.appendChild(tile(r)); });
+      }
+      paint(inner);
+    }).catch(function(err){
+      if(err.status===401) return;
+      if(reqMonth!==month||reqAcc!==accountantId) return;
+      if(isFeatureDisabled(err)){ shell("#/my/settlements",ownerFeatureBlock()); return; }
+      paint(errorBlock(err,load));
+    });
   }
   load();
 }
