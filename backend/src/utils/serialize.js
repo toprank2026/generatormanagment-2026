@@ -92,6 +92,7 @@ function serializeAccount(user, currentDeviceId) {
     id: String(user._id || user.id),
     name: user.name,
     generatorName: user.generatorName || null,
+    contactPhone: user.contactPhone || null,
     phone: user.phone || null,
     username: user.username,
     role: user.role || 'owner',

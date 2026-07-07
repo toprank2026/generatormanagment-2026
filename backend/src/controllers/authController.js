@@ -94,6 +94,8 @@ const login = asyncHandler(async (req, res) => {
     // An accountant has no generatorName of its own; print receipts under the
     // OWNER's generator name (the Flutter receipt header reads account.generatorName).
     account.generatorName = owner.generatorName || null;
+    // v30 F3: same for the owner's contact phone printed on receipts.
+    account.contactPhone = owner.contactPhone || null;
     account.subscription = serializeSubscription(owner.subscription);
     account.subscription.features = await featuresForUser(owner);
     res.status(200).json({ token, account });
@@ -229,6 +231,8 @@ const me = asyncHandler(async (req, res) => {
     }
     // An accountant prints receipts under the OWNER's generator name (see login).
     account.generatorName = owner.generatorName || null;
+    // v30 F3: same for the owner's contact phone printed on receipts.
+    account.contactPhone = owner.contactPhone || null;
     account.subscription = serializeSubscription(owner.subscription);
     account.subscription.features = await featuresForUser(owner);
     res.status(200).json({ account });

@@ -174,3 +174,42 @@ test('accountant NON-password edit needs no owner password', async () => {
   });
   assert.equal(r.status, 200, `name/permission edit needs no challenge, got ${r.status} ${JSON.stringify(r.data)}`);
 });
+
+// ------------------------------------------------------ v30 F3 contactPhone ---
+
+test('owner sets contactPhone; it round-trips and injects into accountant sessions', async () => {
+  const owner = await registerOwner();
+  const acct = await createAccountant(owner);
+
+  // Owner sets the contact phone (NOT a password change → no currentPassword).
+  const set = await api('PUT', '/api/account/profile', {
+    token: owner.token,
+    body: { contactPhone: '  07701234567  ' },
+  });
+  assert.equal(set.status, 200, `set contactPhone -> ${set.status} ${JSON.stringify(set.data)}`);
+  assert.equal(set.data.account.contactPhone, '07701234567', 'trimmed + returned on the account');
+
+  // The accountant of that owner inherits it on login (printed on their device).
+  const login = await api('POST', '/api/auth/login', {
+    body: { username: acct.username, password: 'acct-orig', device: device('a1') },
+  });
+  assert.equal(login.status, 200, `accountant login -> ${login.status} ${JSON.stringify(login.data)}`);
+  assert.equal(login.data.account.contactPhone, '07701234567', 'owner contactPhone injected into accountant session');
+
+  // Clearing it (empty string) nulls the field — and it is NOT unique (a second
+  // owner can set the same number, unlike the login `phone`).
+  const clear = await api('PUT', '/api/account/profile', {
+    token: owner.token,
+    body: { contactPhone: '' },
+  });
+  assert.equal(clear.status, 200);
+  assert.equal(clear.data.account.contactPhone, null, 'empty string clears contactPhone');
+
+  const owner2 = await registerOwner();
+  const dup = await api('PUT', '/api/account/profile', {
+    token: owner2.token,
+    body: { contactPhone: '07701234567' },
+  });
+  assert.equal(dup.status, 200, 'contactPhone is non-unique (no PHONE_TAKEN)');
+  assert.equal(dup.data.account.contactPhone, '07701234567');
+});

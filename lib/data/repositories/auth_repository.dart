@@ -100,6 +100,7 @@ class AuthRepository {
     String? name,
     String? phone,
     String? generatorName,
+    String? contactPhone, // v30 F3: pass "" to clear, a value to set, null to skip
   }) async {
     final body = <String, dynamic>{};
     if (username != null) body['username'] = username;
@@ -110,6 +111,7 @@ class AuthRepository {
     if (name != null) body['name'] = name;
     if (phone != null) body['phone'] = phone;
     if (generatorName != null) body['generatorName'] = generatorName;
+    if (contactPhone != null) body['contactPhone'] = contactPhone;
     final res = await _api.put(ApiConfig.accountProfile, body: body);
     return _parseAuth(res);
   }

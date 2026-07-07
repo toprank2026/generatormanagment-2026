@@ -431,7 +431,7 @@ const updateMyProfile = asyncHandler(async (req, res) => {
   }
 
   const user = req.user;
-  const { name, phone, generatorName, username, password, currentPassword } =
+  const { name, phone, generatorName, contactPhone, username, password, currentPassword } =
     req.body || {};
 
   // v23 (§3.2): a password change must be authorized with the CURRENT password.
@@ -453,6 +453,11 @@ const updateMyProfile = asyncHandler(async (req, res) => {
   if (name !== undefined) user.name = String(name).trim();
   if (generatorName !== undefined) {
     user.generatorName = generatorName ? String(generatorName).trim() : null;
+  }
+  // v30 F3: contact phone printed on receipts. NOT unique (unlike `phone`), so
+  // no PHONE_TAKEN check — just trim/clear.
+  if (contactPhone !== undefined) {
+    user.contactPhone = contactPhone ? String(contactPhone).trim() : null;
   }
 
   if (phone !== undefined) {

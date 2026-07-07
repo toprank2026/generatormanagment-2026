@@ -133,6 +133,25 @@ class Messages extends Translations {
       'card_note_hint': 'e.g. received on an external bank account',
       'print_settings': 'Printed receipt settings',
       'print_settings_subtitle': 'Choose which sections appear on the receipt',
+      // v30 F3: contact phone printed instead of the footer.
+      'contact_phone': 'Contact phone',
+      'contact_phone_hint':
+          'Printed on the receipt in place of the footer (leave empty for the default footer).',
+      'contact_phone_saved': 'Contact phone saved',
+      // v30 F1: reports gauge segments.
+      'paid_by_me': 'Paid to me',
+      'paid_by_others': 'Paid to others',
+      // v30 F4: per-accountant expenses breakdown on the settlements screen.
+      'expenses_by_accountant': 'Expenses by accountant',
+      // v30 F2: receipt reversal.
+      'reverse_receipt': 'Reverse',
+      'reverse_receipt_title': 'Reverse receipt',
+      'reverse_receipt_confirm':
+          'Cancel this receipt? The subscriber returns to unpaid and all totals are restored.',
+      'receipt_reversed': 'Receipt reversed',
+      'reverse_blocked_settled':
+          'Cannot reverse: this collection has already been settled.',
+      'action_failed': 'Could not complete the action',
       'sec_station': 'Station name',
       'sec_receipt_no': 'Receipt number',
       'sec_date': 'Payment date',
@@ -676,6 +695,25 @@ class Messages extends Translations {
       'card_note_hint': 'مثال: تم استلام هذا المبلغ من حساب مصرفي خارج التطبيق',
       'print_settings': 'إعدادات الوصل المطبوع',
       'print_settings_subtitle': 'اختر الأقسام التي تظهر على الوصل',
+      // v30 F3: رقم التواصل المطبوع بدل التذييل.
+      'contact_phone': 'رقم التواصل',
+      'contact_phone_hint':
+          'يُطبع على الوصل بدل التذييل (اتركه فارغاً لعرض التذييل الافتراضي).',
+      'contact_phone_saved': 'تم حفظ رقم التواصل',
+      // v30 F1: أجزاء مؤشر التقارير.
+      'paid_by_me': 'مسدَّد لي',
+      'paid_by_others': 'مسدَّد لغيري',
+      // v30 F4: تفصيل المصاريف حسب المحاسب في شاشة التسويات.
+      'expenses_by_accountant': 'المصاريف حسب المحاسب',
+      // v30 F2: إلغاء الوصل.
+      'reverse_receipt': 'إلغاء',
+      'reverse_receipt_title': 'إلغاء الوصل',
+      'reverse_receipt_confirm':
+          'هل تريد إلغاء هذا الوصل؟ سيعود المشترك غير مسدَّد وتُستعاد جميع الإجماليات.',
+      'receipt_reversed': 'تم إلغاء الوصل',
+      'reverse_blocked_settled':
+          'لا يمكن الإلغاء: تمت تسوية هذا التحصيل بالفعل.',
+      'action_failed': 'تعذّر تنفيذ الإجراء',
       'sec_station': 'اسم المحطة',
       'sec_receipt_no': 'رقم الوصل',
       'sec_date': 'تاريخ الدفع',

@@ -471,6 +471,7 @@ class AuthController extends GetxController {
     String? name,
     String? phone,
     String? generatorName,
+    String? contactPhone, // v30 F3: "" clears, a value sets, null skips
   }) async {
     try {
       if (!await _net.isOnline()) {
@@ -483,6 +484,7 @@ class AuthController extends GetxController {
         name: name,
         phone: phone,
         generatorName: generatorName,
+        contactPhone: contactPhone,
       );
       await _cache.saveAccount(result.account.toJson());
       _setAccount(result.account, online: true);

@@ -314,11 +314,17 @@ class UsbPrintService {
           iconKey: rows[i].key, top: i == 0, bottom: i == rows.length - 1));
     }
 
-    // Footer.
+    // Footer — v30 F3: the owner's contact phone prints INSTEAD OF the footer
+    // when one is set (empty → the existing thank-you footer).
     if (PrinterPrefs.showSection('sec_footer')) {
       out.add(await _spacerImage(8));
-      out.add(await _textImage('شكراً لكم!', 20, center: true));
-      out.add(await _textImage('Powered by Flash', 18, center: true));
+      final contact = _contactPhone();
+      if (contact.isNotEmpty) {
+        out.add(await _textImage('للتواصل: $contact', 20, center: true));
+      } else {
+        out.add(await _textImage('شكراً لكم!', 20, center: true));
+        out.add(await _textImage('Powered by Flash', 18, center: true));
+      }
     }
 
     // v28 (revised): QR is MANDATORY and sits at the BOTTOM CENTER, framed +
@@ -643,5 +649,17 @@ class UsbPrintService {
       if (g != null && g.trim().isNotEmpty) return g.trim();
     } catch (_) {}
     return '';
+  }
+
+  /// v30 F3: the owner-set contact phone printed on receipts (in place of the
+  /// footer), or '' when none is configured. Shared by USB + LAN (LAN reuses
+  /// this renderer).
+  String _contactPhone() {
+    try {
+      return Get.find<AuthController>().account.value?.contactPhone?.trim() ??
+          '';
+    } catch (_) {
+      return '';
+    }
   }
 }

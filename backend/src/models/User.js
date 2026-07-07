@@ -38,6 +38,9 @@ const UserSchema = new Schema(
   {
     name: { type: String, required: true, trim: true },
     generatorName: { type: String, default: null, trim: true },
+    // v30 F3: owner-set contact phone PRINTED on receipts (in place of the
+    // footer). NOT a login identifier — non-unique, unlike `phone`.
+    contactPhone: { type: String, default: null, trim: true },
     phone: { type: String, default: null, trim: true },
     username: {
       type: String,

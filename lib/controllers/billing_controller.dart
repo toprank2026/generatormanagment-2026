@@ -3,15 +3,22 @@ import 'package:uuid/uuid.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
+import 'package:generatormanagment/data/repositories/settlement_repository.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/month_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
+import 'package:generatormanagment/controllers/reports_controller.dart';
+import 'package:generatormanagment/controllers/settlement_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
+
+/// v30 F2: outcome of a receipt reversal (drives the UI message).
+enum ReverseResult { ok, notAllowed, alreadyReversed, blockedSettled, error }
 
 class BillingController extends GetxController {
   final MonthlyPriceRepository _priceRepo = MonthlyPriceRepository();
   final ReceiptRepository _receiptRepo = ReceiptRepository();
+  final SettlementRepository _settleRepo = SettlementRepository();
   final BranchController _branch = Get.find();
   final MonthController _month = Get.find();
 
@@ -326,5 +333,64 @@ class BillingController extends GetxController {
 
     update();
     return r;
+  }
+
+  /// v30 F2: reverse (soft-void) a collected receipt. Flips it to 'refunded' so
+  /// the subscriber returns to UNPAID and EVERY derived figure restores
+  /// automatically (all money / paid-unpaid / wallet / dashboard / report
+  /// aggregates filter status='valid'). Then reloads the affected controllers.
+  ///
+  /// Allowed ONLY for the ACCOUNTANT who collected it (choke-point gate, silent
+  /// like [collectPayment]) and ONLY while the cash is still UNSETTLED — i.e. no
+  /// pending settlement on the receipt's wallet method AND the wallet balance
+  /// still covers the receipt amount. Otherwise reversing would invalidate a
+  /// settlement or drive the wallet negative, so it is refused
+  /// ([ReverseResult.blockedSettled]).
+  Future<ReverseResult> reverseReceipt(Receipt receipt) async {
+    final auth = Get.find<AuthController>();
+    if (!auth.isAccountant) return ReverseResult.notAllowed;
+    // Re-read so a stale UI copy can't double-reverse.
+    final fresh = await _receiptRepo.getByUuid(receipt.uuid) ?? receipt;
+    if (fresh.status != 'valid') return ReverseResult.alreadyReversed;
+    final acctId = fresh.accountantId;
+    // Only the collecting accountant may reverse their own receipt.
+    if (acctId == null ||
+        acctId.isEmpty ||
+        acctId != auth.currentUser.value?.id) {
+      return ReverseResult.notAllowed;
+    }
+    // "Not yet settled" guard: block if a settlement of this method is pending,
+    // or if the wallet balance no longer covers the receipt (its cash was paid
+    // out) — reversing then would settle a stale total / go negative.
+    final method = fresh.paymentMethod == 'card' ? 'card' : 'cash';
+    try {
+      if (await _settleRepo.hasPending(acctId, method)) {
+        return ReverseResult.blockedSettled;
+      }
+      final w = await _settleRepo.wallet(acctId);
+      final double balance = method == 'card' ? w.cardBalance : w.cashBalance;
+      if (balance < fresh.paidAmount) return ReverseResult.blockedSettled;
+    } catch (_) {
+      return ReverseResult.error;
+    }
+    try {
+      await _receiptRepo.markRefunded(fresh);
+      SyncController.poke(); // push the reversal into the mirror
+    } catch (_) {
+      return ReverseResult.error;
+    }
+    // Restore every downstream figure now.
+    await loadReceiptHistory(fresh.subscriberId);
+    if (Get.isRegistered<DashboardController>()) {
+      Get.find<DashboardController>().loadStats();
+    }
+    if (Get.isRegistered<ReportsController>()) {
+      Get.find<ReportsController>().loadReport();
+    }
+    if (Get.isRegistered<SettlementController>()) {
+      Get.find<SettlementController>().load();
+    }
+    update();
+    return ReverseResult.ok;
   }
 }

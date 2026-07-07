@@ -24,6 +24,7 @@ class PdfService {
     } catch (_) {}
 
     final gName = _generatorName();
+    final contact = _contactPhone(); // v30 F3: printed instead of the footer
     final qrData = _receiptQrUrl(receipt);
 
     final rows = <List<String>>[
@@ -114,15 +115,24 @@ class PdfService {
                   ),
                 ),
                 pw.SizedBox(height: 6),
-                pw.Center(child: pw.Text('شكراً لكم')),
-                // v15: footer branding — Powered by Flash.
-                pw.SizedBox(height: 6),
-                pw.Divider(thickness: 0.5),
-                pw.Center(
-                  child: pw.Text('Powered by Flash',
-                      style: pw.TextStyle(
-                          fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                ),
+                // v30 F3: the owner's contact phone replaces the footer when set.
+                if (contact.isNotEmpty)
+                  pw.Center(
+                    child: pw.Text('للتواصل: $contact',
+                        style:
+                            pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  )
+                else ...[
+                  pw.Center(child: pw.Text('شكراً لكم')),
+                  // v15: footer branding — Powered by Flash.
+                  pw.SizedBox(height: 6),
+                  pw.Divider(thickness: 0.5),
+                  pw.Center(
+                    child: pw.Text('Powered by Flash',
+                        style: pw.TextStyle(
+                            fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                  ),
+                ],
               ],
             ),
           );
@@ -165,6 +175,17 @@ class PdfService {
     // v15: never print the "TopRank" literal — show only the generator name
     // (empty in the extreme case where no name is available).
     return '';
+  }
+
+  /// v30 F3: the owner-set contact phone printed on receipts (in place of the
+  /// footer), or '' when none is configured.
+  String _contactPhone() {
+    try {
+      return Get.find<AuthController>().account.value?.contactPhone?.trim() ??
+          '';
+    } catch (_) {
+      return '';
+    }
   }
 
   /// URL the receipt QR encodes: opens the public receipt page (no login) in the

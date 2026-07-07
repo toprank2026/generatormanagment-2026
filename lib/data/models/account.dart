@@ -110,6 +110,10 @@ class Account {
   final String id;
   final String name;
   final String? generatorName;
+  /// v30 F3: owner-set contact phone PRINTED on receipts (instead of the
+  /// footer). Injected from the owner for accountant sessions; distinct from the
+  /// login [phone].
+  final String? contactPhone;
   final String? phone;
   final String username;
   final String role; // owner | admin | accountant
@@ -134,6 +138,7 @@ class Account {
     required this.id,
     required this.name,
     this.generatorName,
+    this.contactPhone,
     this.phone,
     required this.username,
     this.role = 'owner',
@@ -151,6 +156,7 @@ class Account {
         id: (j['id'] ?? j['_id'] ?? '').toString(),
         name: (j['name'] ?? j['username'] ?? j['email'] ?? '').toString(),
         generatorName: j['generatorName'] as String?,
+        contactPhone: j['contactPhone'] as String?,
         phone: j['phone'] as String?,
         username: (j['username'] ?? j['email'] ?? '').toString(),
         role: (j['role'] ?? 'owner').toString(),
@@ -177,6 +183,7 @@ class Account {
         'id': id,
         'name': name,
         'generatorName': generatorName,
+        'contactPhone': contactPhone,
         'phone': phone,
         'username': username,
         'role': role,

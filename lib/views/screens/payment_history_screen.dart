@@ -224,6 +224,59 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
     }
   }
 
+  /// v30 F2: confirm + reverse (soft-void) a receipt. Closes the dialog FIRST
+  /// (Navigator.pop returns the choice) so the async reverse + result snackbar
+  /// run AFTER the dialog is gone (avoids the stuck-dialog gotcha).
+  Future<void> _confirmReverse(Receipt r) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('reverse_receipt_title'.tr),
+        content: Text('reverse_receipt_confirm'.tr),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('cancel'.tr),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('reverse_receipt'.tr),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final result = await _billing.reverseReceipt(r);
+    if (!mounted) return;
+    switch (result) {
+      case ReverseResult.ok:
+        await _load(page: 1);
+        Get.snackbar('success'.tr, 'receipt_reversed'.tr,
+            backgroundColor: Colors.green,
+            colorText: Colors.white,
+            snackPosition: SnackPosition.BOTTOM);
+        break;
+      case ReverseResult.blockedSettled:
+        Get.snackbar('settlement'.tr, 'reverse_blocked_settled'.tr,
+            backgroundColor: Colors.orange,
+            colorText: Colors.white,
+            snackPosition: SnackPosition.BOTTOM);
+        break;
+      case ReverseResult.alreadyReversed:
+        await _load(page: 1); // someone else already reversed it — refresh
+        break;
+      case ReverseResult.notAllowed:
+      case ReverseResult.error:
+        Get.snackbar('error'.tr, 'action_failed'.tr,
+            backgroundColor: Colors.redAccent,
+            colorText: Colors.white,
+            snackPosition: SnackPosition.BOTTOM);
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -367,11 +420,24 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                                     ),
                                   ),
                                   if (refunded)
-                                    Text('subscription_rejected'.tr,
+                                    Text('refunded'.tr,
                                         style: const TextStyle(
                                             fontSize: 10, color: Colors.red)),
                                 ],
                               ),
+                              // v30 F2: reverse (cancel) a VALID receipt — the
+                              // COLLECTING accountant only (own receipts; mirrors
+                              // the controller choke point), hidden once refunded.
+                              if (_auth.isAccountant &&
+                                  r.status == 'valid' &&
+                                  r.accountantId ==
+                                      _auth.currentUser.value?.id)
+                                IconButton(
+                                  tooltip: 'reverse_receipt'.tr,
+                                  icon: const Icon(Icons.undo,
+                                      color: Colors.redAccent),
+                                  onPressed: () => _confirmReverse(r),
+                                ),
                               IconButton(
                                 tooltip: 'print'.tr,
                                 icon: const Icon(

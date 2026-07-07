@@ -50,6 +50,12 @@ class _AccountantSettlementsScreenState
   List<Accountant> _accountants = const [];
   // Summary figures for the active (month, accountant) scope.
   double _sumCollected = 0, _sumSalary = 0, _sumExpenses = 0;
+  // v30 F4: per-accountant expenses for the month (only computed in the "all
+  // accountants" view) so it's clear how each accountant's + the combined
+  // expenses feed the net. Key = accountant id; plus [_expOwner] for
+  // owner/unattributed expenses (accountant_id null).
+  Map<String, double> _expByAccountant = {};
+  double _expOwner = 0;
 
   // v23 item 7: paginate — the list previously loaded only the first 100 rows
   // (listAllForOwner default) with no way to reach older settlements.
@@ -107,6 +113,9 @@ class _AccountantSettlementsScreenState
       // key off the BILLING month (receipts.month / expenses date prefix);
       // salary received keys off the settlement request month.
       double collected = 0, salary = 0, expenses = 0;
+      // v30 F4: per-accountant expenses breakdown (only in the "all" view).
+      final Map<String, double> expByAcct = {};
+      double expOwner = 0;
       try {
         collected = await _receiptRepo.getCollectedSum(_month,
             accountantId: _acctFilter, branchId: null);
@@ -114,6 +123,17 @@ class _AccountantSettlementsScreenState
             accountantId: _acctFilter, branchId: null);
         salary = await _repo.approvedSumForMonth(_month, 'salary',
             accountantId: _acctFilter);
+        if (_acctFilter == null) {
+          double sumAcct = 0;
+          for (final a in _accountants) {
+            final e = await _expenseRepo.getTotalExpenses(_month,
+                accountantId: a.id, branchId: null);
+            if (e > 0) expByAcct[a.id] = e;
+            sumAcct += e;
+          }
+          // Whatever isn't attributed to an accountant is owner/other expenses.
+          expOwner = (expenses - sumAcct) > 0 ? (expenses - sumAcct) : 0;
+        }
       } catch (_) {}
       if (!mounted) return;
       setState(() {
@@ -124,6 +144,8 @@ class _AccountantSettlementsScreenState
         _sumCollected = collected;
         _sumSalary = salary;
         _sumExpenses = expenses;
+        _expByAccountant = expByAcct;
+        _expOwner = expOwner;
         _loading = false;
       });
     } catch (_) {
@@ -213,6 +235,7 @@ class _AccountantSettlementsScreenState
           children: [
             _filterRow(),
             _summaryBanner(),
+            _expensesBreakdown(),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -386,6 +409,9 @@ class _AccountantSettlementsScreenState
           BoxShadow(color: Colors.blue.withValues(alpha: 0.06), blurRadius: 8),
         ],
       ),
+      // v30 F4: expenses shown alongside collected + salary so it is clear how
+      // net = collected − salary − expenses is derived. Expenses respect the
+      // accountant filter (one accountant when filtered, all combined otherwise).
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -393,12 +419,70 @@ class _AccountantSettlementsScreenState
               fmtAmount(_sumCollected), _kBlue),
           cell(Icons.payments, 'salary_received'.tr, fmtAmount(_sumSalary),
               const Color(0xFF6A1B9A)),
+          cell(Icons.receipt_long, 'total_expenses'.tr,
+              fmtAmount(_sumExpenses), const Color(0xFFEF6C00)),
           cell(Icons.trending_up, 'net_income'.tr, fmtAmount(net),
               net < 0 ? Colors.red : const Color(0xFF00897B)),
         ],
       ),
     );
   }
+
+  /// v30 F4: a collapsible per-accountant expenses breakdown, shown only in the
+  /// "all accountants" view, so it is clear how each accountant's + the combined
+  /// expenses feed the net. Collapsed by default (doesn't crowd the list).
+  Widget _expensesBreakdown() {
+    if (_acctFilter != null) return const SizedBox.shrink();
+    final entries = _expByAccountant.entries.toList();
+    if (entries.isEmpty && _expOwner <= 0) return const SizedBox.shrink();
+    final nameOf = {for (final a in _accountants) a.id: a.displayName};
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      decoration: BoxDecoration(
+          color: Colors.white, borderRadius: BorderRadius.circular(16)),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+          leading:
+              const Icon(Icons.receipt_long, color: Color(0xFFEF6C00)),
+          title: Text('expenses_by_accountant'.tr,
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          subtitle: Text(
+              '${'total_expenses'.tr}: ${fmtAmount(_sumExpenses)}',
+              style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
+          children: [
+            for (final e in entries)
+              _expRow(nameOf[e.key] ?? 'accountant'.tr, e.value),
+            if (_expOwner > 0) _expRow('owner'.tr, _expOwner),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _expRow(String label, double value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w500, fontSize: 13)),
+            ),
+            Text(fmtAmount(value),
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: Color(0xFFEF6C00))),
+          ],
+        ),
+      );
 
   Widget _tile(Settlement s, String accountantName) {
     final color = s.isApproved

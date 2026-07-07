@@ -31,6 +31,16 @@ class ReportsController extends GetxController {
   String? get _scope =>
       _auth.isAdmin ? accountantFilter.value : _auth.currentUser.value?.id;
 
+  /// v30 F1: gauge (paid/unpaid) scope. The owner keeps their accountant
+  /// filter; an ACCOUNTANT sees the BRANCH-WIDE paid/unpaid picture (like the
+  /// admin gauge) with their own collections highlighted separately ([paidByMe]).
+  String? get _gaugeScope => _auth.isAdmin ? accountantFilter.value : null;
+
+  /// v30 F1: the "current accountant" whose paid slice is shown orange — an
+  /// accountant is themselves; the owner has none here (paidByMe stays 0, so the
+  /// owner gauge is unchanged: a plain 2-segment paid/unpaid donut).
+  String? get _meId => _auth.isAdmin ? null : _auth.currentUser.value?.id;
+
   /// Active-branch read scope (null = consolidated / All branches).
   String? get _branchScope => _branch.scopeBranchId;
 
@@ -46,6 +56,10 @@ class ReportsController extends GetxController {
   var totalSubscribers = 0.obs;
   var paidCount = 0.obs;
   var unpaidCount = 0.obs;
+
+  /// v30 F1: count of subscribers PAID BY THE CURRENT ACCOUNTANT this month
+  /// (the orange gauge segment). 0 for the owner/admin view.
+  var paidByMe = 0.obs;
 
   var totalAmps = 0.0.obs;
   var pricePerAmp =
@@ -107,6 +121,12 @@ class ReportsController extends GetxController {
       // the active branch (full isolation).
       final scope = _scope;
       final branch = _branchScope;
+      // v30 F1: the gauge (paid/unpaid + per-tariff) uses the branch-wide scope
+      // for an accountant (so they see the same paid/unpaid picture as admin),
+      // while money figures stay personal via [scope]. [meId] is the accountant
+      // whose paid slice is highlighted orange.
+      final gaugeScope = _gaugeScope;
+      final meId = _meId;
 
       // 1. Subscribers & Amps (branch-scoped) — SQL aggregates, NOT a full
       //    materialization of every subscriber row (audit: scale).
@@ -161,14 +181,25 @@ class ReportsController extends GetxController {
         month: m,
         isPaid: true,
         branchId: branch,
-        receiptAccountantId: scope,
+        receiptAccountantId: gaugeScope,
       );
       final int unpaidLocal = await _subRepo.countByPaymentStatus(
         month: m,
         isPaid: false,
         branchId: branch,
-        receiptAccountantId: scope,
+        receiptAccountantId: gaugeScope,
       );
+
+      // v30 F1: subscribers PAID BY THE CURRENT ACCOUNTANT this month (orange
+      // segment) — collector-scoped to [meId]; 0 for the owner/admin view.
+      final int paidByMeLocal = meId == null
+          ? 0
+          : await _subRepo.countByPaymentStatus(
+              month: m,
+              isPaid: true,
+              branchId: branch,
+              receiptAccountantId: meId,
+            );
 
       // (item 1) per-tariff PAID counts (gold / standard / commercial).
       final int paidGoldLocal = await _subRepo.countByPaymentStatus(
@@ -176,19 +207,19 @@ class ReportsController extends GetxController {
           isPaid: true,
           branchId: branch,
           category: SubscriberCategory.gold,
-          receiptAccountantId: scope);
+          receiptAccountantId: gaugeScope);
       final int paidStandardLocal = await _subRepo.countByPaymentStatus(
           month: m,
           isPaid: true,
           branchId: branch,
           category: SubscriberCategory.standard,
-          receiptAccountantId: scope);
+          receiptAccountantId: gaugeScope);
       final int paidCommercialLocal = await _subRepo.countByPaymentStatus(
           month: m,
           isPaid: true,
           branchId: branch,
           category: SubscriberCategory.commercial,
-          receiptAccountantId: scope);
+          receiptAccountantId: gaugeScope);
 
       // v22 item 6: collector-name map (best-effort; report renders without it).
       // v23 review: SNAPSHOT the prior names (not an alias) so a getAll() failure
@@ -222,6 +253,7 @@ class ReportsController extends GetxController {
       netProfit.value = netLocal;
       paidCount.value = paidLocal;
       unpaidCount.value = unpaidLocal;
+      paidByMe.value = paidByMeLocal;
       paidGold.value = paidGoldLocal;
       paidStandard.value = paidStandardLocal;
       paidCommercial.value = paidCommercialLocal;

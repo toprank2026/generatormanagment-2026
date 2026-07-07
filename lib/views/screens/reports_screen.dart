@@ -85,6 +85,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 final double net = controller.netProfit.value;
                 final Color netColor =
                     net >= 0 ? const Color(0xFF2E7D32) : const Color(0xFFC62828);
+                // v30 F1: paid / unpaid / paid-by-current-accountant gauge.
+                final int paidN = controller.paidCount.value;
+                final int unpaidN = controller.unpaidCount.value;
+                final int byMeN = controller.paidByMe.value;
+                final int byOthersN = (paidN - byMeN) < 0 ? 0 : (paidN - byMeN);
 
                 return SingleChildScrollView(
                   controller: _scroll,
@@ -127,18 +132,39 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
                       // v14: collection-rate gauge removed.
 
-                      // b) Paid / unpaid donut.
+                      // b) Paid / unpaid / paid-by-me donut (v30 F1). When the
+                      //    current accountant has collected from subscribers this
+                      //    month, the paid ring splits into green "paid by others"
+                      //    + orange "paid by me"; otherwise it's a plain paid/
+                      //    unpaid donut (identical to the owner view).
                       _chartCard(
                         DonutChart(
                           segments: [
-                            DonutSegment(
-                              label: 'paid_subscribers'.tr,
-                              value: controller.paidCount.value.toDouble(),
-                              color: const Color(0xFF2E7D32),
-                            ),
+                            // No "paid by me" collections → a plain green paid
+                            // segment. Otherwise green = paid-by-others, but only
+                            // when it's non-zero (else the legend would show a
+                            // confusing "paid by others 0" row).
+                            if (byMeN == 0)
+                              DonutSegment(
+                                label: 'paid_subscribers'.tr,
+                                value: paidN.toDouble(),
+                                color: const Color(0xFF2E7D32),
+                              )
+                            else if (byOthersN > 0)
+                              DonutSegment(
+                                label: 'paid_by_others'.tr,
+                                value: byOthersN.toDouble(),
+                                color: const Color(0xFF2E7D32),
+                              ),
+                            if (byMeN > 0)
+                              DonutSegment(
+                                label: 'paid_by_me'.tr,
+                                value: byMeN.toDouble(),
+                                color: const Color(0xFFEF6C00),
+                              ),
                             DonutSegment(
                               label: 'unpaid_subscribers'.tr,
-                              value: controller.unpaidCount.value.toDouble(),
+                              value: unpaidN.toDouble(),
                               color: const Color(0xFFC62828),
                             ),
                           ],
@@ -146,9 +172,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           // segments (paid+unpaid). Under an accountant filter
                           // this differs from branch-wide totalSubscribers, so
                           // showing the sum keeps the donut internally consistent.
-                          centerText: (controller.paidCount.value +
-                                  controller.unpaidCount.value)
-                              .toString(),
+                          centerText: (paidN + unpaidN).toString(),
                         ),
                       ),
 

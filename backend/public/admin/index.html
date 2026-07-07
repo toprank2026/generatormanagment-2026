@@ -360,7 +360,7 @@
 
   /* owner settlements screen (#/my/settlements): mirrors the app's
      accountant-settlements screen — 3 summary cards + settlement tiles. */
-  .set-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+  .set-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px}
   .set-sum{background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:12px 8px;text-align:center;min-width:0}
   .set-sum .s-ic{font-size:22px;display:flex;justify-content:center;margin-bottom:4px}
   .set-sum .s-val{font-weight:800;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1654,6 +1654,19 @@ function discountText(d,verbose){
   }
   return verbose ? ("النوع: "+typeLbl+" — "+amt) : (amt+" ("+typeLbl+")");
 }
+// v30 F2: receipt status badge — a REVERSED (refunded) receipt must read
+// "مُسترجع" (not the raw English 'refunded' / look live). valid→green, refunded→
+// red, deleted→gray. Null/absent status = a legacy valid receipt.
+var RECEIPT_STATUS_LABELS={valid:"صالح",refunded:"مُسترجع",deleted:"محذوف"};
+function receiptStatusLabel(status){
+  var s=status||"valid";
+  return RECEIPT_STATUS_LABELS[s]||syncText(s);
+}
+function receiptStatusBadge(status){
+  var s=status||"valid";
+  var cls=s==="valid"?"green":(s==="refunded"?"red":"gray");
+  return el("span",{class:"badge "+cls,text:receiptStatusLabel(s)});
+}
 var SYNC_COLUMNS={
   subscribers:[
     {label:"الاسم",get:function(d){ return syncText(d.name); }},
@@ -1682,7 +1695,8 @@ var SYNC_COLUMNS={
       return m[d.category_snapshot]||syncText(d.category_snapshot);
     }},
     {label:"المدفوع",get:function(d){ return d.paid_amount!=null?fmtPrice(d.paid_amount):"—"; }},
-    {label:"الخصم",get:function(d){ return discountText(d); }}
+    {label:"الخصم",get:function(d){ return discountText(d); }},
+    {label:"الحالة",get:function(d){ return receiptStatusBadge(d.status); }}
   ],
   expenses:[
     {label:"الفئة",get:function(d){ return expenseCategoryLabel(d.category); }},
@@ -2092,7 +2106,8 @@ function receiptDetailContent(rec,d,subName){
   content.appendChild(pageHead("وصل رقم #"+(d.receipt_no!=null?d.receipt_no:"—")));
 
   var status=(d.status||"valid");
-  var badge=el("span",{class:"badge "+(status==="valid"?"green":"red")},[status==="valid"?"صالح":status]);
+  // v30 F2: localize the status (refunded → مُسترجع, not the raw English word).
+  var badge=receiptStatusBadge(status);
   if(d.deleted||rec.deleted){ badge=el("span",{class:"badge gray"},["محذوف"]); }
 
   var kv=[];
@@ -2260,7 +2275,7 @@ function statementTable(records,detailHrefFor){
     var st=(d.deleted||r.deleted)?"deleted":(d.status||"valid");
     var stBadge=st==="deleted"
       ? el("span",{class:"badge gray"},["محذوف"])
-      : el("span",{class:"badge "+(st==="valid"?"green":"red")},[st==="valid"?"صالح":st]);
+      : el("span",{class:"badge "+(st==="valid"?"green":"red")},[receiptStatusLabel(st)]);
     var detailHref=detailHrefFor(r.localId);
     tb.appendChild(el("tr",[
       el("td",[el("a",{href:detailHref,style:"font-weight:700",text:(d.receipt_no!=null?"#"+d.receipt_no:"—")})]),
@@ -2735,7 +2750,7 @@ function viewMySettlements(){
     var m=isNaN(dt)?String(t).slice(0,7):(dt.getFullYear()+"-"+("0"+(dt.getMonth()+1)).slice(-2));
     return m===month;
   }
-  function summaryCards(collected,salary,net){
+  function summaryCards(collected,salary,expenses,net){
     function cell(icon,color,val,lbl){
       return el("div",{class:"set-sum"},[
         el("div",{class:"s-ic",style:"color:"+color},[mi(icon)]),
@@ -2743,9 +2758,11 @@ function viewMySettlements(){
         el("div",{class:"s-lbl",text:lbl})
       ]);
     }
+    // v30 F4: expenses shown so net = collected − salary − expenses is clear.
     return el("div",{class:"set-summary"},[
       cell("account_balance_wallet","#1565C0",collected,"الوارد الكلي"),
       cell("payments","#7b3ff2",salary,"الراتب المستلم"),
+      cell("receipt_long","#fb8c00",expenses,"المصروفات"),
       cell("trending_up",net<0?"#d32f2f":"#00897b",net,"صافي الإيرادات")
     ]);
   }
@@ -2813,14 +2830,15 @@ function viewMySettlements(){
         if(d.method==="salary"&&d.status==="approved") salary+=repNum(d.amount);
       });
       var collected=repNum(dash.collected);
-      var net=collected-salary-repNum(dash.expensesTotal);
+      var expenses=repNum(dash.expensesTotal);
+      var net=collected-salary-expenses;
       // Newest first (requested_at is an ISO string; string compare = chrono).
       rows.sort(function(a,b){
         var ta=((a&&a.data)||{}).requested_at||"", tb=((b&&b.data)||{}).requested_at||"";
         return tb<ta?-1:(tb>ta?1:0);
       });
       var inner=el("div");
-      inner.appendChild(summaryCards(collected,salary,net));
+      inner.appendChild(summaryCards(collected,salary,expenses,net));
       var pendingN=rows.filter(function(r){ return ((r&&r.data)||{}).status==="pending"; }).length;
       if(pendingN>0) inner.appendChild(el("div",{class:"set-pending",text:"قيد الانتظار: "+pendingN}));
       if(!rows.length){
@@ -3737,7 +3755,7 @@ function viewPublicReceipt(uuid){
     var r=res.receipt;
     var status=(r.status||"valid");
     var stBadge=el("span",{class:"badge "+(status==="valid"?"green":(status==="deleted"?"gray":"red"))},[
-      status==="valid"?"صالح":(status==="deleted"?"محذوف":status)
+      receiptStatusLabel(status)
     ]);
 
     card.appendChild(el("div",{class:"r-no",text:"وصل استلام رقم #"+(r.receipt_no!=null?r.receipt_no:"—")}));
@@ -3816,7 +3834,7 @@ function viewPublicReceiptHistory(uuid){
       recs.forEach(function(r){
         var status=(r.status||"valid");
         var st=el("span",{class:"badge "+(status==="valid"?"green":(status==="deleted"?"gray":"red"))},[
-          status==="valid"?"صالح":(status==="deleted"?"محذوف":status)
+          receiptStatusLabel(status)
         ]);
         body.appendChild(el("a",{
           class:"r-line",

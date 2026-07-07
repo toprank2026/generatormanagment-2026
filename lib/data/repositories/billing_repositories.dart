@@ -110,6 +110,29 @@ class ReceiptRepository {
     });
   }
 
+  /// Fetch a single receipt by its uuid (null when not found).
+  Future<Receipt?> getByUuid(String uuid) async {
+    final db = await _dbHelper.database;
+    final maps = await db.query('receipts',
+        where: 'uuid = ?', whereArgs: [uuid], limit: 1);
+    if (maps.isEmpty) return null;
+    return Receipt.fromMap(maps.first);
+  }
+
+  /// v30 F2: soft-void a receipt — flip status 'valid' → 'refunded'. Every
+  /// money / paid-unpaid / wallet / dashboard / report aggregate filters
+  /// status = 'valid', so this single flip restores the subscriber to UNPAID and
+  /// reverses every derived figure. Written via the full [Receipt.toMap()] so
+  /// `updated_at` re-stamps (backend last-EDIT-wins accepts it over the older
+  /// 'valid' row) and the AFTER-UPDATE sync trigger enqueues one clean upsert —
+  /// NOT a delete (which would re-mint an already-printed receipt_no).
+  Future<void> markRefunded(Receipt r) async {
+    final db = await _dbHelper.database;
+    r.status = 'refunded';
+    await db.update('receipts', r.toMap(),
+        where: 'uuid = ?', whereArgs: [r.uuid]);
+  }
+
   // Receipt history for a subscriber. Subscribers are shared across accountants,
   // but each accountant's HISTORY shows only the receipts THEY collected, so an
   // optional [accountantId] scopes the list (null = owner/admin = all). The

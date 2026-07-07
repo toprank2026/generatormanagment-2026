@@ -140,11 +140,18 @@ class BluetoothPrintService {
 
     if (PrinterPrefs.showSection('sec_footer')) {
       bluetooth.printNewLine();
-      await printArabicText("شكراً لكم!", "", fontSize: 20, textAlign: 1);
-      await Future.delayed(const Duration(milliseconds: 100));
-      // v20 item 3: footer branding trimmed — "Powered by Flash" only.
-      await printArabicText("Powered by Flash", "", fontSize: 18, textAlign: 1);
-      await Future.delayed(const Duration(milliseconds: 80));
+      final contact = _contactPhone();
+      if (contact.isNotEmpty) {
+        // v30 F3: print the owner's contact phone INSTEAD OF the footer.
+        await printArabicText("للتواصل: $contact", "", fontSize: 20, textAlign: 1);
+        await Future.delayed(const Duration(milliseconds: 100));
+      } else {
+        await printArabicText("شكراً لكم!", "", fontSize: 20, textAlign: 1);
+        await Future.delayed(const Duration(milliseconds: 100));
+        // v20 item 3: footer branding trimmed — "Powered by Flash" only.
+        await printArabicText("Powered by Flash", "", fontSize: 18, textAlign: 1);
+        await Future.delayed(const Duration(milliseconds: 80));
+      }
     }
 
     // v28 (revised A4-A5): the MANDATORY QR sits at the BOTTOM CENTER, framed +
@@ -225,6 +232,18 @@ class BluetoothPrintService {
     } catch (_) {}
     // v15: never print the "TopRank" literal — generator name only.
     return '';
+  }
+
+  /// v30 F3: the owner-set contact phone printed on receipts (in place of the
+  /// footer), or '' when none is configured. For an accountant this is the
+  /// owner's number, injected into the session by the backend.
+  String _contactPhone() {
+    try {
+      return Get.find<AuthController>().account.value?.contactPhone?.trim() ??
+          '';
+    } catch (_) {
+      return '';
+    }
   }
 
   /// URL the receipt QR encodes: opens the public receipt page (no login) in the
