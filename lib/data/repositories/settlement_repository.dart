@@ -62,6 +62,23 @@ class SettlementRepository {
     );
   }
 
+  /// v30 (reversal lock): the NEWEST ACTIVE (pending|approved) settlement
+  /// request time for [accountantId]+[method], or null when none exists. A
+  /// receipt issued AT/BEFORE this moment had its cash included in that
+  /// settlement's requested balance → it is locked against reversal. Receipts
+  /// issued after the last request stay reversible. 'rejected' requests do NOT
+  /// lock (the owner declined — the money never left the wallet).
+  Future<String?> lastActiveRequestAt(String accountantId, String method) async {
+    final db = await _dbHelper.database;
+    final rows = await db.rawQuery(
+      "SELECT requested_at FROM settlements WHERE accountant_id = ? "
+      "AND COALESCE(method,'cash') = ? AND status IN ('pending','approved') "
+      "ORDER BY requested_at DESC LIMIT 1",
+      [accountantId, method],
+    );
+    return rows.isEmpty ? null : rows.first['requested_at'] as String?;
+  }
+
   /// True when the accountant already has an outstanding (pending) request for
   /// the given [method] — blocks duplicate settlement requests per wallet.
   Future<bool> hasPending(String accountantId, String method) async {

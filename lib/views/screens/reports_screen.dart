@@ -199,73 +199,93 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         ),
                       ),
 
-                      // d) Totals grid (dashboard-overview style).
-                      GridView.count(
-                        crossAxisCount: 2,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        mainAxisSpacing: 16,
-                        crossAxisSpacing: 16,
-                        childAspectRatio: 1.3,
-                        children: [
-                          _buildStatCard(
-                            icon: Icons.request_quote,
-                            color: Colors.indigo,
-                            label: 'expected_total'.tr,
-                            value: fmtAmount(expected),
-                          ),
-                          _buildStatCard(
-                            icon: Icons.account_balance_wallet,
-                            color: Colors.green,
-                            label: 'collected_revenue'.tr,
-                            value: fmtAmount(collected),
-                          ),
-                          _buildStatCard(
-                            icon: Icons.monetization_on,
-                            color: Colors.redAccent,
-                            label: 'remaining_fees'.tr,
-                            value: fmtAmount(controller.remainingTotal.value),
-                          ),
-                          _buildStatCard(
-                            icon: Icons.receipt_long,
-                            color: Colors.orange,
-                            label: 'total_expenses'.tr,
-                            value: fmtAmount(controller.expensesTotal.value),
-                          ),
-                          _buildStatCard(
-                            icon: net >= 0
-                                ? Icons.trending_up
-                                : Icons.trending_down,
-                            color: netColor,
-                            label: 'net_profit'.tr,
-                            value: fmtAmount(net),
-                            valueColor: netColor,
-                          ),
-                          // item 1: COUNT of PAID subscribers per tariff (gold /
-                          // standard / commercial) — not their prices.
-                          _buildStatCard(
-                            icon: Icons.people,
-                            color: const Color(0xFFFFB300), // gold
-                            label:
-                                '${'cat_gold'.tr} — ${'paid_subscribers'.tr}',
-                            value: controller.paidGold.value.toString(),
-                          ),
-                          _buildStatCard(
-                            icon: Icons.people,
-                            color: Colors.cyan,
-                            label:
-                                '${'cat_standard'.tr} — ${'paid_subscribers'.tr}',
-                            value: controller.paidStandard.value.toString(),
-                          ),
-                          _buildStatCard(
-                            icon: Icons.people,
-                            color: const Color(0xFF00897B), // commercial (teal)
-                            label:
-                                '${'cat_commercial'.tr} — ${'paid_subscribers'.tr}',
-                            value: controller.paidCommercial.value.toString(),
-                          ),
-                        ],
-                      ),
+                      // d) Totals grid (dashboard-overview style). v30 T2:
+                      //    RESPONSIVE — column count, spacing and every card
+                      //    dimension (padding/fonts/icon) scale with the
+                      //    available width so phones stay compact and tablets
+                      //    fill the space without overflow or dead whitespace.
+                      LayoutBuilder(builder: (context, box) {
+                        final double w = box.maxWidth;
+                        final int cols = w >= 900 ? 4 : (w >= 560 ? 3 : 2);
+                        final double scale = w >= 900
+                            ? 1.25
+                            : (w >= 560 ? 1.15 : (w < 340 ? 0.9 : 1.0));
+                        final double gap = w >= 560 ? 18 : 12;
+                        return GridView.count(
+                          crossAxisCount: cols,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          mainAxisSpacing: gap,
+                          crossAxisSpacing: gap,
+                          childAspectRatio: 1.3,
+                          children: [
+                            _buildStatCard(
+                              icon: Icons.request_quote,
+                              color: Colors.indigo,
+                              label: 'expected_total'.tr,
+                              value: fmtAmount(expected),
+                              scale: scale,
+                            ),
+                            _buildStatCard(
+                              icon: Icons.account_balance_wallet,
+                              color: Colors.green,
+                              label: 'collected_revenue'.tr,
+                              value: fmtAmount(collected),
+                              scale: scale,
+                            ),
+                            _buildStatCard(
+                              icon: Icons.monetization_on,
+                              color: Colors.redAccent,
+                              label: 'remaining_fees'.tr,
+                              value: fmtAmount(controller.remainingTotal.value),
+                              scale: scale,
+                            ),
+                            _buildStatCard(
+                              icon: Icons.receipt_long,
+                              color: Colors.orange,
+                              label: 'total_expenses'.tr,
+                              value: fmtAmount(controller.expensesTotal.value),
+                              scale: scale,
+                            ),
+                            _buildStatCard(
+                              icon: net >= 0
+                                  ? Icons.trending_up
+                                  : Icons.trending_down,
+                              color: netColor,
+                              label: 'net_profit'.tr,
+                              value: fmtAmount(net),
+                              valueColor: netColor,
+                              scale: scale,
+                            ),
+                            // item 1: COUNT of PAID subscribers per tariff (gold /
+                            // standard / commercial) — not their prices.
+                            _buildStatCard(
+                              icon: Icons.people,
+                              color: const Color(0xFFFFB300), // gold
+                              label:
+                                  '${'cat_gold'.tr} — ${'paid_subscribers'.tr}',
+                              value: controller.paidGold.value.toString(),
+                              scale: scale,
+                            ),
+                            _buildStatCard(
+                              icon: Icons.people,
+                              color: Colors.cyan,
+                              label:
+                                  '${'cat_standard'.tr} — ${'paid_subscribers'.tr}',
+                              value: controller.paidStandard.value.toString(),
+                              scale: scale,
+                            ),
+                            _buildStatCard(
+                              icon: Icons.people,
+                              color: const Color(0xFF00897B), // commercial (teal)
+                              label:
+                                  '${'cat_commercial'.tr} — ${'paid_subscribers'.tr}',
+                              value: controller.paidCommercial.value.toString(),
+                              scale: scale,
+                            ),
+                          ],
+                        );
+                      }),
                       const SizedBox(height: 24),
 
                       // e) The month's payments moved to their own screen.
@@ -488,6 +508,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     required String label,
     required String value,
     Color? valueColor,
+    double scale = 1.0, // v30 T2: phone/tablet size factor from the grid
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -502,39 +523,44 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: EdgeInsets.all(12.0 * scale),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: EdgeInsets.all(8 * scale),
               decoration: BoxDecoration(
                 color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(8 * scale),
               ),
-              child: Icon(icon, color: color),
+              child: Icon(icon, color: color, size: 24 * scale),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8 * scale),
             Flexible(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // FittedBox: a long amount shrinks to fit instead of
+                  // ellipsizing (v30 T2 — no overflow on any width).
                   Flexible(
-                    child: Text(
-                      value,
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: valueColor,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        value,
+                        style: TextStyle(
+                          fontSize: 20 * scale,
+                          fontWeight: FontWeight.bold,
+                          color: valueColor,
+                        ),
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   Text(
                     label,
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                    style: TextStyle(color: Colors.grey, fontSize: 12 * scale),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],

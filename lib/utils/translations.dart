@@ -143,6 +143,18 @@ class Messages extends Translations {
       'paid_by_others': 'Paid to others',
       // v30 F4: per-accountant expenses breakdown on the settlements screen.
       'expenses_by_accountant': 'Expenses by accountant',
+      // v30 T1: settlements financial summary (all settlement-based).
+      'total_revenue': 'Total revenue',
+      'total_settlements': 'Total settlements',
+      'pending_settlement_balance': 'Pending settlement balance',
+      'net_revenue': 'Net revenue',
+      'total_salaries': 'Total salaries',
+      'final_profit': 'Final profit',
+      'approved_settlement_total': 'Approved settlements',
+      'last_settlement': 'Last settlement',
+      'by_accountant': 'By accountant',
+      // v30 T3: creator-only expense deletion.
+      'expense_delete_own_only': 'Only its creator can delete this expense',
       // v30 F2: receipt reversal.
       'reverse_receipt': 'Reverse',
       'reverse_receipt_title': 'Reverse receipt',
@@ -150,7 +162,7 @@ class Messages extends Translations {
           'Cancel this receipt? The subscriber returns to unpaid and all totals are restored.',
       'receipt_reversed': 'Receipt reversed',
       'reverse_blocked_settled':
-          'Cannot reverse: this collection has already been settled.',
+          'Cannot reverse: this receipt is included in a submitted settlement request.',
       'action_failed': 'Could not complete the action',
       'sec_station': 'Station name',
       'sec_receipt_no': 'Receipt number',
@@ -705,6 +717,18 @@ class Messages extends Translations {
       'paid_by_others': 'مسدَّد لغيري',
       // v30 F4: تفصيل المصاريف حسب المحاسب في شاشة التسويات.
       'expenses_by_accountant': 'المصاريف حسب المحاسب',
+      // v30 T1: الملخص المالي لشاشة التسويات (مبني على التسويات).
+      'total_revenue': 'إجمالي الإيرادات',
+      'total_settlements': 'إجمالي التسويات',
+      'pending_settlement_balance': 'الرصيد غير المسوّى',
+      'net_revenue': 'صافي الإيرادات',
+      'total_salaries': 'إجمالي الرواتب',
+      'final_profit': 'الربح النهائي',
+      'approved_settlement_total': 'التسويات المعتمدة',
+      'last_settlement': 'آخر تسوية',
+      'by_accountant': 'حسب المحاسب',
+      // v30 T3: حذف المصروف من قبل منشئه فقط.
+      'expense_delete_own_only': 'يمكن حذف المصروف من قِبل منشئه فقط',
       // v30 F2: إلغاء الوصل.
       'reverse_receipt': 'إلغاء',
       'reverse_receipt_title': 'إلغاء الوصل',
@@ -712,7 +736,7 @@ class Messages extends Translations {
           'هل تريد إلغاء هذا الوصل؟ سيعود المشترك غير مسدَّد وتُستعاد جميع الإجماليات.',
       'receipt_reversed': 'تم إلغاء الوصل',
       'reverse_blocked_settled':
-          'لا يمكن الإلغاء: تمت تسوية هذا التحصيل بالفعل.',
+          'لا يمكن الإلغاء: هذا الوصل مشمول بطلب تسوية مُقدَّم.',
       'action_failed': 'تعذّر تنفيذ الإجراء',
       'sec_station': 'اسم المحطة',
       'sec_receipt_no': 'رقم الوصل',

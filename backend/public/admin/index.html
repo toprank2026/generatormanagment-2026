@@ -2750,7 +2750,7 @@ function viewMySettlements(){
     var m=isNaN(dt)?String(t).slice(0,7):(dt.getFullYear()+"-"+("0"+(dt.getMonth()+1)).slice(-2));
     return m===month;
   }
-  function summaryCards(collected,salary,expenses,net){
+  function summaryCards(revenue,salary,expenses){
     function cell(icon,color,val,lbl){
       return el("div",{class:"set-sum"},[
         el("div",{class:"s-ic",style:"color:"+color},[mi(icon)]),
@@ -2758,12 +2758,20 @@ function viewMySettlements(){
         el("div",{class:"s-lbl",text:lbl})
       ]);
     }
-    // v30 F4: expenses shown so net = collected − salary − expenses is clear.
+    // v30 T1 (parity with the app): ALL revenue figures are SETTLEMENT-based —
+    // revenue = approved cash/card settlements (never subscriber receipts);
+    // settlements = revenue + salaries; net = revenue − expenses;
+    // final profit = net − salaries. Every card reconciles by construction.
+    var totalSettlements=revenue+salary;
+    var netRevenue=revenue-expenses;
+    var finalProfit=netRevenue-salary;
     return el("div",{class:"set-summary"},[
-      cell("account_balance_wallet","#1565C0",collected,"الوارد الكلي"),
-      cell("payments","#7b3ff2",salary,"الراتب المستلم"),
+      cell("account_balance_wallet","#1565C0",revenue,"إجمالي الإيرادات"),
+      cell("fact_check","#00897b",totalSettlements,"إجمالي التسويات"),
       cell("receipt_long","#fb8c00",expenses,"المصروفات"),
-      cell("trending_up",net<0?"#d32f2f":"#00897b",net,"صافي الإيرادات")
+      cell("trending_up",netRevenue<0?"#d32f2f":"#2e7d32",netRevenue,"صافي الإيرادات"),
+      cell("payments","#7b3ff2",salary,"إجمالي الرواتب"),
+      cell("flag",finalProfit<0?"#d32f2f":"#1b5e20",finalProfit,"الربح النهائي")
     ]);
   }
   function methodInfo(m){
@@ -2824,21 +2832,23 @@ function viewMySettlements(){
       if(reqMonth!==month||reqAcc!==accountantId||reqBranch!==(ownerBranch.id+"|"+acctBranch.id)) return; // stale
       var dash=(all[0]&&all[0].dashboard)||{};
       var rows=(all[2]||[]).filter(function(r){ return inMonth((r&&r.data)||{}); });
-      var salary=0;
+      // v30 T1: revenue = APPROVED cash/card settlements (money actually handed
+      // over), salary = approved salary settlements — never subscriber receipts.
+      var revenue=0, salary=0;
       rows.forEach(function(r){
         var d=(r&&r.data)||{};
-        if(d.method==="salary"&&d.status==="approved") salary+=repNum(d.amount);
+        if(d.status!=="approved") return;
+        if(d.method==="salary") salary+=repNum(d.amount);
+        else revenue+=repNum(d.amount);
       });
-      var collected=repNum(dash.collected);
       var expenses=repNum(dash.expensesTotal);
-      var net=collected-salary-expenses;
       // Newest first (requested_at is an ISO string; string compare = chrono).
       rows.sort(function(a,b){
         var ta=((a&&a.data)||{}).requested_at||"", tb=((b&&b.data)||{}).requested_at||"";
         return tb<ta?-1:(tb>ta?1:0);
       });
       var inner=el("div");
-      inner.appendChild(summaryCards(collected,salary,expenses,net));
+      inner.appendChild(summaryCards(revenue,salary,expenses));
       var pendingN=rows.filter(function(r){ return ((r&&r.data)||{}).status==="pending"; }).length;
       if(pendingN>0) inner.appendChild(el("div",{class:"set-pending",text:"قيد الانتظار: "+pendingN}));
       if(!rows.length){

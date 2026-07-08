@@ -67,10 +67,22 @@ class ExpenseRepository {
     return 0.0;
   }
 
-  Future<void> deleteExpense(String id, {String? accountantId}) async {
+  /// Deletes one expense. [accountantId] scopes an accountant to THEIR OWN rows.
+  /// v30 T3: [ownerOnly] scopes the admin/owner to OWNER-CREATED rows
+  /// (accountant_id null/empty) — the admin may view accountants' expenses but
+  /// never delete them (defense-in-depth under the controller's canDelete gate).
+  Future<void> deleteExpense(String id,
+      {String? accountantId, bool ownerOnly = false}) async {
     final db = await _dbHelper.database;
-    final where = accountantId == null ? 'id = ?' : 'id = ? AND accountant_id = ?';
-    final args = accountantId == null ? [id] : [id, accountantId];
+    String where = 'id = ?';
+    final args = <dynamic>[id];
+    if (accountantId != null) {
+      where += ' AND accountant_id = ?';
+      args.add(accountantId);
+    }
+    if (ownerOnly) {
+      where += " AND (accountant_id IS NULL OR accountant_id = '')";
+    }
     await db.delete('expenses', where: where, whereArgs: args);
   }
 }

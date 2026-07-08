@@ -1,11 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
+import 'package:generatormanagment/data/models/settlement_model.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
+import 'package:generatormanagment/data/repositories/settlement_repository.dart';
 
 /// v30 F2 — receipt reversal (soft void). Flipping a receipt's status
 /// 'valid' → 'refunded' must restore the subscriber to UNPAID and drop every
@@ -126,5 +129,60 @@ void main() {
     final validAfter =
         await receipts.getBySubscriberAndMonth('B', month, branchId: main);
     expect(validAfter.isEmpty, true);
+  });
+
+  // v30 (refined lock): a receipt locks ONLY once included in a SUBMITTED
+  // settlement request — never immediately after payment.
+  test('lock rule: no request → reversible; issued before request → locked; '
+      'issued after request → reversible; garbage → conservative lock', () {
+    // No settlement request submitted → the receipt stays reversible.
+    expect(
+        BillingController.isLockedBySettlement(
+            lastActiveRequestAt: null, issuedAt: '2026-09-05T10:00:00.000Z'),
+        false);
+    // Issued BEFORE the request → its cash was in the requested balance → locked.
+    expect(
+        BillingController.isLockedBySettlement(
+            lastActiveRequestAt: '2026-09-05T12:00:00.000Z',
+            issuedAt: '2026-09-05T11:00:00.000Z'),
+        true);
+    // Issued AFTER the request → not part of any settlement → reversible.
+    expect(
+        BillingController.isLockedBySettlement(
+            lastActiveRequestAt: '2026-09-05T12:00:00.000Z',
+            issuedAt: '2026-09-05T13:00:00.000Z'),
+        false);
+    // Unparseable timestamps → conservatively locked (financial safety).
+    expect(
+        BillingController.isLockedBySettlement(
+            lastActiveRequestAt: 'garbage',
+            issuedAt: '2026-09-05T13:00:00.000Z'),
+        true);
+  });
+
+  test('lastActiveRequestAt: rejected never locks; newest active wins; '
+      'method-scoped', () async {
+    final sRepo = SettlementRepository();
+    Settlement st(String id, String status, String at, {String m = 'cash'}) =>
+        Settlement(
+            id: id,
+            accountantId: 'acct-9',
+            amount: 100,
+            method: m,
+            status: status,
+            requestedAt: at);
+    // Only a REJECTED request → nothing locks.
+    await sRepo.insert(st('s-rej', 'rejected', '2026-09-01T10:00:00.000Z'));
+    expect(await sRepo.lastActiveRequestAt('acct-9', 'cash'), isNull);
+    // A pending request → it is the active lock point.
+    await sRepo.insert(st('s-pen', 'pending', '2026-09-02T10:00:00.000Z'));
+    expect(await sRepo.lastActiveRequestAt('acct-9', 'cash'),
+        '2026-09-02T10:00:00.000Z');
+    // An older approved one doesn't override the newer pending.
+    await sRepo.insert(st('s-app', 'approved', '2026-09-01T09:00:00.000Z'));
+    expect(await sRepo.lastActiveRequestAt('acct-9', 'cash'),
+        '2026-09-02T10:00:00.000Z');
+    // The CARD wallet is independent of the cash one.
+    expect(await sRepo.lastActiveRequestAt('acct-9', 'card'), isNull);
   });
 }

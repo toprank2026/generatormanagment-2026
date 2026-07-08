@@ -7,7 +7,6 @@ import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
 import 'package:generatormanagment/data/models/settlement_model.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
-import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/repositories/expense_repository.dart';
 import 'package:generatormanagment/data/repositories/settlement_repository.dart';
 import 'package:generatormanagment/utils/money.dart';
@@ -32,7 +31,6 @@ class AccountantSettlementsScreen extends StatefulWidget {
 class _AccountantSettlementsScreenState
     extends State<AccountantSettlementsScreen> {
   final SettlementRepository _repo = SettlementRepository();
-  final ReceiptRepository _receiptRepo = ReceiptRepository();
   final ExpenseRepository _expenseRepo = ExpenseRepository();
   final AccountantRepository _acctRepo = AccountantRepository();
   final AuthController _auth = Get.find();
@@ -48,8 +46,32 @@ class _AccountantSettlementsScreenState
   String _month = DateFormat('yyyy-MM').format(DateTime.now());
   String? _acctFilter; // null = all accountants
   List<Accountant> _accountants = const [];
-  // Summary figures for the active (month, accountant) scope.
-  double _sumCollected = 0, _sumSalary = 0, _sumExpenses = 0;
+  // v30 T1 — summary figures for the active (month, accountant) scope. ALL
+  // money cards derive from SETTLEMENTS (never subscriber receipts):
+  //   Total Revenue    = Σ APPROVED cash+card settlement amounts
+  //   Total Settlements= revenue + salaries (every approved settlement)
+  //   Net Revenue      = revenue − expenses
+  //   Final Profit     = net revenue − salaries
+  // so the admin can reconcile every figure with a calculator.
+  double _sumRevenue = 0, _sumSalary = 0, _sumExpenses = 0;
+  // Money currently HELD by accountants that is not yet inside an approved
+  // settlement (Σ per-accountant wallet balances — exactly the sum of the
+  // breakdown rows below, so the card and the rows always reconcile).
+  double _pendingBalance = 0;
+  // Per-accountant breakdown: approved settlement total (month), current
+  // unsettled wallet balance, latest settlement status + date.
+  List<
+      ({
+        Accountant acct,
+        double approved,
+        double pending,
+        String? lastStatus,
+        String? lastDate,
+      })> _acctBreakdown = const [];
+  // Approved settlement money whose accountant no longer exists locally —
+  // shown as its own breakdown row so Σ(breakdown) always equals the
+  // Total Revenue card.
+  double _revenueOther = 0;
   // v30 F4: per-accountant expenses for the month (only computed in the "all
   // accountants" view) so it's clear how each accountant's + the combined
   // expenses feed the net. Key = accountant id; plus [_expOwner] for
@@ -109,20 +131,72 @@ class _AccountantSettlementsScreenState
       try {
         pendingTotal = await _repo.pendingCount();
       } catch (_) {}
-      // v27 item 6: summary figures for the active scope. Collected + expenses
-      // key off the BILLING month (receipts.month / expenses date prefix);
-      // salary received keys off the settlement request month.
-      double collected = 0, salary = 0, expenses = 0;
+      // v30 T1: ALL revenue figures come from APPROVED SETTLEMENTS (never
+      // subscriber receipts) — a settlement is money actually handed over after
+      // the admin's approval. Expenses keep the month/accountant scope; salary
+      // keys off the settlement request month like revenue, so every card
+      // reconciles: settlements = revenue + salaries, net = revenue − expenses,
+      // final profit = net − salaries.
+      double revenue = 0, salary = 0, expenses = 0, pendingBalance = 0;
+      double revenueOther = 0;
+      final breakdown = <({
+        Accountant acct,
+        double approved,
+        double pending,
+        String? lastStatus,
+        String? lastDate,
+      })>[];
       // v30 F4: per-accountant expenses breakdown (only in the "all" view).
       final Map<String, double> expByAcct = {};
       double expOwner = 0;
       try {
-        collected = await _receiptRepo.getCollectedSum(_month,
-            accountantId: _acctFilter, branchId: null);
+        revenue = await _repo.approvedSumForMonth(_month, 'cash',
+                accountantId: _acctFilter) +
+            await _repo.approvedSumForMonth(_month, 'card',
+                accountantId: _acctFilter);
         expenses = await _expenseRepo.getTotalExpenses(_month,
             accountantId: _acctFilter, branchId: null);
         salary = await _repo.approvedSumForMonth(_month, 'salary',
             accountantId: _acctFilter);
+
+        // Per-accountant breakdown over the SAME scope as the cards, computed
+        // from the SAME queries, so Σ(rows) always equals the card values.
+        final scoped = _acctFilter == null
+            ? _accountants
+            : _accountants.where((a) => a.id == _acctFilter).toList();
+        double sumApproved = 0;
+        for (final a in scoped) {
+          final w = await _repo.wallet(a.id);
+          final double pend = (w.cashBalance > 0 ? w.cashBalance : 0) +
+              (w.cardBalance > 0 ? w.cardBalance : 0);
+          final double appr = await _repo.approvedSumForMonth(_month, 'cash',
+                  accountantId: a.id) +
+              await _repo.approvedSumForMonth(_month, 'card',
+                  accountantId: a.id);
+          String? lastStatus;
+          String? lastDate;
+          try {
+            final last = await _repo.history(a.id, limit: 1, offset: 0);
+            if (last.isNotEmpty) {
+              lastStatus = last.first.status;
+              lastDate = last.first.requestedAt;
+            }
+          } catch (_) {}
+          breakdown.add((
+            acct: a,
+            approved: appr,
+            pending: pend,
+            lastStatus: lastStatus,
+            lastDate: lastDate,
+          ));
+          pendingBalance += pend;
+          sumApproved += appr;
+        }
+        // Approved settlements whose accountant was deleted locally — surfaced
+        // as a residual row so Σ(breakdown) == the Total Revenue card exactly.
+        revenueOther =
+            (revenue - sumApproved) > 0.005 ? (revenue - sumApproved) : 0;
+
         if (_acctFilter == null) {
           double sumAcct = 0;
           for (final a in _accountants) {
@@ -141,9 +215,12 @@ class _AccountantSettlementsScreenState
         _hasMore = rows.length > _perPage;
         _rows = _hasMore ? rows.sublist(0, _perPage) : rows;
         _pendingTotal = pendingTotal;
-        _sumCollected = collected;
+        _sumRevenue = revenue;
         _sumSalary = salary;
         _sumExpenses = expenses;
+        _pendingBalance = pendingBalance;
+        _acctBreakdown = breakdown;
+        _revenueOther = revenueOther;
         _expByAccountant = expByAcct;
         _expOwner = expOwner;
         _loading = false;
@@ -227,59 +304,67 @@ class _AccountantSettlementsScreenState
   Widget build(BuildContext context) {
     final pending = _pendingTotal; // v23 review: true total, not just the page
     return Scaffold(
+      backgroundColor: const Color(0xFFE3F2FD),
       appBar: AppBar(title: Text('accountant_settlements'.tr)),
       body: SafeArea(
-        // v27 item 6: filters + summary banner are FIXED above the scrollable
-        // list (SafeArea keeps them clear of notches/nav bars).
+        // v30 T1: everything below the filter row lives in ONE scrollable, so
+        // PULL-TO-REFRESH re-fetches (mirror pull) and recomputes every
+        // financial value — summary cards, breakdowns AND the requests list.
         child: Column(
           children: [
             _filterRow(),
-            _summaryBanner(),
-            _expensesBreakdown(),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : RefreshIndicator(
                       onRefresh: () => _load(pull: true),
-                      child: _rows.isEmpty
-                          ? ListView(
-                              controller: _scroll,
-                              children: [
-                                const SizedBox(height: 80),
-                                Icon(Icons.receipt_long,
-                                    size: 64, color: Colors.grey.shade400),
-                                const SizedBox(height: 12),
-                                Center(
-                                  child: Text('no_settlements'.tr,
-                                      style: TextStyle(
-                                          color: Colors.grey.shade600)),
-                                ),
-                              ],
-                            )
-                          : ListView(
-                              controller: _scroll,
-                              padding: const EdgeInsets.all(12),
-                              children: [
-                                if (pending > 0)
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 8),
-                                    child: Text(
-                                      '${'status_pending'.tr}: $pending',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.orange),
-                                    ),
-                                  ),
-                                ..._rows.map(
-                                    (r) => _tile(r.settlement, r.accountantName)),
-                                if (_moreLoading)
-                                  const Padding(
-                                    padding: EdgeInsets.all(12),
-                                    child: Center(
-                                        child: CircularProgressIndicator()),
-                                  ),
-                              ],
+                      child: ListView(
+                        controller: _scroll,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(12),
+                        children: [
+                          _summaryCards(),
+                          _expensesBreakdown(),
+                          ..._accountantBreakdown(),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(2, 12, 2, 8),
+                            child: Text('settlement_history'.tr,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15)),
+                          ),
+                          if (pending > 0)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                '${'status_pending'.tr}: $pending',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.orange),
+                              ),
                             ),
+                          if (_rows.isEmpty) ...[
+                            const SizedBox(height: 24),
+                            Icon(Icons.receipt_long,
+                                size: 64, color: Colors.grey.shade400),
+                            const SizedBox(height: 12),
+                            Center(
+                              child: Text('no_settlements'.tr,
+                                  style:
+                                      TextStyle(color: Colors.grey.shade600)),
+                            ),
+                            const SizedBox(height: 24),
+                          ] else
+                            ..._rows.map(
+                                (r) => _tile(r.settlement, r.accountantName)),
+                          if (_moreLoading)
+                            const Padding(
+                              padding: EdgeInsets.all(12),
+                              child:
+                                  Center(child: CircularProgressIndicator()),
+                            ),
+                        ],
+                      ),
                     ),
             ),
           ],
@@ -375,54 +460,262 @@ class _AccountantSettlementsScreenState
     );
   }
 
-  /// v27 item 6: responsive summary banner — collected / salary status / net.
-  Widget _summaryBanner() {
-    final bool tablet = Get.mediaQuery.size.shortestSide >= 600;
-    final double net = _sumCollected - _sumSalary - _sumExpenses;
-    Widget cell(IconData ic, String label, String value, Color color) => Expanded(
-          child: Column(
-            children: [
-              Icon(ic, color: color, size: tablet ? 24 : 20),
-              const SizedBox(height: 4),
-              Text(value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: tablet ? 15 : 13,
-                      color: color)),
-              Text(label,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  style: TextStyle(
-                      fontSize: tablet ? 12 : 10, color: Colors.blueGrey)),
-            ],
-          ),
-        );
+  /// v30 T1: the financial-summary grid — 7 settlement-based cards in the
+  /// mandated order, all mutually reconciling:
+  ///   revenue (approved cash+card) · settlements (revenue+salaries) ·
+  ///   pending balance (Σ wallet holdings) · expenses ·
+  ///   net revenue (revenue−expenses) · salaries · final profit (net−salaries).
+  /// Responsive: column count + card sizing adapt to the available width.
+  Widget _summaryCards() {
+    final double totalSettlements = _sumRevenue + _sumSalary;
+    final double netRevenue = _sumRevenue - _sumExpenses;
+    final double finalProfit = netRevenue - _sumSalary;
+    final items = <({IconData icon, String label, double value, Color color})>[
+      (
+        icon: Icons.account_balance_wallet,
+        label: 'total_revenue',
+        value: _sumRevenue,
+        color: _kBlue,
+      ),
+      (
+        icon: Icons.fact_check,
+        label: 'total_settlements',
+        value: totalSettlements,
+        color: const Color(0xFF00897B),
+      ),
+      (
+        icon: Icons.hourglass_top,
+        label: 'pending_settlement_balance',
+        value: _pendingBalance,
+        color: const Color(0xFFEF6C00),
+      ),
+      (
+        icon: Icons.receipt_long,
+        label: 'total_expenses',
+        value: _sumExpenses,
+        color: const Color(0xFFFB8C00),
+      ),
+      (
+        icon: netRevenue >= 0 ? Icons.trending_up : Icons.trending_down,
+        label: 'net_revenue',
+        value: netRevenue,
+        color: netRevenue < 0 ? Colors.red : const Color(0xFF2E7D32),
+      ),
+      (
+        icon: Icons.payments,
+        label: 'total_salaries',
+        value: _sumSalary,
+        color: const Color(0xFF6A1B9A),
+      ),
+      (
+        icon: Icons.flag,
+        label: 'final_profit',
+        value: finalProfit,
+        color: finalProfit < 0 ? Colors.red : const Color(0xFF1B5E20),
+      ),
+    ];
+    return LayoutBuilder(builder: (context, box) {
+      final double w = box.maxWidth;
+      final int cols = w >= 900 ? 4 : (w >= 560 ? 3 : 2);
+      final double scale = w >= 900 ? 1.2 : (w >= 560 ? 1.1 : 1.0);
+      final double gap = w >= 560 ? 14 : 10;
+      return GridView.count(
+        crossAxisCount: cols,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: gap,
+        crossAxisSpacing: gap,
+        childAspectRatio: 1.55,
+        children: [
+          for (final c in items) _sumCard(c.icon, c.label.tr, c.value, c.color, scale),
+        ],
+      );
+    });
+  }
+
+  Widget _sumCard(
+      IconData icon, String label, double value, Color color, double scale) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-      padding: EdgeInsets.all(tablet ? 16 : 12),
+      padding: EdgeInsets.all(10 * scale),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(color: Colors.blue.withValues(alpha: 0.06), blurRadius: 8),
         ],
       ),
-      // v30 F4: expenses shown alongside collected + salary so it is clear how
-      // net = collected − salary − expenses is derived. Expenses respect the
-      // accountant filter (one accountant when filtered, all combined otherwise).
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Icon(icon, color: color, size: 20 * scale),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(fmtAmount(value),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16 * scale,
+                      color: color)),
+            ),
+          ),
+          Text(label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style:
+                  TextStyle(fontSize: 10.5 * scale, color: Colors.blueGrey)),
+        ],
+      ),
+    );
+  }
+
+  /// v30 T1: per-accountant breakdown — approved settlement total, current
+  /// UNSETTLED holdings (warning-highlighted when > 0), latest settlement
+  /// status + date. Σ(approved) + residual == the Total Revenue card;
+  /// Σ(pending) == the Pending Settlement Balance card, by construction.
+  List<Widget> _accountantBreakdown() {
+    if (_acctBreakdown.isEmpty && _revenueOther <= 0) return const [];
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(2, 12, 2, 8),
+        child: Text('by_accountant'.tr,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+      ),
+      for (final b in _acctBreakdown) _acctCard(b),
+      if (_revenueOther > 0)
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+              color: Colors.white, borderRadius: BorderRadius.circular(14)),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('accountant'.tr,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text(fmtAmount(_revenueOther),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, color: Color(0xFF00897B))),
+            ],
+          ),
+        ),
+    ];
+  }
+
+  Widget _acctCard(
+      ({
+        Accountant acct,
+        double approved,
+        double pending,
+        String? lastStatus,
+        String? lastDate,
+      }) b) {
+    final st = b.lastStatus;
+    final Color stColor = st == 'approved'
+        ? Colors.green
+        : (st == 'rejected'
+            ? Colors.redAccent
+            : (st == 'pending' ? Colors.orange : Colors.blueGrey));
+    final String stText = st == null
+        ? 'no_settlements'.tr
+        : (st == 'approved'
+                ? 'status_approved'
+                : (st == 'rejected' ? 'status_rejected' : 'status_pending'))
+            .tr;
+    String dateText = '';
+    if (b.lastDate != null && b.lastDate!.isNotEmpty) {
+      final d = DateTime.tryParse(b.lastDate!);
+      dateText = d == null
+          ? b.lastDate!
+          : DateFormat('yyyy-MM-dd HH:mm').format(d.toLocal());
+    }
+    final bool warn = b.pending > 0;
+    Widget kv(String label, String value, Color color, {bool highlight = false}) =>
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: highlight
+                ? const Color(0xFFEF6C00).withValues(alpha: 0.12)
+                : const Color(0xFFF5F7FA),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style:
+                      const TextStyle(fontSize: 10.5, color: Colors.blueGrey)),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(value,
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: color)),
+              ),
+            ],
+          ),
+        );
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+          color: Colors.white, borderRadius: BorderRadius.circular(14)),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          cell(Icons.account_balance_wallet, 'collected_revenue'.tr,
-              fmtAmount(_sumCollected), _kBlue),
-          cell(Icons.payments, 'salary_received'.tr, fmtAmount(_sumSalary),
-              const Color(0xFF6A1B9A)),
-          cell(Icons.receipt_long, 'total_expenses'.tr,
-              fmtAmount(_sumExpenses), const Color(0xFFEF6C00)),
-          cell(Icons.trending_up, 'net_income'.tr, fmtAmount(net),
-              net < 0 ? Colors.red : const Color(0xFF00897B)),
+          Row(
+            children: [
+              Expanded(
+                child: Text(b.acct.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                    color: stColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20)),
+                child: Text(stText,
+                    style: TextStyle(
+                        color: stColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: kv('approved_settlement_total'.tr,
+                    fmtAmount(b.approved), const Color(0xFF00897B)),
+              ),
+              const SizedBox(width: 8),
+              // Money still HELD by the accountant → warning highlight so the
+              // admin spots unsettled cash immediately (v30 T1).
+              Expanded(
+                child: kv('pending_settlement_balance'.tr,
+                    fmtAmount(b.pending),
+                    warn ? const Color(0xFFB45309) : Colors.blueGrey,
+                    highlight: warn),
+              ),
+            ],
+          ),
+          if (dateText.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text('${'last_settlement'.tr}: $dateText',
+                  style:
+                      TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+            ),
         ],
       ),
     );
@@ -437,7 +730,7 @@ class _AccountantSettlementsScreenState
     if (entries.isEmpty && _expOwner <= 0) return const SizedBox.shrink();
     final nameOf = {for (final a in _accountants) a.id: a.displayName};
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      margin: const EdgeInsets.only(top: 10),
       decoration: BoxDecoration(
           color: Colors.white, borderRadius: BorderRadius.circular(16)),
       child: Theme(

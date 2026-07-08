@@ -335,6 +335,24 @@ class BillingController extends GetxController {
     return r;
   }
 
+  /// v30 (refined lock, pure + testable): whether a receipt issued at
+  /// [issuedAt] is locked by the newest ACTIVE settlement request submitted at
+  /// [lastActiveRequestAt]. Locked = a request exists AND the receipt was
+  /// issued at/before it (its cash was part of the requested balance). No
+  /// request → never locked. Unparseable timestamps → conservatively LOCKED
+  /// (financial safety). [issuedAt] is local-naive ISO, [lastActiveRequestAt]
+  /// is UTC ISO — DateTime.parse resolves both to the same epoch timeline.
+  static bool isLockedBySettlement(
+      {String? lastActiveRequestAt, required String issuedAt}) {
+    if (lastActiveRequestAt == null || lastActiveRequestAt.isEmpty) {
+      return false;
+    }
+    final reqT = DateTime.tryParse(lastActiveRequestAt);
+    final issT = DateTime.tryParse(issuedAt);
+    if (reqT == null || issT == null) return true;
+    return !issT.isAfter(reqT);
+  }
+
   /// v30 F2: reverse (soft-void) a collected receipt. Flips it to 'refunded' so
   /// the subscriber returns to UNPAID and EVERY derived figure restores
   /// automatically (all money / paid-unpaid / wallet / dashboard / report
@@ -359,17 +377,20 @@ class BillingController extends GetxController {
         acctId != auth.currentUser.value?.id) {
       return ReverseResult.notAllowed;
     }
-    // "Not yet settled" guard: block if a settlement of this method is pending,
-    // or if the wallet balance no longer covers the receipt (its cash was paid
-    // out) — reversing then would settle a stale total / go negative.
+    // v30 (refined lock): a receipt is locked ONLY once it has been INCLUDED in
+    // a submitted settlement request — i.e. an ACTIVE (pending|approved)
+    // settlement of its wallet method was requested AT/AFTER the receipt was
+    // issued (the request amount = the wallet balance, which contained this
+    // receipt's cash). A receipt collected AFTER the last request is NOT part of
+    // any settlement and stays reversible — no more "already settled" straight
+    // after payment. 'rejected' requests never lock.
     final method = fresh.paymentMethod == 'card' ? 'card' : 'cash';
     try {
-      if (await _settleRepo.hasPending(acctId, method)) {
+      final lastReq = await _settleRepo.lastActiveRequestAt(acctId, method);
+      if (isLockedBySettlement(
+          lastActiveRequestAt: lastReq, issuedAt: fresh.issuedAt)) {
         return ReverseResult.blockedSettled;
       }
-      final w = await _settleRepo.wallet(acctId);
-      final double balance = method == 'card' ? w.cardBalance : w.cashBalance;
-      if (balance < fresh.paidAmount) return ReverseResult.blockedSettled;
     } catch (_) {
       return ReverseResult.error;
     }

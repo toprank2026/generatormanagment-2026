@@ -146,10 +146,36 @@ class ExpenseController extends GetxController {
     update();
   }
 
-  Future<void> deleteExpense(String id) async {
-    await _repo.deleteExpense(id, accountantId: _scope);
+  /// v30 T3: only the CREATOR may delete an expense — an accountant deletes
+  /// only their own rows; the admin/owner deletes only OWNER-CREATED rows
+  /// (accountant_id null), never an accountant's (the admin still VIEWS all).
+  bool canDelete(Expense e) {
+    if (_auth.isAccountant) {
+      final me = _auth.currentUser.value?.id;
+      return me != null && e.accountantId == me;
+    }
+    return e.accountantId == null || e.accountantId!.isEmpty;
+  }
+
+  /// Returns false when the deletion is refused by the creator-only rule
+  /// (choke point — mirrors the UI gate; the repo re-enforces it in SQL).
+  Future<bool> deleteExpense(String id) async {
+    Expense? e;
+    for (final x in expenses) {
+      if (x.id == id) {
+        e = x;
+        break;
+      }
+    }
+    if (e == null || !canDelete(e)) return false;
+    if (_auth.isAccountant) {
+      await _repo.deleteExpense(id, accountantId: _scope);
+    } else {
+      await _repo.deleteExpense(id, ownerOnly: true);
+    }
     SyncController.poke(); // item 9
     loadExpenses();
     update();
+    return true;
   }
 }

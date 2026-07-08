@@ -339,8 +339,14 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                                       color: Colors.redAccent,
                                     ),
                                   ),
+                                  // v30 T3: delete is CREATOR-only — an
+                                  // accountant deletes only their own rows; the
+                                  // admin only owner-created ones (can(...) is
+                                  // read FIRST so the Obx never short-circuits
+                                  // before an observable).
                                   Obx(
-                                    () => auth.can(Perm.expenses)
+                                    () => auth.can(Perm.expenses) &&
+                                            controller.canDelete(ex)
                                         ? Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
@@ -555,9 +561,17 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       textConfirm: 'delete'.tr,
       textCancel: 'cancel'.tr,
       confirmTextColor: Colors.white,
-      onConfirm: () {
-        controller.deleteExpense(id);
+      onConfirm: () async {
+        // Close FIRST, act after (dialog gotcha) — then surface a refusal from
+        // the creator-only rule (v30 T3).
         Get.back();
+        final ok = await controller.deleteExpense(id);
+        if (!ok) {
+          Get.snackbar('error'.tr, 'expense_delete_own_only'.tr,
+              backgroundColor: Colors.redAccent,
+              colorText: Colors.white,
+              snackPosition: SnackPosition.BOTTOM);
+        }
       },
     );
   }
