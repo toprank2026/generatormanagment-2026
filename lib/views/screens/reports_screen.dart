@@ -60,6 +60,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
         centerTitle: true,
+        // v32 item 7: "ℹ" guidance — how the financial values relate
+        // (صافي الربح / الوارد الكلي / المصروفات). Display-only.
+        actions: [
+          IconButton(
+            tooltip: 'finance_formula_title'.tr,
+            icon: const Icon(Icons.info_outline, color: Colors.white),
+            onPressed: () => _showFormulaInfo(context),
+          ),
+        ],
       ),
       body: SafeArea(child: Column(
         children: [
@@ -177,11 +186,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       ),
 
                       // c) Collected vs expenses vs net-profit bars.
+                      // v32 item 5: TITLE swap only (owner's terminology): the
+                      // collected-cash figure is titled "صافي الربح" and the
+                      // collected−expenses figure "الوارد الكلي". Values and
+                      // bindings unchanged — labels swapped on this page only.
                       _chartCard(
                         BarCompareChart(
                           items: [
                             BarItem(
-                              label: 'collected_revenue'.tr,
+                              label: 'net_profit'.tr,
                               value: collected,
                               color: const Color(0xFF1565C0),
                             ),
@@ -191,7 +204,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               color: const Color(0xFFEF6C00),
                             ),
                             BarItem(
-                              label: 'net_profit'.tr,
+                              label: 'collected_revenue'.tr,
                               value: net,
                               color: const Color(0xFF00695C),
                             ),
@@ -226,10 +239,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               value: fmtAmount(expected),
                               scale: scale,
                             ),
+                            // v32 item 5: TITLE swap only — this card shows
+                            // the COLLECTED figure under the "صافي الربح"
+                            // title (owner's terminology). Value unchanged.
                             _buildStatCard(
                               icon: Icons.account_balance_wallet,
                               color: Colors.green,
-                              label: 'collected_revenue'.tr,
+                              label: 'net_profit'.tr,
                               value: fmtAmount(collected),
                               scale: scale,
                             ),
@@ -247,12 +263,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               value: fmtAmount(controller.expensesTotal.value),
                               scale: scale,
                             ),
+                            // v32 item 5: TITLE swap only — this card shows
+                            // the NET (collected − expenses) figure under the
+                            // "الوارد الكلي" title. Value unchanged.
                             _buildStatCard(
                               icon: net >= 0
                                   ? Icons.trending_up
                                   : Icons.trending_down,
                               color: netColor,
-                              label: 'net_profit'.tr,
+                              label: 'collected_revenue'.tr,
                               value: fmtAmount(net),
                               valueColor: netColor,
                               scale: scale,
@@ -283,6 +302,33 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               value: controller.paidCommercial.value.toString(),
                               scale: scale,
                             ),
+                            // v32 item 6: total AMPS per tariff (gold /
+                            // standard / commercial) — the three sum to the
+                            // overall amps total.
+                            _buildStatCard(
+                              icon: Icons.electric_bolt,
+                              color: const Color(0xFFFFB300), // gold
+                              label: '${'cat_gold'.tr} — ${'amps'.tr}',
+                              value:
+                                  controller.ampsGold.value.toStringAsFixed(1),
+                              scale: scale,
+                            ),
+                            _buildStatCard(
+                              icon: Icons.electric_bolt,
+                              color: Colors.cyan,
+                              label: '${'cat_standard'.tr} — ${'amps'.tr}',
+                              value: controller.ampsStandard.value
+                                  .toStringAsFixed(1),
+                              scale: scale,
+                            ),
+                            _buildStatCard(
+                              icon: Icons.electric_bolt,
+                              color: const Color(0xFF00897B), // commercial
+                              label: '${'cat_commercial'.tr} — ${'amps'.tr}',
+                              value: controller.ampsCommercial.value
+                                  .toStringAsFixed(1),
+                              scale: scale,
+                            ),
                           ],
                         );
                       }),
@@ -309,6 +355,45 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ),
         ],
       )),
+    );
+  }
+
+  /// v32 item 7: the "ℹ" dialog — a simple Arabic formula clarifying how
+  /// الوارد الكلي derives from صافي الربح and المصروفات (labels as shown on
+  /// THIS page after the v32 title swap). Guidance only; no logic.
+  void _showFormulaInfo(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.info_outline, color: Color(0xFF1565C0)),
+            const SizedBox(width: 8),
+            Expanded(child: Text('finance_formula_title'.tr)),
+          ],
+        ),
+        content: Container(
+          width: double.maxFinite,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE3F2FD),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            'finance_formula'.tr,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                fontSize: 15, fontWeight: FontWeight.w700, height: 1.9),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('close'.tr),
+          ),
+        ],
+      ),
     );
   }
 

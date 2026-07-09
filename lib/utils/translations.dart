@@ -155,6 +155,13 @@ class Messages extends Translations {
       'by_accountant': 'By accountant',
       // v30 T3: creator-only expense deletion.
       'expense_delete_own_only': 'Only its creator can delete this expense',
+      // v32: Home amps-by-status section, discounts card, report formula info.
+      'amps_by_status': 'Amps by payment status',
+      'total_discounts': 'Total approved discounts',
+      'total': 'Total',
+      'close': 'Close',
+      'finance_formula_title': 'How are the values calculated?',
+      'finance_formula': 'Total Income = Net Profit − Expenses',
       // v30 F2: receipt reversal.
       'reverse_receipt': 'Reverse',
       'reverse_receipt_title': 'Reverse receipt',
@@ -729,6 +736,13 @@ class Messages extends Translations {
       'by_accountant': 'حسب المحاسب',
       // v30 T3: حذف المصروف من قبل منشئه فقط.
       'expense_delete_own_only': 'يمكن حذف المصروف من قِبل منشئه فقط',
+      // v32: قسم الأمبيرات حسب الحالة، بطاقة الخصومات، معادلة التقرير.
+      'amps_by_status': 'الأمبيرات حسب حالة التسديد',
+      'total_discounts': 'إجمالي الخصومات المعتمدة',
+      'total': 'الإجمالي',
+      'close': 'إغلاق',
+      'finance_formula_title': 'كيف تُحسب القيم المالية؟',
+      'finance_formula': 'الوارد الكلي = صافي الربح − المصروفات',
       // v30 F2: إلغاء الوصل.
       'reverse_receipt': 'إلغاء',
       'reverse_receipt_title': 'إلغاء الوصل',

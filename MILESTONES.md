@@ -213,6 +213,16 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **T4 — reversal lock refined** — a paid receipt is NO longer locked right after payment: it locks **only once included in a submitted Settlement Request** (an ACTIVE pending/approved request of its wallet method submitted at/after the receipt's issue time — the request amount contained that cash). Receipts collected after the last request stay reversible; rejected requests never lock; the block message now says the receipt is "included in a submitted settlement request". Pure, unit-tested rule (`isLockedBySettlement` + `lastActiveRequestAt`).
 - ✅ analyze 0/0; Flutter **101** tests (+2 lock-rule); panel JS clean; 5-lens adversarial review workflow; additive/backward-compatible; Flash-API release APK.
 
+## Flash v32 — amps by status×type · discounts card · dashboard audit · report labels/amps/formula
+- ✅ **Amps by payment status × tariff (Home)** — a new overview card shows Σ subscriber amps for **paid** vs **unpaid**, each split ذهبي/عادي/تجاري with per-group totals. Same category-aware coverage rule as the paid/unpaid counts (`ampsByPaymentStatusCategory`, one GROUP-BY over the shared derivation), so paid + unpaid amps partition the total-amps card exactly (unit-tested invariant).
+- ✅ **Home card: total approved discounts** — full-width card = Σ `discount_value` of the month's valid receipts (branch-wide). Read-only aggregate of existing data; zero backend/schema changes.
+- ✅ **Home dashboard audit** — verified every figure derives from ALL subscribers: total amps (IFNULL-category grouping — no row excluded), collected (cash-only), paid+unpaid counts partition the subscriber base, expected is category/branch-aware. **One real fix**: "الوارد المتبقي" now subtracts the **branch-wide** collected+discounts (an accountant's view previously mixed branch expected with only their personal collections, overstating remaining; owner figures unchanged).
+- ✅ **Report title swap (display-only)** — the collected figure is titled **صافي الربح** and the collected−expenses figure **الوارد الكلي** (cards + matching bars); values/bindings untouched.
+- ✅ **Report amps-per-tariff cards** — three cards (ذهبي/عادي/تجاري × أمبير) from the same aggregate as the total, so they sum to it.
+- ✅ **Report "ℹ" formula guide** — an AppBar info button opens an Arabic guidance dialog: «الوارد الكلي = صافي الربح − المصروفات» (matches the post-swap labels; display-only).
+- ✅ Revenue-vs-settlements investigation (explanation only, no code): the gap is **unsettled accountant holdings + request-date vs billing-month timing** — NOT discounts (discounts never enter paid_amount, wallets, or settlement amounts on either side).
+- ✅ analyze 0/0; Flutter **102** tests (+1 amps-partition); additive/backward-compatible (no backend/schema change); adversarial review; Flash-API release APK.
+
 ## Backlog
 - ⬜ Localize backend plan names/descriptions (currently English server data).
 - ⬜ DB migration path (schema v1, `onCreate` only); index on `expenses.date`.

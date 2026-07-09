@@ -767,6 +767,30 @@ class SubscriberRepository {
     return (r.isNotEmpty ? r.first['c'] as int? : 0) ?? 0;
   }
 
+  /// v32 item 1: Σ subscriber AMPS per category for the derived PAID or UNPAID
+  /// set of [month] — the SAME category-aware coverage rule as
+  /// [getByPaymentStatus]/[countByPaymentStatus], so the paid + unpaid amp
+  /// totals partition [ampsByCategory] exactly (overall total stays accurate).
+  Future<Map<String, double>> ampsByPaymentStatusCategory({
+    required String month,
+    required bool isPaid,
+    String? branchId,
+  }) async {
+    final db = await _dbHelper.database;
+    final q =
+        _paymentStatusFrom(month: month, isPaid: isPaid, branchId: branchId);
+    final rows = await db.rawQuery(
+      "SELECT IFNULL(s.category, 'standard') AS cat, SUM(s.amps) AS amps "
+      "${q.sql} GROUP BY IFNULL(s.category, 'standard')",
+      q.args,
+    );
+    final map = <String, double>{};
+    for (final r in rows) {
+      map[r['cat'] as String] = ((r['amps'] as num?) ?? 0).toDouble();
+    }
+    return map;
+  }
+
   /// COUNT of subscribers in scope (no row hydration) — for the dashboard.
   /// Scopes with plain `branch_id = ?` to match [getAll]/[getByPaymentStatus].
   Future<int> countByBranch({String? accountantId, String? branchId}) async {

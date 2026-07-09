@@ -502,6 +502,11 @@ class DashboardScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 16),
+                        // v32 item 1: Σ amps of PAID vs UNPAID subscribers per
+                        // tariff (gold/standard/commercial) + group totals —
+                        // the two groups partition the total-amps card above.
+                        _ampsByStatusCard(ctrl),
+                        const SizedBox(height: 16),
                         // v16 item 4/5: Collected + Remaining span the FULL row
                         // (only these two) so large amounts show clearly.
                         // v19: amounts use thousands separators (fmtAmount).
@@ -528,6 +533,23 @@ class DashboardScreen extends StatelessWidget {
                             color: Colors.redAccent,
                             label: 'monthly_remaining'.tr,
                             value: fmtAmount(ctrl.totalDue.value),
+                            iconSize: iconSize,
+                            valueFontSize: moneyValueFont,
+                            labelFontSize: labelFont,
+                            padding: cardPad,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        // v32 item 2: total APPROVED DISCOUNTS this month —
+                        // read-only aggregate of receipts.discount_value.
+                        SizedBox(
+                          width: double.infinity,
+                          height: fullCardH,
+                          child: _buildStatCard(
+                            icon: Icons.discount,
+                            color: const Color(0xFF6A1B9A),
+                            label: 'total_discounts'.tr,
+                            value: fmtAmount(ctrl.totalDiscounts.value),
                             iconSize: iconSize,
                             valueFontSize: moneyValueFont,
                             labelFontSize: labelFont,
@@ -643,6 +665,120 @@ class DashboardScreen extends StatelessWidget {
               )
             : Icon(icon, size: 16),
         label: Text(label),
+      ),
+    );
+  }
+
+  /// v32 item 1: Σ subscriber AMPS per tariff, split PAID vs UNPAID — two
+  /// side-by-side groups (green/red), each with gold/standard/commercial rows
+  /// and its own total. paidTotal + unpaidTotal == the total-amps card (both
+  /// derive from the same category-aware coverage rule).
+  Widget _ampsByStatusCard(DashboardController ctrl) {
+    // One decimal everywhere — matches the total-amps grid card ("120.0") and
+    // the report's per-tariff amps cards, so the partition reconciles visually.
+    String fmtAmps(double v) => v.toStringAsFixed(1);
+
+    Widget group(String title, Color color, Map<String, double> byCat) {
+      final double gold = byCat['gold'] ?? 0;
+      final double standard = byCat['standard'] ?? 0;
+      final double commercial = byCat['commercial'] ?? 0;
+      // Group total folds EVERY category in the map (any legacy/unknown value
+      // included), so the two group totals always sum to totalAmps exactly.
+      final double total = byCat.values.fold(0.0, (s, a) => s + a);
+      Widget row(String label, double v, {bool bold = false}) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight:
+                              bold ? FontWeight.bold : FontWeight.w500,
+                          color: bold ? color : Colors.blueGrey)),
+                ),
+                Text(fmtAmps(v),
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        color: bold ? color : Colors.black87)),
+              ],
+            ),
+          );
+      return Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.25)),
+        ),
+        child: Column(
+          children: [
+            Text(title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.bold,
+                    color: color)),
+            const SizedBox(height: 6),
+            row('cat_gold'.tr, gold),
+            row('cat_standard'.tr, standard),
+            row('cat_commercial'.tr, commercial),
+            Divider(height: 10, color: color.withOpacity(0.3)),
+            row('total'.tr, total, bold: true),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.electric_bolt, color: Colors.orange, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('amps_by_status'.tr,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: group('paid_subscribers'.tr, const Color(0xFF2E7D32),
+                    ctrl.paidAmpsByCategory),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: group('unpaid_subscribers'.tr, const Color(0xFFC62828),
+                    ctrl.unpaidAmpsByCategory),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

@@ -70,6 +70,11 @@ class ReportsController extends GetxController {
   var paidGold = 0.obs;
   var paidStandard = 0.obs;
   var paidCommercial = 0.obs;
+  // v32 item 6: total AMPS per tariff (from the same ampsByCategory aggregate
+  // that feeds totalAmps, so the three cards sum to the overall total).
+  var ampsGold = 0.0.obs;
+  var ampsStandard = 0.0.obs;
+  var ampsCommercial = 0.0.obs;
   var expectedTotal = 0.0.obs;
   var collectedTotal = 0.0.obs;
   var remainingTotal = 0.0.obs;
@@ -167,7 +172,24 @@ class ReportsController extends GetxController {
       // lockstep with the dashboard, backend, and paid/unpaid counts).
       final double discountTotal = await _receiptRepo.getDiscountSum(m,
           accountantId: scope, branchId: branch);
-      final double remainingLocal = expectedLocal - collectedLocal - discountTotal;
+      // v32 item 3 (audit fix, mirrors DashboardController): remaining is a
+      // BRANCH fact — for an ACCOUNTANT login it must subtract ALL branch
+      // collections/discounts, not only theirs (the personal scope overstated
+      // remaining and contradicted the Home dashboard). The OWNER's explicit
+      // accountantFilter keeps its deliberate per-accountant remaining (v22).
+      final double collectedForRemaining;
+      final double discountForRemaining;
+      if (!_auth.isAdmin) {
+        collectedForRemaining =
+            await _receiptRepo.getCollectedSum(m, branchId: branch);
+        discountForRemaining =
+            await _receiptRepo.getDiscountSum(m, branchId: branch);
+      } else {
+        collectedForRemaining = collectedLocal;
+        discountForRemaining = discountTotal;
+      }
+      final double remainingLocal =
+          expectedLocal - collectedForRemaining - discountForRemaining;
       final double expensesLocal = await _expenseRepo.getTotalExpenses(m,
           accountantId: scope, branchId: branch);
       final double netLocal = collectedLocal - expensesLocal;
@@ -257,6 +279,10 @@ class ReportsController extends GetxController {
       paidGold.value = paidGoldLocal;
       paidStandard.value = paidStandardLocal;
       paidCommercial.value = paidCommercialLocal;
+      // v32 item 6: per-tariff amps from the already-computed aggregate.
+      ampsGold.value = ampsByCat[SubscriberCategory.gold] ?? 0.0;
+      ampsStandard.value = ampsByCat[SubscriberCategory.standard] ?? 0.0;
+      ampsCommercial.value = ampsByCat[SubscriberCategory.commercial] ?? 0.0;
       accountantNames
         ..clear()
         ..addAll(namesLocal);

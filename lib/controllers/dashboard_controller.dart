@@ -35,6 +35,14 @@ class DashboardController extends GetxController {
   var unpaidCount = 0.obs;
   var boardsCount = 0.obs;
   var circuitsCount = 0.obs;
+  // v32 item 1: Σ amps per category for the derived PAID / UNPAID sets — the
+  // same coverage rule as the counts, so paidAmps + unpaidAmps == totalAmps.
+  final paidAmpsByCategory = <String, double>{}.obs;
+  final unpaidAmpsByCategory = <String, double>{}.obs;
+  // v32 item 2: total APPROVED (applied) discounts this month — the waived
+  // amounts on valid receipts. Read-only aggregate of existing data
+  // (receipts.discount_value); branch-wide like paid/unpaid.
+  var totalDiscounts = 0.0.obs;
   var isLoading = false.obs;
   // True when the selected month/branch has at least one price row set. When
   // false the dashboard shows a "no pricing set for this month" notice (R: month
@@ -112,9 +120,21 @@ class DashboardController extends GetxController {
       // discount reduces what is owed (coverage = paid + discount), so it must
       // be subtracted here too, matching the backend dashboard and the
       // paid/unpaid counts (audit: discount lockstep). Collected stays cash-only.
-      final discount = await _receiptRepo.getDiscountSum(month,
-          accountantId: scope, branchId: branch);
-      totalDue.value = expected - totalCollected.value - discount;
+      //
+      // v32 item 3 (audit fix): remaining is a BRANCH fact — what subscribers
+      // still owe — so it must subtract ALL collections/discounts of the
+      // branch, not only the acting accountant's. For an accountant the old
+      // scope-mixed math (branch expected − personal collected) overstated
+      // remaining whenever a colleague had also collected. Owner/admin figures
+      // are unchanged (scope is already null → identical queries).
+      final double collectedAll = scope == null
+          ? totalCollected.value
+          : await _receiptRepo.getCollectedSum(month, branchId: branch);
+      final double discountAll =
+          await _receiptRepo.getDiscountSum(month, branchId: branch);
+      totalDue.value = expected - collectedAll - discountAll;
+      // v32 item 2: the approved-discounts card (branch-wide, like paid/unpaid).
+      totalDiscounts.value = discountAll;
 
       // 4. Paid / Unpaid Counts — category-aware, branch-scoped (R4).
       paidCount.value = await _subRepo.countByPaymentStatus(
@@ -127,6 +147,13 @@ class DashboardController extends GetxController {
         isPaid: false,
         branchId: branch,
       );
+
+      // v32 item 1: Σ amps per category for the PAID and UNPAID sets (same
+      // derived rule as the counts → the two groups partition totalAmps).
+      paidAmpsByCategory.value = await _subRepo.ampsByPaymentStatusCategory(
+          month: month, isPaid: true, branchId: branch);
+      unpaidAmpsByCategory.value = await _subRepo.ampsByPaymentStatusCategory(
+          month: month, isPaid: false, branchId: branch);
 
       // 5. Boards Count (branch-scoped) — COUNT, not a full getAll.
       boardsCount.value = await _boardRepo.countByBranch(branchId: branch);
