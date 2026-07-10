@@ -106,4 +106,43 @@ void main() {
             month: month, isPaid: false, branchId: main),
         2);
   });
+
+  // v33 (audit fix): the remaining card must equal the SUM of the unpaid
+  // list's per-subscriber dues — an OVERPAYMENT (coverage > current due, e.g.
+  // amps/price reduced after paying) must NOT be netted against other
+  // subscribers' dues. Also verifies total paid = Σ cash actually received.
+  test('remainingFeesTotal = Σ unpaid dues (overpayment not netted); '
+      'collected = Σ cash received', () async {
+    await prices.insert(MonthlyPrice(
+        month: month,
+        pricePerAmp: 1000,
+        branchId: main,
+        category: SubscriberCategory.standard));
+
+    await subs.insert(sub('A', 10, SubscriberCategory.standard)); // paid exact
+    await subs.insert(sub('B', 5, SubscriberCategory.standard)); // unpaid
+    await subs.insert(sub('C', 10, SubscriberCategory.standard)); // OVERPAID
+    await subs.insert(sub('D', 10, SubscriberCategory.standard)); // partial
+
+    await receipts.insert(pay('p1', 'A', 10000, 10, 1000)); // due 10,000 exact
+    await receipts.insert(pay('p2', 'C', 15000, 10, 1000)); // due 10,000 → +5k
+    await receipts.insert(pay('p3', 'D', 4000, 10, 1000)); // due 10,000 → −6k
+
+    // Total paid (الوارد الكلي) = every dinar actually received, incl. the
+    // overpayment cash: 10,000 + 15,000 + 4,000.
+    expect(await receipts.getCollectedSum(month, branchId: main), 29000);
+
+    // Remaining = B's full due (5,000) + D's remainder (6,000) = 11,000 —
+    // exactly what the unpaid list sums to. The OLD aggregate
+    // (expected 35,000 − collected 29,000 − discounts 0 = 6,000) wrongly
+    // netted C's 5,000 overpayment against B/D's dues.
+    expect(
+        await subs.remainingFeesTotal(month: month, branchId: main), 11000);
+
+    // Consistency: B and D are the unpaid set the card claims to sum.
+    expect(
+        await subs.countByPaymentStatus(
+            month: month, isPaid: false, branchId: main),
+        2);
+  });
 }

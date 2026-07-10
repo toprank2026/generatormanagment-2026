@@ -223,6 +223,17 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ Revenue-vs-settlements investigation (explanation only, no code): the gap is **unsettled accountant holdings + request-date vs billing-month timing** — NOT discounts (discounts never enter paid_amount, wallets, or settlement amounts on either side).
 - ✅ analyze 0/0; Flutter **102** tests (+1 amps-partition); additive/backward-compatible (no backend/schema change); adversarial review; Flash-API release APK.
 
+## Flash v33 — report labels confirmed · remaining-amount fix · formula
+- ✅ **Report titles reverted to match the bars** (owner confirmed via screenshots): **الوارد الكلي** = the collected cash, **صافي الربح** = collected − expenses — cards now match the bars exactly (the v32 swap is undone on both).
+- ✅ **"ℹ" formula corrected**: «صافي الربح = الوارد الكلي − المصروفات» (matches the restored labels and the real math).
+- ✅ **Remaining-amount fix (real production bug, confirmed from the owner's data)** — the remaining card (Home «المتبقي للشهر» + report «الرسوم المتبقية») was `expected − collected − discounts`, which **nets overpayments**: a subscriber whose coverage exceeds their current due (amps/price changed after paying) silently reduced everyone else's remaining — the owner's device showed 1,410,500 while the unpaid list summed to 1,462,500 (an exact 52,000 overcoverage). New `remainingFeesTotal` = Σ per-subscriber **clamped** dues over the UNPAID set (same SQL derivation as the unpaid list/counts), so the card always equals the unpaid list's sum exactly; branch-wide for every role, consolidated-safe (per-subscriber-branch price join). Unit test pins the overpayment scenario.
+- ✅ **Total paid verified**: `getCollectedSum` = Σ `paid_amount` of the month's valid receipts — every dinar actually received (incl. overpayment cash), discounts excluded on both sides; Home «إيراد الشهر» and the report figure share the same source (test-pinned). Owner's calculator reconciles exactly: paid-amps×prices 20,228,750 − discounts 31,750 + overpayment 52,000 = 20,249,000.
+- ✅ **Revenue audit (both discount types)** — on a full payment the cash stored is `due − discountValue` for BOTH ampere-based (`amps × pricePerAmp`) and value-based discounts; the waived amount lives only in `discount_value`, so revenue always reflects actual cash after discounts (pinned by the v8 suite).
+- ✅ **Settlement audit** — a settlement request's amount is ALWAYS the exact wallet balance (valid-receipt cash − already-settled); cash/card approvals never alter the amount (only salary approvals stamp one, and salary is excluded from revenue); the reversal lock prevents un-collecting settled cash → **Σ settlements ≤ Σ actually received, structurally**.
+- ✅ **Subscriber tile: board above الجوزة** — each row now shows its BOARD name above the circuit line (batch id→name map, no N+1).
+- ✅ **Amps section restyle** — the «الأمبيرات حسب حالة التسديد» card now matches the dashboard card language (tinted rounded icon chips, same typography/surface); functionality unchanged.
+- ✅ analyze 0/0; Flutter **103** tests (+1 overpayment/remaining); adversarial review; Flash-API release APK. No backend/schema/API/data changes — fully backward-compatible.
+
 ## Backlog
 - ⬜ Localize backend plan names/descriptions (currently English server data).
 - ⬜ DB migration path (schema v1, `onCreate` only); index on `expenses.date`.

@@ -36,6 +36,9 @@ class CoreController extends GetxController {
   final Set<String> paidIds = <String>{};
   // v22 item 9: circuit id → display name, so rows show their جوزة without N+1.
   final Map<String, String> circuitNames = <String, String>{};
+  // v34 item 6: board id → display name — the subscriber row shows its BOARD
+  // above the جوزة (same batch-map pattern, no per-row queries).
+  final Map<String, String> boardNames = <String, String>{};
   // v22 item 10: board id → (paid, unpaid) subscriber counts for the selected
   // month (one GROUP BY query per boards load) — shown under each board name.
   final Map<String, ({int paid, int unpaid})> boardPaidCounts =
@@ -59,6 +62,7 @@ class CoreController extends GetxController {
           month: month, branchId: _branchScope);
       final allCircuits =
           await _circuitRepo.getAllInBranch(branchId: _branchScope);
+      final allBoards = await _boardRepo.getAll(branchId: _branchScope);
       final coverage = await _subscriberRepo.coverageBySubscriber(
           month: month, branchId: _branchScope);
       final prices = await MonthlyPriceRepository().pricesForMonthByBranch(month);
@@ -68,6 +72,9 @@ class CoreController extends GetxController {
       circuitNames
         ..clear()
         ..addEntries(allCircuits.map((c) => MapEntry(c.id, c.name)));
+      boardNames
+        ..clear()
+        ..addEntries(allBoards.map((b) => MapEntry(b.id, b.name)));
       _rowCoverage
         ..clear()
         ..addAll(coverage);

@@ -767,6 +767,30 @@ class SubscriberRepository {
     return (r.isNotEmpty ? r.first['c'] as int? : 0) ?? 0;
   }
 
+  /// v33 (audit fix): the TRUE remaining fees for [month] — Σ over the UNPAID
+  /// subscribers of (due − coverage), per subscriber, from the SAME derivation
+  /// as the unpaid list/counts. Unlike `expected − collected − discounts`, this
+  /// never NETS an overpayment (a subscriber whose coverage exceeds their
+  /// current due after an amps/price change) against other subscribers' dues —
+  /// so the remaining card always equals the sum of the unpaid list's
+  /// "المبلغ الواجب تحصيله" rows exactly. Unpriced categories contribute 0
+  /// (nothing billable yet), matching `expected`.
+  Future<double> remainingFeesTotal({
+    required String month,
+    String? branchId,
+  }) async {
+    final db = await _dbHelper.database;
+    final q =
+        _paymentStatusFrom(month: month, isPaid: false, branchId: branchId);
+    final r = await db.rawQuery(
+      'SELECT SUM(MAX(s.amps * mp.price_per_amp '
+      '- COALESCE(r.total_paid, 0) - COALESCE(r.total_discount, 0), 0)) AS rem '
+      '${q.sql}',
+      q.args,
+    );
+    return ((r.isNotEmpty ? r.first['rem'] as num? : 0) ?? 0).toDouble();
+  }
+
   /// v32 item 1: Σ subscriber AMPS per category for the derived PAID or UNPAID
   /// set of [month] — the SAME category-aware coverage rule as
   /// [getByPaymentStatus]/[countByPaymentStatus], so the paid + unpaid amp

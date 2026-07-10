@@ -328,6 +328,29 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                                 ),
                               ],
                             ),
+                            // v34 item 6: the BOARD this subscriber belongs to,
+                            // shown ABOVE the جوزة (batch id→name map, no N+1).
+                            if (ctrl.boardNames[sub.boardId] != null)
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.grid_view,
+                                    size: 14,
+                                    color: Colors.grey[500],
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      ctrl.boardNames[sub.boardId]!,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             // v22 item 9: the circuit (جوزة) this subscriber is
                             // linked to (resolved from the batch id→name map).
                             if (ctrl.circuitNames[sub.circuitId] != null)

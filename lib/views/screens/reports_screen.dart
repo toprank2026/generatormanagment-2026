@@ -186,15 +186,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       ),
 
                       // c) Collected vs expenses vs net-profit bars.
-                      // v32 item 5: TITLE swap only (owner's terminology): the
-                      // collected-cash figure is titled "صافي الربح" and the
-                      // collected−expenses figure "الوارد الكلي". Values and
-                      // bindings unchanged — labels swapped on this page only.
+                      // v33: labels CONFIRMED against the owner's screenshots —
+                      // الوارد الكلي = the collected cash, صافي الربح = collected
+                      // − expenses (the v32 swap is reverted; cards match bars).
                       _chartCard(
                         BarCompareChart(
                           items: [
                             BarItem(
-                              label: 'net_profit'.tr,
+                              label: 'collected_revenue'.tr,
                               value: collected,
                               color: const Color(0xFF1565C0),
                             ),
@@ -204,7 +203,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               color: const Color(0xFFEF6C00),
                             ),
                             BarItem(
-                              label: 'collected_revenue'.tr,
+                              label: 'net_profit'.tr,
                               value: net,
                               color: const Color(0xFF00695C),
                             ),
@@ -239,13 +238,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               value: fmtAmount(expected),
                               scale: scale,
                             ),
-                            // v32 item 5: TITLE swap only — this card shows
-                            // the COLLECTED figure under the "صافي الربح"
-                            // title (owner's terminology). Value unchanged.
+                            // v33: card titles MATCH the bars — this card shows
+                            // the COLLECTED figure under "الوارد الكلي" (the
+                            // v32 swap is reverted per the owner's screenshots).
                             _buildStatCard(
                               icon: Icons.account_balance_wallet,
                               color: Colors.green,
-                              label: 'net_profit'.tr,
+                              label: 'collected_revenue'.tr,
                               value: fmtAmount(collected),
                               scale: scale,
                             ),
@@ -263,15 +262,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               value: fmtAmount(controller.expensesTotal.value),
                               scale: scale,
                             ),
-                            // v32 item 5: TITLE swap only — this card shows
-                            // the NET (collected − expenses) figure under the
-                            // "الوارد الكلي" title. Value unchanged.
+                            // v33: card titles MATCH the bars — this card shows
+                            // the NET (collected − expenses) figure under
+                            // "صافي الربح".
                             _buildStatCard(
                               icon: net >= 0
                                   ? Icons.trending_up
                                   : Icons.trending_down,
                               color: netColor,
-                              label: 'collected_revenue'.tr,
+                              label: 'net_profit'.tr,
                               value: fmtAmount(net),
                               valueColor: netColor,
                               scale: scale,
@@ -358,9 +357,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  /// v32 item 7: the "ℹ" dialog — a simple Arabic formula clarifying how
-  /// الوارد الكلي derives from صافي الربح and المصروفات (labels as shown on
-  /// THIS page after the v32 title swap). Guidance only; no logic.
+  /// v32 item 7 / v33: the "ℹ" dialog — a simple Arabic formula clarifying
+  /// how صافي الربح derives from الوارد الكلي and المصروفات, matching this
+  /// page's labels («صافي الربح = الوارد الكلي − المصروفات»). Guidance only.
   void _showFormulaInfo(BuildContext context) {
     showDialog(
       context: context,

@@ -678,7 +678,10 @@ class DashboardScreen extends StatelessWidget {
     // the report's per-tariff amps cards, so the partition reconciles visually.
     String fmtAmps(double v) => v.toStringAsFixed(1);
 
-    Widget group(String title, Color color, Map<String, double> byCat) {
+    // v34 item 7: styled like the other dashboard cards — same white surface,
+    // radius-16 + soft shadow, tinted rounded ICON CHIP header, grey labels.
+    Widget group(String title, IconData icon, Color color,
+        Map<String, double> byCat) {
       final double gold = byCat['gold'] ?? 0;
       final double standard = byCat['standard'] ?? 0;
       final double commercial = byCat['commercial'] ?? 0;
@@ -686,7 +689,7 @@ class DashboardScreen extends StatelessWidget {
       // included), so the two group totals always sum to totalAmps exactly.
       final double total = byCat.values.fold(0.0, (s, a) => s + a);
       Widget row(String label, double v, {bool bold = false}) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
+            padding: const EdgeInsets.symmetric(vertical: 3),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -695,40 +698,55 @@ class DashboardScreen extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 13,
                           fontWeight:
                               bold ? FontWeight.bold : FontWeight.w500,
-                          color: bold ? color : Colors.blueGrey)),
+                          color: bold ? color : Colors.grey[600])),
                 ),
                 Text(fmtAmps(v),
                     style: TextStyle(
-                        fontSize: 12.5,
+                        fontSize: 13.5,
                         fontWeight: FontWeight.bold,
                         color: bold ? color : Colors.black87)),
               ],
             ),
           );
       return Container(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.06),
+          color: color.withOpacity(0.05),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.25)),
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.bold,
-                    color: color)),
-            const SizedBox(height: 6),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: color, size: 16),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: color)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             row('cat_gold'.tr, gold),
             row('cat_standard'.tr, standard),
             row('cat_commercial'.tr, commercial),
-            Divider(height: 10, color: color.withOpacity(0.3)),
+            Divider(height: 12, color: color.withOpacity(0.25)),
             row('total'.tr, total, bold: true),
           ],
         ),
@@ -752,29 +770,40 @@ class DashboardScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header matches _buildStatCard: tinted rounded icon chip + label.
           Row(
             children: [
-              const Icon(Icons.electric_bolt, color: Colors.orange, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text('amps_by_status'.tr,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 14)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: group('paid_subscribers'.tr, const Color(0xFF2E7D32),
-                    ctrl.paidAmpsByCategory),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child:
+                    const Icon(Icons.electric_bolt, color: Colors.orange, size: 24),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: group('unpaid_subscribers'.tr, const Color(0xFFC62828),
-                    ctrl.unpaidAmpsByCategory),
+                child: Text('amps_by_status'.tr,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 15)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Short titles: the long "المشتركين …" labels ellipsize into
+              // IDENTICAL prefixes beside the icon chip on narrow phones.
+              Expanded(
+                child: group('paid_short'.tr, Icons.check_circle,
+                    const Color(0xFF2E7D32), ctrl.paidAmpsByCategory),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: group('unpaid_short'.tr, Icons.pending_actions,
+                    const Color(0xFFC62828), ctrl.unpaidAmpsByCategory),
               ),
             ],
           ),

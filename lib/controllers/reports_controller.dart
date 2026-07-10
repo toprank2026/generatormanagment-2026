@@ -168,28 +168,16 @@ class ReportsController extends GetxController {
       }
       final double collectedLocal = await _receiptRepo.getCollectedSum(m,
           accountantId: scope, branchId: branch);
-      // Remaining = expected − collected − waived discount (audit: discount
-      // lockstep with the dashboard, backend, and paid/unpaid counts).
-      final double discountTotal = await _receiptRepo.getDiscountSum(m,
-          accountantId: scope, branchId: branch);
-      // v32 item 3 (audit fix, mirrors DashboardController): remaining is a
-      // BRANCH fact — for an ACCOUNTANT login it must subtract ALL branch
-      // collections/discounts, not only theirs (the personal scope overstated
-      // remaining and contradicted the Home dashboard). The OWNER's explicit
-      // accountantFilter keeps its deliberate per-accountant remaining (v22).
-      final double collectedForRemaining;
-      final double discountForRemaining;
-      if (!_auth.isAdmin) {
-        collectedForRemaining =
-            await _receiptRepo.getCollectedSum(m, branchId: branch);
-        discountForRemaining =
-            await _receiptRepo.getDiscountSum(m, branchId: branch);
-      } else {
-        collectedForRemaining = collectedLocal;
-        discountForRemaining = discountTotal;
-      }
+      // v33 (audit fix, mirrors DashboardController): remaining = Σ
+      // per-subscriber CLAMPED dues of the UNPAID set (same derivation as the
+      // unpaid list/counts), NOT `expected − collected − discounts` — the old
+      // aggregate netted overpayments (coverage > current due after an
+      // amps/price change) against other subscribers' dues. Branch-wide truth
+      // for every role: it always equals the unpaid list's sum exactly (the
+      // owner's accountantFilter intentionally no longer shifts this card —
+      // dues are owed by subscribers, not per collector).
       final double remainingLocal =
-          expectedLocal - collectedForRemaining - discountForRemaining;
+          await _subRepo.remainingFeesTotal(month: m, branchId: branch);
       final double expensesLocal = await _expenseRepo.getTotalExpenses(m,
           accountantId: scope, branchId: branch);
       final double netLocal = collectedLocal - expensesLocal;

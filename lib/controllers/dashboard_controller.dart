@@ -82,59 +82,28 @@ class DashboardController extends GetxController {
       final ampsByCat = await _subRepo.ampsByCategory(branchId: branch);
       totalAmps.value = ampsByCat.values.fold(0.0, (sum, a) => sum + a);
 
-      // 2. Financials for the SELECTED month. Expected is CATEGORY-AWARE (R4):
-      //    each subscriber's due = amps × the price for ITS category this
-      //    month/branch (a category with no price set contributes 0). Computed
-      //    from the per-category amp sums above.
+      // 2. Month pricing check: has the owner set any price for this month/branch?
       final month = currentMonth.value;
       final prices = await _priceRepo.pricesForMonth(month, branchId: branch);
-      // Month pricing check: has the owner set any price for this month/branch?
       hasPriceForMonth.value = prices.isNotEmpty;
-      // v23 item 1 (§2.3): CONSOLIDATED (All-branches) view prices each branch's
-      // amps with THAT branch's own tariff — the flat pricesForMonth(null)
-      // collapses branches last-row-wins (wrong for differently-priced branches).
-      // A single active branch keeps the old math.
-      double expected = 0.0;
-      if (branch == null) {
-        final ampsByBranchCat = await _subRepo.ampsByBranchCategory();
-        final pricesByBranch =
-            await _priceRepo.pricesForMonthByBranch(month);
-        ampsByBranchCat.forEach((br, catMap) {
-          final brPrices = pricesByBranch[br] ?? const <String, double>{};
-          catMap.forEach((cat, amps) {
-            expected += amps * (brPrices[cat] ?? 0.0);
-          });
-        });
-      } else {
-        ampsByCat.forEach((cat, amps) {
-          expected += amps * (prices[cat] ?? 0.0);
-        });
-      }
 
       // 3. Monthly Revenue = collected valid receipts this month (active branch +
       //    this accountant; owner = all) (R6/R9).
       totalCollected.value = await _receiptRepo.getCollectedSum(month,
           accountantId: scope, branchId: branch);
 
-      // Monthly Remaining Fees = expected − collected − waived discount. The
-      // discount reduces what is owed (coverage = paid + discount), so it must
-      // be subtracted here too, matching the backend dashboard and the
-      // paid/unpaid counts (audit: discount lockstep). Collected stays cash-only.
-      //
-      // v32 item 3 (audit fix): remaining is a BRANCH fact — what subscribers
-      // still owe — so it must subtract ALL collections/discounts of the
-      // branch, not only the acting accountant's. For an accountant the old
-      // scope-mixed math (branch expected − personal collected) overstated
-      // remaining whenever a colleague had also collected. Owner/admin figures
-      // are unchanged (scope is already null → identical queries).
-      final double collectedAll = scope == null
-          ? totalCollected.value
-          : await _receiptRepo.getCollectedSum(month, branchId: branch);
-      final double discountAll =
-          await _receiptRepo.getDiscountSum(month, branchId: branch);
-      totalDue.value = expected - collectedAll - discountAll;
+      // Monthly Remaining Fees — v33 (audit fix): Σ per-subscriber CLAMPED dues
+      // of the UNPAID set (same derivation as the unpaid list/counts), instead
+      // of `expected − collected − discounts`. The old aggregate NETTED an
+      // overpayment (coverage > current due after an amps/price change) against
+      // other subscribers' dues, showing LESS remaining than the unpaid list
+      // sums to. Branch-wide (a branch fact) and consolidated-safe (the price
+      // join is per-subscriber-branch).
+      totalDue.value = await _subRepo.remainingFeesTotal(
+          month: month, branchId: branch);
       // v32 item 2: the approved-discounts card (branch-wide, like paid/unpaid).
-      totalDiscounts.value = discountAll;
+      totalDiscounts.value =
+          await _receiptRepo.getDiscountSum(month, branchId: branch);
 
       // 4. Paid / Unpaid Counts — category-aware, branch-scoped (R4).
       paidCount.value = await _subRepo.countByPaymentStatus(
