@@ -124,6 +124,24 @@ class ExpenseController extends GetxController {
     }
   }
 
+  /// v36 item 3: the default date for a NEW expense lands inside the GLOBAL
+  /// selected month — today when the global month IS the calendar month, else
+  /// the 1st of the selected month. Otherwise an expense added while viewing
+  /// another month was stamped with TODAY's date and instantly vanished from
+  /// the month-filtered list and totals being viewed.
+  DateTime defaultExpenseDate() {
+    final now = DateTime.now();
+    final String m = selectedMonth.value; // 'yyyy-MM'
+    final String nowM =
+        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}';
+    if (m == nowM) return now;
+    final parts = m.split('-');
+    final y = int.tryParse(parts[0]);
+    final mo = parts.length > 1 ? int.tryParse(parts[1]) : null;
+    if (y == null || mo == null) return now;
+    return DateTime(y, mo, 1);
+  }
+
   Future<void> addExpense({
     required String category,
     required double amount,
@@ -135,7 +153,7 @@ class ExpenseController extends GetxController {
       category: category,
       amount: amount,
       note: note,
-      date: (date ?? DateTime.now()).toIso8601String(),
+      date: (date ?? defaultExpenseDate()).toIso8601String(),
       createdByUserId: _auth.currentUser.value?.id,
       accountantId: _scope,
       // Full isolation: the expense belongs to the active branch.

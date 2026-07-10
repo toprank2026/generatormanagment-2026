@@ -404,7 +404,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final noteCtrl = TextEditingController();
     String selectedCategory = category ?? "Fuel";
     // R12: expense date is editable (manual entry + picker); defaults to today.
-    DateTime selectedDate = DateTime.now();
+    // v36 item 3: default INSIDE the global selected month (today when it is
+    // the calendar month, else its 1st) — an expense stamped with today's date
+    // while viewing another month would vanish from that month's list/totals.
+    DateTime selectedDate = controller.defaultExpenseDate();
     final List<String> categories = [
       "Fuel",
       "Oil",

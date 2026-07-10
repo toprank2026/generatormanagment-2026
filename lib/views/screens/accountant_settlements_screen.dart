@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/controllers/month_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/data/models/accountant_model.dart';
@@ -42,8 +43,12 @@ class _AccountantSettlementsScreenState
   // v23 review: the true pending total (not just the loaded page) for the banner.
   int _pendingTotal = 0;
 
-  // v27 item 6: month + accountant filters (default = current month, all).
-  String _month = DateFormat('yyyy-MM').format(DateTime.now());
+  // v27 item 6: month + accountant filters. v36 item 3: the default is the
+  // GLOBAL pricing month (the app-wide context), not the calendar month — the
+  // arrows still browse other months while the screen is open.
+  String _month = Get.isRegistered<MonthController>()
+      ? Get.find<MonthController>().selectedMonth.value
+      : DateFormat('yyyy-MM').format(DateTime.now());
   String? _acctFilter; // null = all accountants
   List<Accountant> _accountants = const [];
   // v30 T1 — summary figures for the active (month, accountant) scope. ALL

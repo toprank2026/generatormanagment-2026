@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:get/get.dart';
+import 'package:generatormanagment/controllers/main_nav_controller.dart';
 import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/core/logger.dart';
@@ -373,7 +374,8 @@ class AuthController extends GetxController {
       try {
         await DeviceRebind.apply(rebind: false);
       } catch (_) {}
-      await logout();
+      // Guard-cancel: never signed in — keep the user on their form.
+      await logout(popToRoot: false);
       return {'success': false, 'message': 'login_cancelled'.tr};
     }
     isLoggedIn.value = true;
@@ -435,7 +437,9 @@ class AuthController extends GetxController {
       // v22 item 7: same cross-account residue guard as login — a brand-new
       // account must never inherit (or push) another account's local rows.
       if (!await _guardCrossAccountResidue(result.account.id)) {
-        await logout();
+        // Guard-cancel: never signed in — keep the user on the SIGNUP form
+        // (v36 review: popping here destroyed their filled form).
+        await logout(popToRoot: false);
         return {'success': false, 'message': 'login_cancelled'.tr};
       }
       await _cache.setLastOnlineValidationAt(DateTime.now().toIso8601String());
@@ -664,7 +668,12 @@ class AuthController extends GetxController {
   /// Ends the session. [reason] is a translation key for the warning to show on
   /// the login screen (set by [recheckSession]); leave it null for a normal
   /// user-initiated logout so no warning is shown.
-  Future<void> logout({String? reason, bool wipeLocal = false}) async {
+  /// v36 item 2: [popToRoot] pops any pushed screens so the login page is what
+  /// the user actually sees after a session ends. Guard-CANCEL paths (login/
+  /// register aborted before the user was ever signed in) pass false — popping
+  /// there would destroy the form the user is still standing on.
+  Future<void> logout(
+      {String? reason, bool wipeLocal = false, bool popToRoot = true}) async {
     // P4: on a user-initiated logout, delete local business data first (push any
     // unsynced changes up first so they aren't lost). [wipeLocal] is false for
     // INVOLUNTARY logouts (offline-too-long / session-expired — the user may be
@@ -771,8 +780,25 @@ class AuthController extends GetxController {
       if (Get.isRegistered<SyncController>()) {
         await Get.find<SyncController>().resetSessionState();
       }
+      // v36 item 2: back to the HOME tab — the screen-local MainNavController
+      // survives the RootHandler swap (same route), so without this a re-login
+      // in the same app run landed on the LAST tab used (usually Settings,
+      // where the logout button lives) instead of Home.
+      if (Get.isRegistered<MainNavController>()) {
+        Get.find<MainNavController>().currentIndex.value = 0;
+      }
     } catch (e) {
       Log.w('logout state reset skipped: $e');
+    }
+    // v36 item 2: pop any PUSHED screens back to the root — an involuntary
+    // logout fired while a sub-screen was open used to leave that screen on
+    // top of the (now signed-out) RootHandler, hiding the login page.
+    if (popToRoot) {
+      try {
+        if (Get.key.currentState?.canPop() ?? false) {
+          Get.until((r) => r.isFirst);
+        }
+      } catch (_) {}
     }
     logoutReason.value = reason;
     update();

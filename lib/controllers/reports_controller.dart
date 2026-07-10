@@ -7,6 +7,7 @@ import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
+import 'package:generatormanagment/controllers/month_controller.dart';
 import 'package:intl/intl.dart';
 
 /// Monthly reports & statistics — all figures derived from the LOCAL SQLite
@@ -21,6 +22,7 @@ class ReportsController extends GetxController {
   final ExpenseRepository _expenseRepo = ExpenseRepository();
   final AuthController _auth = Get.find();
   final BranchController _branch = Get.find();
+  final MonthController _monthCtl = Get.find();
 
   /// Owner-only accountant filter (null = all accountants). Ignored for an
   /// accountant, who is always scoped to themselves.
@@ -49,7 +51,11 @@ class ReportsController extends GetxController {
     loadReport();
   }
 
-  /// Selected report month as 'yyyy-MM'.
+  /// Selected report month as 'yyyy-MM'. v36 item 3: initialized from — and
+  /// FOLLOWING — the GLOBAL pricing month (MonthController) in onInit, so the
+  /// report always opens on the app-wide month; the local prev/next arrows
+  /// still allow browsing history afterwards (calendar init is only the
+  /// pre-onInit fallback).
   var month = DateFormat('yyyy-MM').format(DateTime.now()).obs;
   var isLoading = false.obs;
 
@@ -96,9 +102,21 @@ class ReportsController extends GetxController {
   var hasMoreReceipts = false.obs;
   var isReceiptsLoadingMore = false.obs;
 
+  Worker? _monthFollow;
+
   @override
   void onInit() {
     super.onInit();
+    // v36 item 3: the GLOBAL pricing month is the app-wide context — the
+    // report starts on it and SWITCHES with it automatically (the local
+    // arrows still browse other months afterwards, until the next change).
+    // Stored + disposed in onClose so login-cycles can't stack dead listeners
+    // on the permanent MonthController (v36 review).
+    month.value = _monthCtl.selectedMonth.value;
+    _monthFollow = ever(_monthCtl.selectedMonth, (String m) {
+      month.value = m;
+      loadReport();
+    });
     // Re-scope the report when the acting user changes (owner <-> accountant).
     ever(_auth.currentUser, (_) {
       accountantFilter.value = null; // reset any owner filter on switch
@@ -106,6 +124,12 @@ class ReportsController extends GetxController {
     });
     // Re-scope when the active branch switches (full system-context swap).
     ever(_branch.currentBranch, (_) => loadReport());
+  }
+
+  @override
+  void onClose() {
+    _monthFollow?.dispose();
+    super.onClose();
   }
 
   @override
