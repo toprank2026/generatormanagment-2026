@@ -385,7 +385,14 @@ class _BoardsScreenState extends State<BoardsScreen> {
       onConfirm: () async {
         Navigator.of(context, rootNavigator: true).pop();
         try {
-          await controller.deleteBoard(board.id);
+          // v35 item 5: refused when the board's cascade would erase receipts
+          // already inside a settlement (would corrupt accountant wallets).
+          final ok = await controller.deleteBoard(board.id);
+          if (!ok) {
+            Get.snackbar('error'.tr, 'delete_blocked_settled'.tr,
+                backgroundColor: Colors.orange, colorText: Colors.white);
+            return;
+          }
         } catch (e) {
           Get.snackbar('error'.tr, '$e',
               backgroundColor: Colors.redAccent, colorText: Colors.white);

@@ -2536,34 +2536,15 @@ function viewMyReports(){
       return accountants;
     }).catch(function(){ accountants=[]; return accountants; });
   }
-  // v28 (item 3): {accountantId -> {approved:Σ amount, pending:bool}} for salary
-  // settlements in [mon] (requested_at/decided_at month prefix).
-  function buildSalaryMap(records,mon){
-    var map={};
-    (records||[]).forEach(function(r){
-      var d=(r&&r.data)||{};
-      if(d.method!=="salary") return;
-      var t=d.requested_at||d.decided_at; if(!t) return;
-      var dt=new Date(t);
-      var m=isNaN(dt)?String(t).slice(0,7):(dt.getFullYear()+"-"+("0"+(dt.getMonth()+1)).slice(-2));
-      if(m!==mon) return;
-      var key=d.accountant_id; if(key==null) return;
-      var e=map[key]||(map[key]={approved:0,pending:false});
-      if(d.status==="approved") e.approved+=repNum(d.amount);
-      else if(d.status==="pending") e.pending=true;
-    });
-    return map;
-  }
+  // v35 item 12: the salary wallet was removed — the per-accountant salary
+  // chip (v28/v29 buildSalaryMap) is gone from the report.
   function load(){
     var reqMonth=month, reqAcc=accountantId, reqBranch=ownerBranch.id+"|"+acctBranch.id;
     paint(loadingBlock("جارٍ تحميل تقرير "+reqMonth+"…"));
-    Promise.all([acctStats(reqMonth,reqAcc),ensureAccountants(),fetchAllSettlements()]).then(function(both){
+    Promise.all([acctStats(reqMonth,reqAcc),ensureAccountants()]).then(function(both){
       if(reqMonth!==month||reqAcc!==accountantId||reqBranch!==(ownerBranch.id+"|"+acctBranch.id)) return;   // stale after a switch
       var mainStats=both[0];
       var accts=both[1]||[];
-      // v28 (item 3): per-accountant salary status/value for the month, from the
-      // salary settlements (best-effort; the report still renders if this fails).
-      var salaryByAcct=buildSalaryMap(both[2]||[],reqMonth);
       // v14 (item 3): also fetch each accountant's OWN stats for the per-accountant
       // breakdown (best-effort; a failed one renders blank, the report still shows).
       return Promise.all(accts.map(function(a){
@@ -2572,7 +2553,7 @@ function viewMyReports(){
           .catch(function(){ return {acct:a,dash:null}; });
       })).then(function(perAcct){
         if(reqMonth!==month||reqAcc!==accountantId||reqBranch!==(ownerBranch.id+"|"+acctBranch.id)) return; // stale
-        paint(reportBody(mainStats,perAcct,salaryByAcct));
+        paint(reportBody(mainStats,perAcct));
       });
     }).catch(function(err){
       if(err.status===401) return;
@@ -2581,7 +2562,7 @@ function viewMyReports(){
       paint(errorBlock(err,load));
     });
   }
-  function reportBody(res,perAcct,salaryByAcct){
+  function reportBody(res,perAcct){
     var dash=(res&&res.dashboard)||null;
     var wrap=el("div");
     if(!dash){
@@ -2661,16 +2642,8 @@ function viewMyReports(){
       wrap.appendChild(el("div",{class:"app-section-title",text:"حسب المحاسب"}));
       perAcct.forEach(function(pa){
         var d=pa.dash||{};
-        // v28 (item 3): salary status/value card for this accountant this month.
-        var sal=(salaryByAcct||{})[pa.acct.id];
-        var salaryChip;
-        if(sal&&sal.approved>0){
-          salaryChip=el("div",{class:"acc-salary"},[el("span",{class:"as-ic"},[mi("account_balance_wallet")]),el("span",{text:"الراتب المستلم: "+fmtPrice(sal.approved)})]);
-        } else if(sal&&sal.pending){
-          salaryChip=el("div",{class:"acc-salary pending"},[el("span",{class:"as-ic"},[mi("hourglass_top")]),el("span",{text:"راتب قيد الانتظار"})]);
-        } else {
-          salaryChip=el("div",{class:"acc-salary none"},[el("span",{class:"as-ic"},[mi("account_balance_wallet")]),el("span",{text:"لا يوجد راتب هذا الشهر"})]);
-        }
+        // v35 item 12: the per-accountant salary chip was removed with the
+        // salary wallet.
         wrap.appendChild(el("div",{class:"card app-card",style:"margin-bottom:10px"},[
           el("div",{class:"card-b"},[
             el("div",{style:"font-weight:700;margin-bottom:8px"},[pa.acct.name||"—"]),
@@ -2678,8 +2651,7 @@ function viewMyReports(){
               el("div",{class:"app-stat"},[el("div",{class:"app-chip green"},[mi("check_circle")]),el("div",{class:"num sm",text:repNum(d.paidCount)}),el("div",{class:"lbl",text:"المسددون"})]),
               el("div",{class:"app-stat"},[el("div",{class:"app-chip red"},[mi("error")]),el("div",{class:"num sm",text:repNum(d.unpaidCount)}),el("div",{class:"lbl",text:"غير المسددين"})]),
               el("div",{class:"app-stat"},[el("div",{class:"app-chip blue"},[mi("payments")]),el("div",{class:"num sm",text:fmtPrice(repNum(d.collected))}),el("div",{class:"lbl",text:"المحصّل"})])
-            ]),
-            salaryChip
+            ])
           ])
         ]));
       });
@@ -2750,7 +2722,7 @@ function viewMySettlements(){
     var m=isNaN(dt)?String(t).slice(0,7):(dt.getFullYear()+"-"+("0"+(dt.getMonth()+1)).slice(-2));
     return m===month;
   }
-  function summaryCards(revenue,salary,expenses){
+  function summaryCards(revenue,expenses){
     function cell(icon,color,val,lbl){
       return el("div",{class:"set-sum"},[
         el("div",{class:"s-ic",style:"color:"+color},[mi(icon)]),
@@ -2760,18 +2732,14 @@ function viewMySettlements(){
     }
     // v30 T1 (parity with the app): ALL revenue figures are SETTLEMENT-based —
     // revenue = approved cash/card settlements (never subscriber receipts);
-    // settlements = revenue + salaries; net = revenue − expenses;
-    // final profit = net − salaries. Every card reconciles by construction.
-    var totalSettlements=revenue+salary;
+    // net = revenue − expenses. v35 item 12: the salary wallet was removed, so
+    // the salaries / final-profit cards are gone (legacy salary rows still
+    // render in the list below).
     var netRevenue=revenue-expenses;
-    var finalProfit=netRevenue-salary;
     return el("div",{class:"set-summary"},[
       cell("account_balance_wallet","#1565C0",revenue,"إجمالي الإيرادات"),
-      cell("fact_check","#00897b",totalSettlements,"إجمالي التسويات"),
       cell("receipt_long","#fb8c00",expenses,"المصروفات"),
-      cell("trending_up",netRevenue<0?"#d32f2f":"#2e7d32",netRevenue,"صافي الإيرادات"),
-      cell("payments","#7b3ff2",salary,"إجمالي الرواتب"),
-      cell("flag",finalProfit<0?"#d32f2f":"#1b5e20",finalProfit,"الربح النهائي")
+      cell("trending_up",netRevenue<0?"#d32f2f":"#2e7d32",netRevenue,"صافي الإيرادات")
     ]);
   }
   function methodInfo(m){
@@ -2833,13 +2801,13 @@ function viewMySettlements(){
       var dash=(all[0]&&all[0].dashboard)||{};
       var rows=(all[2]||[]).filter(function(r){ return inMonth((r&&r.data)||{}); });
       // v30 T1: revenue = APPROVED cash/card settlements (money actually handed
-      // over), salary = approved salary settlements — never subscriber receipts.
-      var revenue=0, salary=0;
+      // over) — never subscriber receipts. v35 item 12: salary settlements are
+      // legacy-only (excluded from every figure; rows still render below).
+      var revenue=0;
       rows.forEach(function(r){
         var d=(r&&r.data)||{};
-        if(d.status!=="approved") return;
-        if(d.method==="salary") salary+=repNum(d.amount);
-        else revenue+=repNum(d.amount);
+        if(d.status!=="approved"||d.method==="salary") return;
+        revenue+=repNum(d.amount);
       });
       var expenses=repNum(dash.expensesTotal);
       // Newest first (requested_at is an ISO string; string compare = chrono).
@@ -2848,7 +2816,7 @@ function viewMySettlements(){
         return tb<ta?-1:(tb>ta?1:0);
       });
       var inner=el("div");
-      inner.appendChild(summaryCards(revenue,salary,expenses));
+      inner.appendChild(summaryCards(revenue,expenses));
       var pendingN=rows.filter(function(r){ return ((r&&r.data)||{}).status==="pending"; }).length;
       if(pendingN>0) inner.appendChild(el("div",{class:"set-pending",text:"قيد الانتظار: "+pendingN}));
       if(!rows.length){

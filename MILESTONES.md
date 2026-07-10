@@ -234,6 +234,13 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Amps section restyle** — the «الأمبيرات حسب حالة التسديد» card now matches the dashboard card language (tinted rounded icon chips, same typography/surface); functionality unchanged.
 - ✅ analyze 0/0; Flutter **103** tests (+1 overpayment/remaining); adversarial review; Flash-API release APK. No backend/schema/API/data changes — fully backward-compatible.
 
+## Flash v35 — integrity audit · delete guards · decide idempotency · salary wallet removed
+- ✅ **System-wide accounting audit** (revenue/remaining/wallet/settlements/reports/dashboard) — most invariants were already hardened + test-pinned in v30–v34; this pass confirmed subscriber edits (amps/type) are single-row updates with receipt snapshots preserved (derived status recomputes everywhere; wallets untouched), wallet collected = cash-only with discounts correctly excluded on both sides, and Σ settlements ≤ Σ received structurally.
+- ✅ **Delete guards (the −520,000 incident)** — deleting a subscriber/circuit/board cascade-deletes receipts; when any of those receipts sits inside an ACTIVE (pending/approved) settlement, the delete would drop the wallet's Collected while Settled stays → negative balance (confirmed production incident). All three deletes are now REFUSED in that case (`validReceiptsForDeleteScope` + the same settlement-lock rule as reversal, fail-closed), with a clear message. Test-pinned.
+- ✅ **Settlement decide idempotency** — a decision only applies while the request is still PENDING; a raced/duplicate approve/reject is a no-op (no double-settle, no misleading toast).
+- ✅ **Salary wallet REMOVED (item 12)** — the salary card/request flow (accountant wallet), the once-per-month rule, the admin salary summary figures (salaries/final-profit cards), the panel salary cards + per-accountant salary chip, and the orphaned repo helpers are gone. LEGACY salary settlement rows remain fully visible in histories and old pending ones remain decidable (approve still asks the amount) so production mirrors can never get stuck. No schema/backend change (`settlements.method` untouched).
+- ✅ analyze 0/0; Flutter **97** tests (+1 delete-guard, −7 removed with the salary feature); panel JS clean; adversarial review (no confirmed defects). Fully backward-compatible.
+
 ## Backlog
 - ⬜ Localize backend plan names/descriptions (currently English server data).
 - ⬜ DB migration path (schema v1, `onCreate` only); index on `expenses.date`.

@@ -110,6 +110,38 @@ class ReceiptRepository {
     });
   }
 
+  /// v35 item 5 (delete guards): the VALID receipts that a subscriber/circuit/
+  /// board delete would cascade-remove. Exactly one of the scopes applies.
+  /// Used to refuse deletes that would erase cash already inside a settlement
+  /// (dropping Collected while Settled stays → a negative wallet).
+  Future<List<Receipt>> validReceiptsForDeleteScope({
+    String? subscriberId,
+    String? circuitId,
+    String? boardId,
+  }) async {
+    final db = await _dbHelper.database;
+    String where;
+    List<dynamic> args;
+    if (subscriberId != null) {
+      where = "subscriber_id = ? AND status = 'valid'";
+      args = [subscriberId];
+    } else if (circuitId != null) {
+      where =
+          "subscriber_id IN (SELECT id FROM subscribers WHERE circuit_id = ?) "
+          "AND status = 'valid'";
+      args = [circuitId];
+    } else if (boardId != null) {
+      where =
+          "subscriber_id IN (SELECT id FROM subscribers WHERE board_id = ?) "
+          "AND status = 'valid'";
+      args = [boardId];
+    } else {
+      return const [];
+    }
+    final maps = await db.query('receipts', where: where, whereArgs: args);
+    return maps.map((m) => Receipt.fromMap(m)).toList();
+  }
+
   /// Fetch a single receipt by its uuid (null when not found).
   Future<Receipt?> getByUuid(String uuid) async {
     final db = await _dbHelper.database;

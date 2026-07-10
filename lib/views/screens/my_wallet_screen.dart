@@ -83,19 +83,8 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
                 pending: c.hasPendingCard.value,
                 method: 'card',
               ),
-              const SizedBox(height: 12),
-              // v27 item 3: salary wallet — request a salary settlement with NO
-              // amount; the owner enters the amount on approval.
-              _walletCard(
-                title: 'salary_wallet'.tr,
-                icon: Icons.account_balance_wallet,
-                gradient: const [Color(0xFF6A1B9A), Color(0xFFAB47BC)],
-                balance: c.salaryReceived.value,
-                collected: c.salaryReceived.value,
-                settled: c.salaryReceived.value,
-                pending: c.hasPendingSalary.value,
-                method: 'salary',
-              ),
+              // v35 item 12: the SALARY wallet card was REMOVED (no new salary
+              // requests); legacy salary settlements still show in the history.
               const SizedBox(height: 22),
               Text('settlement_history'.tr,
                   style: const TextStyle(
@@ -133,8 +122,8 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
     required String method,
   }) {
     // v27 item 3: shorter, RESPONSIVE cards — tablets get a bit more room.
+    // v35 item 12: salary branches removed — only cash/card cards exist now.
     final bool tablet = Get.mediaQuery.size.shortestSide >= 600;
-    final bool isSalary = method == 'salary';
     final double pad = tablet ? 16 : 12;
     final double balanceFont = tablet ? 26 : 22;
     return Container(
@@ -155,7 +144,6 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
                     style: const TextStyle(
                         color: Colors.white, fontWeight: FontWeight.bold)),
               ),
-              // Salary carries no running balance — show the received total.
               Text('${fmtAmount(balance)} ${'iqd'.tr}',
                   style: TextStyle(
                       color: Colors.white,
@@ -166,12 +154,10 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: isSalary
-                ? [_miniStat('salary_received'.tr, settled)]
-                : [
-                    _miniStat('wallet_collected'.tr, collected),
-                    _miniStat('wallet_settled'.tr, settled),
-                  ],
+            children: [
+              _miniStat('wallet_collected'.tr, collected),
+              _miniStat('wallet_settled'.tr, settled),
+            ],
           ),
           const SizedBox(height: 10),
           SizedBox(
@@ -193,22 +179,12 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
               label: Text(
                 c.isRequesting.value
                     ? 'saving'.tr
-                    // v28 item 12: after approval this month → "تم استلام الراتب".
-                    : (isSalary && c.salaryMonthStatus.value == 'approved'
-                        ? 'salary_received_done'.tr
-                        : (pending
-                            ? 'wallet_pending_exists'.tr
-                            : (isSalary
-                                ? 'request_salary_settlement'.tr
-                                : 'request_settlement'.tr))),
+                    : (pending
+                        ? 'wallet_pending_exists'.tr
+                        : 'request_settlement'.tr),
                 overflow: TextOverflow.ellipsis,
               ),
-              // Salary: no balance gate (item 3); disabled once this month's
-              // salary is pending/approved (item 11/12).
-              onPressed: (pending ||
-                      c.isRequesting.value ||
-                      (!isSalary && balance <= 0) ||
-                      (isSalary && c.salaryMonthStatus.value != null))
+              onPressed: (pending || c.isRequesting.value || balance <= 0)
                   ? null
                   : () => c.requestSettlement(method),
             ),

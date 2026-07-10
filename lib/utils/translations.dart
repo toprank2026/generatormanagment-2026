@@ -155,6 +155,9 @@ class Messages extends Translations {
       'by_accountant': 'By accountant',
       // v30 T3: creator-only expense deletion.
       'expense_delete_own_only': 'Only its creator can delete this expense',
+      // v35 item 5: deletes that would erase settled money are refused.
+      'delete_blocked_settled':
+          'Cannot delete: it has receipts included in a settlement.',
       // v32: Home amps-by-status section, discounts card, report formula info.
       'amps_by_status': 'Amps by payment status',
       // v34: short group headers (narrow phones would ellipsize the long
@@ -740,6 +743,9 @@ class Messages extends Translations {
       'by_accountant': 'حسب المحاسب',
       // v30 T3: حذف المصروف من قبل منشئه فقط.
       'expense_delete_own_only': 'يمكن حذف المصروف من قِبل منشئه فقط',
+      // v35 item 5: منع الحذف الذي يمسح أموالاً مشمولة بتسوية.
+      'delete_blocked_settled':
+          'لا يمكن الحذف: توجد وصولات مشمولة بتسوية.',
       // v32: قسم الأمبيرات حسب الحالة، بطاقة الخصومات، معادلة التقرير.
       'amps_by_status': 'الأمبيرات حسب حالة التسديد',
       // v34: عناوين قصيرة لمجموعتَي البطاقة (الشاشات الضيقة).

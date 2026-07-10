@@ -160,6 +160,59 @@ void main() {
         true);
   });
 
+  // v35 item 5: the delete guard's building blocks — a subscriber/circuit/board
+  // delete is refused when a cascaded VALID receipt sits inside an active
+  // settlement (deleting it would drop Collected while Settled stays → the
+  // −520,000 negative-wallet production incident).
+  test('delete guard: a receipt inside an active settlement is detected; '
+      'a newer receipt is not', () async {
+    final sRepo = SettlementRepository();
+    await subs.insert(sub('S1'));
+    await receipts.insert(Receipt(
+      uuid: 'g1',
+      receiptNo: 1,
+      subscriberId: 'S1',
+      month: month,
+      ampsSnapshot: 10,
+      priceSnapshot: 1000,
+      paidAmount: 10000,
+      remainingAfter: 0,
+      accountantId: 'acct-g',
+      branchId: main,
+      issuedAt: '2026-09-05T10:00:00.000Z', // BEFORE the request → locked
+    ));
+    await sRepo.insert(Settlement(
+      id: 'st-g',
+      accountantId: 'acct-g',
+      amount: 10000,
+      method: 'cash',
+      status: 'approved',
+      requestedAt: '2026-09-05T11:00:00.000Z',
+    ));
+    // The delete scope query finds the subscriber's valid receipts.
+    final scoped =
+        await receipts.validReceiptsForDeleteScope(subscriberId: 'S1');
+    expect(scoped.length, 1);
+    // The lock rule flags it (issued at/before the active request).
+    final last = await sRepo.lastActiveRequestAt('acct-g', 'cash');
+    expect(
+        BillingController.isLockedBySettlement(
+            lastActiveRequestAt: last, issuedAt: scoped.first.issuedAt),
+        true);
+    // A receipt issued AFTER the request is NOT locked → its subscriber
+    // remains deletable.
+    expect(
+        BillingController.isLockedBySettlement(
+            lastActiveRequestAt: last, issuedAt: '2026-09-05T12:00:00.000Z'),
+        false);
+    // A REFUNDED receipt is out of the delete-guard scope (already reversed).
+    await receipts.markRefunded((await receipts.getByUuid('g1'))!);
+    expect(
+        (await receipts.validReceiptsForDeleteScope(subscriberId: 'S1'))
+            .isEmpty,
+        true);
+  });
+
   test('lastActiveRequestAt: rejected never locks; newest active wins; '
       'method-scoped', () async {
     final sRepo = SettlementRepository();

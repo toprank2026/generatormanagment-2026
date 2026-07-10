@@ -48,12 +48,11 @@ class _AccountantSettlementsScreenState
   List<Accountant> _accountants = const [];
   // v30 T1 — summary figures for the active (month, accountant) scope. ALL
   // money cards derive from SETTLEMENTS (never subscriber receipts):
-  //   Total Revenue    = Σ APPROVED cash+card settlement amounts
-  //   Total Settlements= revenue + salaries (every approved settlement)
-  //   Net Revenue      = revenue − expenses
-  //   Final Profit     = net revenue − salaries
+  //   Total Revenue = Σ APPROVED cash+card settlement amounts
+  //   Net Revenue   = revenue − expenses
   // so the admin can reconcile every figure with a calculator.
-  double _sumRevenue = 0, _sumSalary = 0, _sumExpenses = 0;
+  // v35 item 12: the salary wallet was removed — no salary figures/cards.
+  double _sumRevenue = 0, _sumExpenses = 0;
   // Money currently HELD by accountants that is not yet inside an approved
   // settlement (Σ per-accountant wallet balances — exactly the sum of the
   // breakdown rows below, so the card and the rows always reconcile).
@@ -137,7 +136,7 @@ class _AccountantSettlementsScreenState
       // keys off the settlement request month like revenue, so every card
       // reconciles: settlements = revenue + salaries, net = revenue − expenses,
       // final profit = net − salaries.
-      double revenue = 0, salary = 0, expenses = 0, pendingBalance = 0;
+      double revenue = 0, expenses = 0, pendingBalance = 0;
       double revenueOther = 0;
       final breakdown = <({
         Accountant acct,
@@ -156,8 +155,6 @@ class _AccountantSettlementsScreenState
                 accountantId: _acctFilter);
         expenses = await _expenseRepo.getTotalExpenses(_month,
             accountantId: _acctFilter, branchId: null);
-        salary = await _repo.approvedSumForMonth(_month, 'salary',
-            accountantId: _acctFilter);
 
         // Per-accountant breakdown over the SAME scope as the cards, computed
         // from the SAME queries, so Σ(rows) always equals the card values.
@@ -216,7 +213,6 @@ class _AccountantSettlementsScreenState
         _rows = _hasMore ? rows.sublist(0, _perPage) : rows;
         _pendingTotal = pendingTotal;
         _sumRevenue = revenue;
-        _sumSalary = salary;
         _sumExpenses = expenses;
         _pendingBalance = pendingBalance;
         _acctBreakdown = breakdown;
@@ -262,6 +258,9 @@ class _AccountantSettlementsScreenState
     // v27 item 3: approving a SALARY request requires the owner to ENTER the
     // amount first (the accountant requested it with no amount).
     double? salaryAmount;
+    // v35 item 12: the salary wallet was removed, but LEGACY pending salary
+    // rows may still exist in production mirrors — they stay decidable here
+    // (approve still asks for the amount) so no request is ever stuck.
     if (status == 'approved' && s.method == 'salary') {
       salaryAmount = await _askSalaryAmount();
       if (salaryAmount == null) return; // cancelled
@@ -280,14 +279,18 @@ class _AccountantSettlementsScreenState
       if (ok != true) return;
     }
     setState(() => _busy = true);
+    bool applied = false;
     try {
-      await _repo.decide(s, status,
+      // v35 item 6: false = the request was no longer pending (raced/duplicate
+      // decision) — nothing was changed; the reload below shows the truth.
+      applied = await _repo.decide(s, status,
           decidedBy: _auth.currentUser.value?.id, amount: salaryAmount);
-      SyncController.poke(); // push the decision into the mirror
+      if (applied) SyncController.poke(); // push the decision into the mirror
       await _load();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+    if (!applied) return; // no misleading success toast for a no-op
     Get.snackbar(
       'settlement'.tr,
       (status == 'approved'
@@ -460,28 +463,21 @@ class _AccountantSettlementsScreenState
     );
   }
 
-  /// v30 T1: the financial-summary grid — 7 settlement-based cards in the
-  /// mandated order, all mutually reconciling:
-  ///   revenue (approved cash+card) · settlements (revenue+salaries) ·
-  ///   pending balance (Σ wallet holdings) · expenses ·
-  ///   net revenue (revenue−expenses) · salaries · final profit (net−salaries).
+  /// v30 T1 / v35 item 12: the financial-summary grid — settlement-based cards,
+  /// all mutually reconciling (the salary wallet was removed, so the salary /
+  /// final-profit cards are gone and Total Settlements ≡ Total Revenue —
+  /// dropped as redundant):
+  ///   revenue (approved cash+card) · pending balance (Σ wallet holdings) ·
+  ///   expenses · net revenue (revenue−expenses).
   /// Responsive: column count + card sizing adapt to the available width.
   Widget _summaryCards() {
-    final double totalSettlements = _sumRevenue + _sumSalary;
     final double netRevenue = _sumRevenue - _sumExpenses;
-    final double finalProfit = netRevenue - _sumSalary;
     final items = <({IconData icon, String label, double value, Color color})>[
       (
         icon: Icons.account_balance_wallet,
         label: 'total_revenue',
         value: _sumRevenue,
         color: _kBlue,
-      ),
-      (
-        icon: Icons.fact_check,
-        label: 'total_settlements',
-        value: totalSettlements,
-        color: const Color(0xFF00897B),
       ),
       (
         icon: Icons.hourglass_top,
@@ -500,18 +496,6 @@ class _AccountantSettlementsScreenState
         label: 'net_revenue',
         value: netRevenue,
         color: netRevenue < 0 ? Colors.red : const Color(0xFF2E7D32),
-      ),
-      (
-        icon: Icons.payments,
-        label: 'total_salaries',
-        value: _sumSalary,
-        color: const Color(0xFF6A1B9A),
-      ),
-      (
-        icon: Icons.flag,
-        label: 'final_profit',
-        value: finalProfit,
-        color: finalProfit < 0 ? Colors.red : const Color(0xFF1B5E20),
       ),
     ];
     return LayoutBuilder(builder: (context, box) {

@@ -460,7 +460,15 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
         // Close dialog (synchronously — no double-tap window).
         Navigator.of(context, rootNavigator: true).pop();
         try {
-          await coreController.deleteSubscriber(widget.subscriber.id);
+          // v35 item 5: refused when the subscriber's receipts include money
+          // already inside a settlement (deleting them would corrupt wallets).
+          final ok =
+              await coreController.deleteSubscriber(widget.subscriber.id);
+          if (!ok) {
+            Get.snackbar('error'.tr, 'delete_blocked_settled'.tr,
+                backgroundColor: Colors.orange, colorText: Colors.white);
+            return;
+          }
           if (mounted) Navigator.of(context).pop(); // leave the detail screen
           Get.snackbar(
             "success".tr,

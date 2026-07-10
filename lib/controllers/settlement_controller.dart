@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart' show Colors;
 import 'package:get/get.dart';
-import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
@@ -32,14 +31,9 @@ class SettlementController extends GetxController {
   final cardSettled = 0.0.obs;
   final cardBalance = 0.0.obs;
   final hasPendingCard = false.obs;
-  // Salary wallet (v27 item 3) — the accountant requests a salary settlement
-  // with NO amount; the owner enters the amount on approval. `salaryReceived`
-  // = Σ APPROVED salary settlements (informational).
-  final salaryReceived = 0.0.obs;
-  final hasPendingSalary = false.obs;
-  // v28 item 11/12: this CALENDAR MONTH's salary status for the accountant —
-  // null (can request) | 'pending' | 'approved' ("تم استلام الراتب", disabled).
-  final salaryMonthStatus = RxnString();
+  // v35 item 12: the SALARY wallet (v27/v28) was REMOVED — no new salary
+  // requests can be created. Legacy 'salary' settlement rows remain in the
+  // history list (and the owner can still decide old pending ones).
 
   final isLoading = false.obs;
   final isRequesting = false.obs; // v14: loading while a settlement request saves
@@ -78,9 +72,6 @@ class SettlementController extends GetxController {
     cardSettled.value = 0;
     cardBalance.value = 0;
     hasPendingCard.value = false;
-    salaryReceived.value = 0;
-    hasPendingSalary.value = false;
-    salaryMonthStatus.value = null;
     history.clear();
     hasMore.value = false;
     update();
@@ -133,15 +124,6 @@ class SettlementController extends GetxController {
       }
       hasPendingCash.value = await _repo.hasPending(id, 'cash');
       hasPendingCard.value = await _repo.hasPending(id, 'card');
-      // v27 item 3: salary wallet (local-only figures — the server wallet API
-      // is cash/card; salary lives in the synced settlements table).
-      hasPendingSalary.value = await _repo.hasPending(id, 'salary');
-      salaryReceived.value = await _repo.approvedSum(id, 'salary');
-      // v28 item 11/12: this month's salary status (blocks re-request + drives
-      // the "تم استلام الراتب" button state after approval).
-      final curMonth = DateFormat('yyyy-MM').format(DateTime.now());
-      salaryMonthStatus.value =
-          await _repo.salaryStatusForMonth(id, curMonth);
       _page = 1;
       final page = await _repo.history(id, limit: _perPage + 1, offset: 0);
       hasMore.value = page.length > _perPage;
@@ -171,32 +153,18 @@ class SettlementController extends GetxController {
 
   /// Request a settlement for the [method] ('cash'|'card') wallet's balance —
   /// stays PENDING until the owner approves it in the Owner Panel.
+  /// v35 item 12: the salary method was removed — only cash/card remain.
   Future<bool> requestSettlement(String method) async {
     final id = _acctId;
     if (id == null) return false;
-    // v27 item 3: a SALARY request carries NO amount (the owner enters it on
-    // approval) — so it skips the balance gate that cash/card use.
-    final bool isSalary = method == 'salary';
-    final bal = isSalary
-        ? 0.0
-        : (method == 'card' ? cardBalance.value : cashBalance.value);
-    if (!isSalary && bal <= 0) {
+    final bal = method == 'card' ? cardBalance.value : cashBalance.value;
+    if (bal <= 0) {
       Get.snackbar('settlement'.tr, 'wallet_no_balance'.tr);
       return false;
     }
     if (await _repo.hasPending(id, method)) {
       Get.snackbar('settlement'.tr, 'wallet_pending_exists'.tr);
       return false;
-    }
-    // v28 item 11: a salary settlement is allowed only ONCE per calendar month
-    // (a pending or already-approved salary this month blocks a new request).
-    if (isSalary) {
-      final curMonth = DateFormat('yyyy-MM').format(DateTime.now());
-      final st = await _repo.salaryStatusForMonth(id, curMonth);
-      if (st != null) {
-        Get.snackbar('settlement'.tr, 'salary_once_per_month'.tr);
-        return false;
-      }
     }
     // v14: loading until the request is saved + synced (prevents double-tap).
     isRequesting.value = true;

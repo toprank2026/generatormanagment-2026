@@ -275,7 +275,15 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
       onConfirm: () async {
         Navigator.of(context, rootNavigator: true).pop();
         try {
-          await controller.deleteCircuit(circuit.id, widget.board.id);
+          // v35 item 5: refused when the circuit's cascade would erase
+          // receipts already inside a settlement (would corrupt wallets).
+          final ok =
+              await controller.deleteCircuit(circuit.id, widget.board.id);
+          if (!ok) {
+            Get.snackbar('error'.tr, 'delete_blocked_settled'.tr,
+                backgroundColor: Colors.orange, colorText: Colors.white);
+            return;
+          }
         } catch (e) {
           Get.snackbar('error'.tr, '$e',
               backgroundColor: Colors.redAccent, colorText: Colors.white);

@@ -174,53 +174,10 @@ class SettlementRepository {
         0;
   }
 
-  /// v27 item 3: Σ APPROVED settlement amounts of [method] for [accountantId]
-  /// (the salary wallet's "received" figure + the settlement summary banner).
-  /// Additive, read-only.
-  Future<double> approvedSum(String accountantId, String method) async {
-    final db = await _dbHelper.database;
-    final r = await db.rawQuery(
-      "SELECT SUM(amount) AS s FROM settlements "
-      "WHERE accountant_id = ? AND status = 'approved' "
-      "AND COALESCE(method,'cash') = ?",
-      [accountantId, method],
-    );
-    return ((r.isNotEmpty ? r.first['s'] as num? : 0) ?? 0).toDouble();
-  }
-
-  /// v28 item 11: the status of THIS accountant's salary settlement for [month]
-  /// (local `yyyy-MM`), or null when none exists. Enforces "one salary request
-  /// per month": returns 'pending' or 'approved' to block a new request, and
-  /// drives the "تم استلام الراتب" button state after approval. A 'rejected' row
-  /// does NOT block (the owner declined it, so the month is still open).
-  /// Additive, read-only.
-  ///
-  /// `requested_at` is stored UTC, but [month] is the accountant's LOCAL calendar
-  /// month, so we parse each row to local time and compare there — otherwise a
-  /// request made in the first local hours of a month (persisted under the
-  /// PREVIOUS UTC month) would slip past a raw UTC-prefix match and a duplicate
-  /// salary could be requested at the month boundary.
-  Future<String?> salaryStatusForMonth(String accountantId, String month) async {
-    final db = await _dbHelper.database;
-    final rows = await db.rawQuery(
-      "SELECT status, requested_at FROM settlements "
-      "WHERE accountant_id = ? AND COALESCE(method,'cash') = 'salary' "
-      "AND status IN ('pending','approved') "
-      "ORDER BY requested_at DESC",
-      [accountantId],
-    );
-    for (final r in rows) {
-      final raw = r['requested_at'] as String?;
-      if (raw == null) continue;
-      final dt = DateTime.tryParse(raw);
-      if (dt == null) continue;
-      final local = dt.toLocal();
-      final m = '${local.year.toString().padLeft(4, '0')}-'
-          '${local.month.toString().padLeft(2, '0')}';
-      if (m == month) return r['status'] as String?;
-    }
-    return null;
-  }
+  // v35 item 12: the salary-wallet helpers (v27 approvedSum, v28
+  // salaryStatusForMonth) were REMOVED with the salary wallet. Legacy 'salary'
+  // rows remain readable through history()/listAllForOwner() and decidable
+  // through decide() — only the request/summary paths are gone.
 
   /// v16: owner/admin decision on a settlement. Updates the LOCAL row
   /// (status + decided_at/by) and — because [Settlement.toMap] stamps a fresh
@@ -229,15 +186,26 @@ class SettlementRepository {
   /// is 'approved' | 'rejected'. (Offline-first: mirrors the Owner Panel, no
   /// direct API call.) v27 item 3: [amount], when given, is set on approval —
   /// used for salary settlements where the owner enters the amount at approval.
-  Future<void> decide(Settlement s, String status,
+  /// Returns true when the decision was APPLIED; false when the request was no
+  /// longer pending (raced/duplicate decision → no-op, v35 item 6).
+  Future<bool> decide(Settlement s, String status,
       {String? decidedBy, double? amount}) async {
     final db = await _dbHelper.database;
+    // v35 item 6 (idempotency): only a PENDING request may be decided — a
+    // stale UI / double-tap / raced second decision must never overwrite an
+    // already-approved/rejected settlement (re-approving could double-settle).
+    final fresh = await db.query('settlements',
+        columns: ['status'], where: 'id = ?', whereArgs: [s.id], limit: 1);
+    if (fresh.isEmpty || (fresh.first['status'] as String?) != 'pending') {
+      return false; // already decided (or gone) — callers reload and see it
+    }
     s.status = status;
     if (amount != null) s.amount = amount;
     s.decidedAt = DateTime.now().toUtc().toIso8601String();
     if (decidedBy != null) s.decidedBy = decidedBy;
     await db.update('settlements', s.toMap(),
         where: 'id = ?', whereArgs: [s.id]);
+    return true;
   }
 
   /// Paginated settlement history for [accountantId], newest first.

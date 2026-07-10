@@ -4,6 +4,8 @@ import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart';
+import 'package:generatormanagment/data/repositories/settlement_repository.dart';
+import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
@@ -14,6 +16,8 @@ class CoreController extends GetxController {
   final BoardRepository _boardRepo = BoardRepository();
   final CircuitRepository _circuitRepo = CircuitRepository();
   final SubscriberRepository _subscriberRepo = SubscriberRepository();
+  final ReceiptRepository _guardReceiptRepo = ReceiptRepository();
+  final SettlementRepository _guardSettleRepo = SettlementRepository();
   final AuthController _auth = Get.find();
   final BranchController _branch = Get.find();
 
@@ -256,11 +260,54 @@ class CoreController extends GetxController {
     update();
   }
 
-  Future<void> deleteBoard(String id) async {
+  /// v35 item 5 (delete guard): true when any VALID receipt in the delete
+  /// scope is INSIDE an active (pending|approved) settlement — its cash was
+  /// already requested/handed over, so cascade-deleting it would drop the
+  /// wallet's Collected while Settled stays, driving the balance negative
+  /// (the confirmed −520,000 production incident). Same lock rule as receipt
+  /// reversal ([BillingController.isLockedBySettlement]).
+  Future<bool> _deleteScopeSettlementLocked({
+    String? subscriberId,
+    String? circuitId,
+    String? boardId,
+  }) async {
+    try {
+      final receipts = await _guardReceiptRepo.validReceiptsForDeleteScope(
+        subscriberId: subscriberId,
+        circuitId: circuitId,
+        boardId: boardId,
+      );
+      final cache = <String, String?>{};
+      for (final r in receipts) {
+        final acct = r.accountantId;
+        if (acct == null || acct.isEmpty) continue;
+        final method = r.paymentMethod == 'card' ? 'card' : 'cash';
+        final key = '$acct|$method';
+        if (!cache.containsKey(key)) {
+          cache[key] = await _guardSettleRepo.lastActiveRequestAt(acct, method);
+        }
+        if (BillingController.isLockedBySettlement(
+            lastActiveRequestAt: cache[key], issuedAt: r.issuedAt)) {
+          return true;
+        }
+      }
+      return false;
+    } catch (_) {
+      // Fail CLOSED: if the guard itself errors, refuse the delete rather than
+      // risk erasing settled money.
+      return true;
+    }
+  }
+
+  /// v35 item 5: returns false (and deletes nothing) when the board's cascade
+  /// would erase receipts already inside a settlement.
+  Future<bool> deleteBoard(String id) async {
+    if (await _deleteScopeSettlementLocked(boardId: id)) return false;
     await _boardRepo.delete(id, accountantId: null);
     loadBoards();
     _refreshDashboard();
     update();
+    return true;
   }
 
   // --- Circuits ---
@@ -338,11 +385,15 @@ class CoreController extends GetxController {
     update();
   }
 
-  Future<void> deleteCircuit(String id, String boardId) async {
+  /// v35 item 5: returns false (and deletes nothing) when the circuit's
+  /// cascade would erase receipts already inside a settlement.
+  Future<bool> deleteCircuit(String id, String boardId) async {
+    if (await _deleteScopeSettlementLocked(circuitId: id)) return false;
     await _circuitRepo.delete(id, accountantId: null);
     loadCircuits(boardId);
     _refreshDashboard();
     update();
+    return true;
   }
 
   // --- Subscribers ---
@@ -459,11 +510,15 @@ class CoreController extends GetxController {
     }
   }
 
-  Future<void> deleteSubscriber(String id) async {
+  /// v35 item 5: returns false (and deletes nothing) when the subscriber has
+  /// receipts already inside a settlement (the −520,000 wallet incident).
+  Future<bool> deleteSubscriber(String id) async {
+    if (await _deleteScopeSettlementLocked(subscriberId: id)) return false;
     await _subscriberRepo.delete(id, accountantId: null);
     loadSubscribers();
     _refreshDashboard();
     update();
+    return true;
   }
 
   /// Paid/Unpaid list. v23 item 7: paginated with the canonical fetch-(N+1)
