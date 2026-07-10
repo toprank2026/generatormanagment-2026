@@ -7,6 +7,7 @@ import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/data/repositories/settlement_repository.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
+import 'package:generatormanagment/controllers/reports_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
@@ -155,10 +156,17 @@ class CoreController extends GetxController {
     loadBoards();
   }
 
-  // Helper to refresh dashboard when data changes
+  // Helper to refresh the stat-bearing controllers when data changes.
   void _refreshDashboard() {
     if (Get.isRegistered<DashboardController>()) {
       Get.find<DashboardController>().loadStats();
+    }
+    // v35 audit (item 9, staleness): the Reports tab is kept alive by the
+    // IndexedStack and reads the SAME data (subscribers/amps/receipts) — a
+    // board/circuit/subscriber write must recompute it too, or it shows stale
+    // figures until a manual pull-to-refresh.
+    if (Get.isRegistered<ReportsController>()) {
+      Get.find<ReportsController>().loadReport();
     }
     // item 9: every board/circuit/subscriber write funnels through here (loads
     // don't), so this is the choke point to auto-sync after a write (online).
@@ -480,15 +488,23 @@ class CoreController extends GetxController {
   }
 
   Future<void> updateSubscriber(Subscriber sub) async {
-    sub.branchId ??= _branch.writeBranchId;
     // item 5 (review fix): preserve the ORIGINAL creator's accountant_id on edit
     // (the edit form doesn't carry it) instead of wiping it to null. v22: same
     // for created_at, or editing would wipe it and break creation ordering.
-    if (sub.accountantId == null || sub.createdAt == null) {
+    // v35 audit BUG 1: same for branch_id — the form omits it, and the old
+    // `??= writeBranchId` silently MOVED a subscriber edited from the
+    // consolidated (All-branches) view into the MAIN branch (its receipts/
+    // board/circuit stayed behind → due reset, lists/counts corrupted).
+    if (sub.accountantId == null ||
+        sub.createdAt == null ||
+        sub.branchId == null) {
       final orig = await _subscriberRepo.getById(sub.id);
       sub.accountantId ??= orig?.accountantId;
       sub.createdAt ??= orig?.createdAt;
+      sub.branchId ??= orig?.branchId;
     }
+    // Last resort for legacy rows that never carried a branch.
+    sub.branchId ??= _branch.writeBranchId;
     await _validateSubscriber(sub, exceptId: sub.id);
     await _subscriberRepo.update(sub);
     loadSubscribers();
@@ -499,6 +515,12 @@ class CoreController extends GetxController {
   /// R8 (unique name, per branch) + R7 (one active subscriber per socket, per
   /// branch). Throws [ValidationException] with a translation key for the UI.
   Future<void> _validateSubscriber(Subscriber sub, {String? exceptId}) async {
+    // v35 audit BUG 4: amps must be POSITIVE — 0 made the subscriber
+    // permanently "paid" (due 0) and a negative SUBTRACTED from total-amps /
+    // expected, silently corrupting the report totals.
+    if (sub.amps.isNaN || sub.amps <= 0) {
+      throw ValidationException('amps_invalid');
+    }
     final branch = sub.branchId ?? _branch.writeBranchId;
     if (await _subscriberRepo.nameExists(sub.name,
         branchId: branch, exceptId: exceptId)) {

@@ -753,9 +753,11 @@ class DashboardScreen extends StatelessWidget {
       );
     }
 
+    // v35 (user request): COLLAPSIBLE — the header (icon chip + title) stays
+    // visible like the other dashboard cards; tapping expands the two groups.
+    // Collapsed by default so the Home stays compact.
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -767,30 +769,22 @@ class DashboardScreen extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header matches _buildStatCard: tinted rounded icon chip + label.
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child:
-                    const Icon(Icons.electric_bolt, color: Colors.orange, size: 24),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text('amps_by_status'.tr,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15)),
-              ),
-            ],
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        shape: const Border(),
+        collapsedShape: const Border(),
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.orange.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
           ),
-          const SizedBox(height: 12),
+          child: const Icon(Icons.electric_bolt, color: Colors.orange, size: 24),
+        ),
+        title: Text('amps_by_status'.tr,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

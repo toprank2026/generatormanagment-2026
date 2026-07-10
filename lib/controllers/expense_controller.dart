@@ -4,6 +4,7 @@ import 'package:generatormanagment/data/repositories/expense_repository.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/month_controller.dart';
+import 'package:generatormanagment/controllers/reports_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:uuid/uuid.dart';
 
@@ -143,7 +144,16 @@ class ExpenseController extends GetxController {
     await _repo.addExpense(newExpense);
     SyncController.poke(); // item 9
     loadExpenses();
+    _refreshReports(); // v35 audit: expenses feed the Reports net/expenses cards
     update();
+  }
+
+  /// v35 audit (item 9, staleness): the alive Reports tab derives expensesTotal
+  /// + netProfit from this table — recompute it after every expense write.
+  void _refreshReports() {
+    if (Get.isRegistered<ReportsController>()) {
+      Get.find<ReportsController>().loadReport();
+    }
   }
 
   /// v30 T3: only the CREATOR may delete an expense — an accountant deletes
@@ -175,6 +185,7 @@ class ExpenseController extends GetxController {
     }
     SyncController.poke(); // item 9
     loadExpenses();
+    _refreshReports(); // v35 audit: keep the Reports expenses/net cards fresh
     update();
     return true;
   }

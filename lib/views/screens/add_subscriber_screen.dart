@@ -344,7 +344,9 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
     if (_saving) return;
     if (_formKey.currentState!.validate()) {
       final amps = double.tryParse(_ampsCtrl.text.trim());
-      if (amps == null) {
+      // v35 audit BUG 4: amps must be a POSITIVE number — 0 would count the
+      // subscriber permanently paid; a negative corrupts amps/expected totals.
+      if (amps == null || amps.isNaN || amps <= 0) {
         Get.snackbar(
           "error".tr,
           "amps_invalid".tr,

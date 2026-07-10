@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
+import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/data/repositories/settlement_repository.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
@@ -87,6 +88,10 @@ class BillingController extends GetxController {
     if (Get.isRegistered<DashboardController>()) {
       Get.find<DashboardController>().loadStats();
     }
+    // v35 audit: repricing changes expected/remaining on the alive Reports tab.
+    if (Get.isRegistered<ReportsController>()) {
+      Get.find<ReportsController>().loadReport();
+    }
     update();
   }
 
@@ -110,6 +115,10 @@ class BillingController extends GetxController {
     await loadMonthPrice(selectedMonth.value);
     if (Get.isRegistered<DashboardController>()) {
       Get.find<DashboardController>().loadStats();
+    }
+    // v35 audit: repricing changes expected/remaining on the alive Reports tab.
+    if (Get.isRegistered<ReportsController>()) {
+      Get.find<ReportsController>().loadReport();
     }
     update();
   }
@@ -164,6 +173,18 @@ class BillingController extends GetxController {
         !isHistoryLoading.value) {
       loadReceiptHistory(subscriberId, page: historyPage.value + 1);
     }
+  }
+
+  /// v35 audit BUG 3: whether a price row exists for [sub]'s category this
+  /// [month] — SAME branch resolution as [getDueAmount], so the two never
+  /// disagree. Distinguishes "owes nothing (paid)" from "not yet billable"
+  /// (getDueAmount returns 0.0 for BOTH, which made the detail screen show a
+  /// false "paid in full" while every list counted the subscriber unpaid).
+  Future<bool> hasPriceFor(Subscriber sub, String month) async {
+    final String? branchId = sub.branchId ?? _branch.scopeBranchId;
+    return await _priceRepo.getByMonth(month,
+            branchId: branchId, category: sub.category) !=
+        null;
   }
 
   Future<double> getDueAmount(Subscriber sub, String month) async {
@@ -246,19 +267,26 @@ class BillingController extends GetxController {
     String paymentMethod = 'cash',
     String? paymentNote,
   }) async {
+    // v35 audit BUG 2: re-fetch the subscriber at the WRITE choke point — a
+    // stale caller (e.g. the detail screen after an amps/category edit) must
+    // never mint a receipt with the OLD amps/category/due (the printed
+    // "remaining 0" would contradict the derived unpaid status).
+    final Subscriber s =
+        await SubscriberRepository().getById(sub.id) ?? sub;
+
     // The receipt belongs to the SUBSCRIBER's branch (correct even when
     // collecting from the consolidated view, where the active branch is null).
-    final String branchId = sub.branchId ?? _branch.writeBranchId;
+    final String branchId = s.branchId ?? _branch.writeBranchId;
 
     MonthlyPrice? mp = await _priceRepo.getByMonth(selectedMonth.value,
-        branchId: branchId, category: sub.category);
+        branchId: branchId, category: s.category);
     // No tariff set for this (month, branch, category) — can't bill. Return null
     // WITHOUT a snackbar: a snackbar here makes Get.isDialogOpen read false and
     // BLOCKS the collect dialog's Get.back(), leaving it stuck (item 2). The
     // caller pre-checks the price and messages the operator instead.
     if (mp == null) return null;
 
-    final double due = await getDueAmount(sub, selectedMonth.value);
+    final double due = await getDueAmount(s, selectedMonth.value);
 
     // Discount applies ONLY on a full payment (enforced here, not just in the
     // UI — the amount field is user-editable). Partial payment => no discount.
@@ -294,9 +322,9 @@ class BillingController extends GetxController {
       // Allocated atomically with the insert below (per branch, D-3); the 0 here
       // is a placeholder overwritten by insertWithAllocatedNumber.
       receiptNo: 0,
-      subscriberId: sub.id,
+      subscriberId: s.id,
       month: selectedMonth.value,
-      ampsSnapshot: sub.amps,
+      ampsSnapshot: s.amps,
       priceSnapshot: mp.pricePerAmp,
       paidAmount: cash,
       remainingAfter: due - cash - discountValue,
@@ -308,7 +336,7 @@ class BillingController extends GetxController {
       // Full isolation: the receipt belongs to the subscriber's branch.
       branchId: branchId,
       // Audit: the category (and thus price) in force at collection time (R4).
-      categorySnapshot: sub.category,
+      categorySnapshot: s.category,
       // Discount (P5).
       discountType: discType,
       discountValue: discountValue,
@@ -324,11 +352,17 @@ class BillingController extends GetxController {
     SyncController.poke(); // item 9: auto-sync after the write (online)
 
     // Refresh receipt history (page 1) for this subscriber
-    await loadReceiptHistory(sub.id);
+    await loadReceiptHistory(s.id);
 
     // Refresh dashboard if it's registered
     if (Get.isRegistered<DashboardController>()) {
       Get.find<DashboardController>().loadStats();
+    }
+    // v35 audit (item 9, staleness): the alive Reports tab shows collected/
+    // paid-counts/payments — recompute it after every collection (mirrors
+    // reverseReceipt, which already did this).
+    if (Get.isRegistered<ReportsController>()) {
+      Get.find<ReportsController>().loadReport();
     }
 
     update();

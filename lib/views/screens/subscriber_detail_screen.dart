@@ -6,6 +6,7 @@ import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
+import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/utils/pdf_service.dart';
 import 'package:generatormanagment/utils/bluetooth_print_service.dart';
@@ -38,6 +39,13 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
   Worker? _monthWorker;
 
   double dueAmount = 0.0;
+  // v35 audit BUG 2: the LIVE subscriber row — re-fetched on every _refresh so
+  // an edit (amps/category) or a reversal done on a pushed screen can never
+  // leave this screen displaying/collecting against stale data.
+  late Subscriber _sub;
+  // v35 audit BUG 3: false = no price row for this category/month → NOT
+  // billable yet (distinct from "paid"; getDueAmount returns 0.0 for both).
+  bool _hasPrice = true;
 
   // R4: maps a subscriber category to its translation key (translated at use).
   static const Map<String, String> _categoryLabels = {
@@ -49,6 +57,7 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _sub = widget.subscriber;
     _scrollController.addListener(_onScroll);
     // Defer state updates to after the first frame to avoid "setState during build" errors
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -78,15 +87,22 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
 
   void _refresh() async {
     await controller.loadMonthPrice(controller.selectedMonth.value);
+    // v35 audit BUG 2: re-fetch the subscriber (amps/category may have been
+    // edited on the pushed edit screen) so due/display/collect use LIVE data.
+    _sub = await SubscriberRepository().getById(widget.subscriber.id) ?? _sub;
+    // v35 audit BUG 3: "no price yet" is NOT "paid" — the card shows a
+    // dedicated not-billable state instead of a false paid-in-full.
+    _hasPrice =
+        await controller.hasPriceFor(_sub, controller.selectedMonth.value);
     dueAmount = await controller.getDueAmount(
-      widget.subscriber,
+      _sub,
       controller.selectedMonth.value,
     );
     // Load receipt history (page 1) via paginated controller list
-    await controller.loadReceiptHistory(widget.subscriber.id);
+    await controller.loadReceiptHistory(_sub.id);
     // Pre-fill amount with due
     _amountCtrl.text = dueAmount.toStringAsFixed(0);
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   @override
@@ -95,7 +111,7 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
       backgroundColor: const Color(0xFFE3F2FD), // Light blue background
       appBar: AppBar(
         title: Text(
-          widget.subscriber.name,
+          _sub.name,
           style: const TextStyle(
             fontWeight: FontWeight.bold,
             color: Colors.white,
@@ -109,9 +125,11 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
           IconButton(
             tooltip: 'payment_history'.tr,
             icon: const Icon(Icons.history),
+            // v35 audit: refresh on return — a payment/reversal made on the
+            // history screen must be reflected here immediately.
             onPressed: () => Get.to(
-              () => PaymentHistoryScreen(subscriber: widget.subscriber),
-            ),
+              () => PaymentHistoryScreen(subscriber: _sub),
+            )?.then((_) => _refresh()),
           ),
           // Audit: gate on the fine-grained subscribers permission (matches the
           // Add FAB + the boards/expenses screens), not the coarse isAdmin —
@@ -120,9 +138,11 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
             () => auth.can(Perm.subscribers)
                 ? IconButton(
                     icon: const Icon(Icons.edit),
+                    // v35 audit BUG 2: refresh on return so an amps/category
+                    // edit is reflected (and collected against) immediately.
                     onPressed: () => Get.to(
-                      () => AddSubscriberScreen(subscriber: widget.subscriber),
-                    ),
+                      () => AddSubscriberScreen(subscriber: _sub),
+                    )?.then((_) => _refresh()),
                   )
                 : const SizedBox.shrink(),
           ),
@@ -160,21 +180,20 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
                 children: [
                   _buildInfoItem(
                     Icons.electric_meter,
-                    "${widget.subscriber.amps} ${'amps'.tr}",
+                    "${_sub.amps} ${'amps'.tr}",
                     'subscription'.tr,
                   ),
                   Container(width: 1, height: 40, color: Colors.grey[200]),
                   _buildInfoItem(
                     Icons.phone,
-                    widget.subscriber.phone ?? 'no_phone'.tr,
+                    _sub.phone ?? 'no_phone'.tr,
                     'phone'.tr,
                   ),
                   Container(width: 1, height: 40, color: Colors.grey[200]),
                   // R4: pricing category
                   _buildInfoItem(
                     Icons.category,
-                    (_categoryLabels[widget.subscriber.category] ??
-                            widget.subscriber.category)
+                    (_categoryLabels[_sub.category] ?? _sub.category)
                         .tr,
                     'category'.tr,
                   ),
@@ -225,22 +244,28 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
             ),
             const SizedBox(height: 20),
 
-            // 3. Due Amount / Payment Status
+            // 3. Due Amount / Payment Status. v35 audit BUG 3: a month with NO
+            // price for this category is "not billable yet" (amber), NEVER a
+            // false green "paid in full" — the lists/counts derive it UNPAID.
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: dueAmount > 0
-                      ? [const Color(0xFFEF5350), const Color(0xFFE53935)]
-                      : [const Color(0xFF66BB6A), const Color(0xFF43A047)],
+                  colors: !_hasPrice
+                      ? [const Color(0xFFFFB74D), const Color(0xFFF57C00)]
+                      : (dueAmount > 0
+                          ? [const Color(0xFFEF5350), const Color(0xFFE53935)]
+                          : [const Color(0xFF66BB6A), const Color(0xFF43A047)]),
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: (dueAmount > 0 ? Colors.red : Colors.green)
+                    color: (!_hasPrice
+                            ? Colors.orange
+                            : (dueAmount > 0 ? Colors.red : Colors.green))
                         .withOpacity(0.3),
                     blurRadius: 12,
                     offset: const Offset(0, 6),
@@ -250,7 +275,11 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
               child: Column(
                 children: [
                   Text(
-                    dueAmount > 0 ? 'total_due'.tr : 'payment_complete'.tr,
+                    !_hasPrice
+                        ? 'no_price_for_month'.tr
+                        : (dueAmount > 0
+                            ? 'total_due'.tr
+                            : 'payment_complete'.tr),
                     style: const TextStyle(color: Colors.white70, fontSize: 16),
                   ),
                   const SizedBox(height: 8),
@@ -263,7 +292,9 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
                       );
                     }
                     return Text(
-                      '${'iqd'.tr} ${fmtAmount(dueAmount > 0 ? dueAmount : 0)}',
+                      !_hasPrice
+                          ? '—'
+                          : '${'iqd'.tr} ${fmtAmount(dueAmount > 0 ? dueAmount : 0)}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 32,
@@ -276,7 +307,9 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
                   // lies). The collect button is the accountant-only part: an
                   // owner viewing an UNPAID subscriber sees the due (above) but no
                   // collect button — and crucially NOT a false "paid in full".
-                  if (dueAmount <= 0)
+                  if (!_hasPrice)
+                    const SizedBox.shrink()
+                  else if (dueAmount <= 0)
                     Chip(
                       label: Text(
                         'paid_full'.tr,
@@ -335,16 +368,17 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
 
   void _showCollectDialog() async {
     // Item 2 pre-check: no tariff for this category this month → can't bill.
-    // Message clearly instead of opening a dialog that can't complete (and which
-    // previously got stuck because the controller snackbar blocked its close).
-    if (controller.currentPrices[widget.subscriber.category] == null) {
+    // v35 audit BUG 3: keyed to the SUBSCRIBER-branch price lookup (_hasPrice),
+    // not the active-branch cache, so it matches getDueAmount exactly.
+    if (!_hasPrice) {
       Get.snackbar('error'.tr, 'no_price_set'.tr,
           backgroundColor: Colors.redAccent, colorText: Colors.white);
       return;
     }
     // P5: shared collect dialog with full/partial + optional discount.
+    // v35 audit BUG 2: pass the LIVE subscriber (fresh amps/category).
     final receipt = await showCollectPaymentDialog(
-      subscriber: widget.subscriber,
+      subscriber: _sub,
       due: dueAmount,
     );
     if (receipt != null) {
@@ -383,7 +417,7 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
       );
       await UsbPrintService().printReceipt(
         receipt,
-        widget.subscriber,
+        _sub,
         accountantName,
         deviceId: settings.usbDeviceId.value.isEmpty
             ? null
@@ -401,7 +435,7 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
       );
       await LanPrintService().printReceipt(
         receipt,
-        widget.subscriber,
+        _sub,
         accountantName,
         onStatus: (_) => Get.snackbar('printing'.tr, 'lan_searching'.tr,
             duration: const Duration(seconds: 4)),
@@ -420,13 +454,13 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
       await bluetoothService.connectByAddress(settings.printerAddress.value);
       await bluetoothService.printReceipt(
         receipt,
-        widget.subscriber,
+        _sub,
         accountantName,
       );
     } else {
       // Fallback to standard PDF printing
       await PdfService()
-          .printReceipt(receipt, widget.subscriber, accountantName: accountantName);
+          .printReceipt(receipt, _sub, accountantName: accountantName);
     }
     } catch (e) {
       // v24: a re-tap while a LAN job is still searching/streaming is NOT a

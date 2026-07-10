@@ -6,7 +6,9 @@ import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
+import 'package:generatormanagment/controllers/expense_controller.dart';
 import 'package:generatormanagment/controllers/month_controller.dart';
+import 'package:generatormanagment/controllers/reports_controller.dart';
 import 'package:generatormanagment/controllers/settlement_controller.dart';
 import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
@@ -445,6 +447,15 @@ class SyncController extends GetxController {
       // new collections) shows after a pull, not only on screen reopen.
       if (Get.isRegistered<SettlementController>()) {
         await Get.find<SettlementController>().load();
+      }
+      // v35 audit (item 9, staleness): pulled receipts/expenses land in SQLite
+      // but the alive Reports + Expenses tabs were never told — "update now"
+      // must refresh EVERY stat-bearing controller.
+      if (Get.isRegistered<ReportsController>()) {
+        await Get.find<ReportsController>().loadReport();
+      }
+      if (Get.isRegistered<ExpenseController>()) {
+        await Get.find<ExpenseController>().loadExpenses();
       }
     } catch (_) {}
   }
