@@ -243,23 +243,31 @@ class BarCompareChart extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 6),
-        Row(
-          children: [
-            for (final item in items)
-              Expanded(
-                child: Text(
-                  item.label,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF607D8B),
+        // v34 FIX: the bars above are PAINTED in fixed canvas (LTR)
+        // coordinates, so the label row MUST lay out LTR as well — under the
+        // app's RTL locale a plain Row reverses, putting the OUTER labels
+        // under the wrong bars (the صافي الربح/الوارد الكلي mix-up the owner
+        // kept seeing regardless of which key the code used).
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Row(
+            children: [
+              for (final item in items)
+                Expanded(
+                  child: Text(
+                    item.label,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF607D8B),
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ],
     );
