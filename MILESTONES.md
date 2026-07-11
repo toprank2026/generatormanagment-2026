@@ -256,6 +256,11 @@ feature**. Status: ✅ done · 🔄 in progress · ⬜ todo.
 - ✅ **Item 4 — Net Revenue vs settlement totals (explanation, no code)** — the reports figure recognizes revenue by receipt/billing month; the settlements screen by settlement REQUEST month, and only APPROVED money. The difference = cash still held by accountants (the الرصيد غير المسوّى card shows it exactly) + request-vs-billing-month timing. Settling before month-close closes the gap.
 - ✅ App-side only (production constraint honored — zero backend/schema/API changes); analyze 0/0; Flutter 97 tests; adversarial review workflow; Flash-API release APK.
 
+## Flash v38 — end-to-end financial self-test (fake data) + fleet verification
+- ✅ **`test/v38_e2e_flow_test.dart` — the whole money lifecycle simulated and every figure asserted** (owner-requested self-test): partial payment → full payment with AMPERE discount → full payment with VALUE discount → wallet 16,500 → settlement request → approval → balance 0 → decide idempotency (second decision is a no-op) → settled receipt LOCKED against reversal → post-settlement receipt → **the revenue-vs-settlement identity asserted exactly** (`collected − approvedSettlements == unsettled wallet balance`) → refund restores every figure → amps INCREASE flips a paid subscriber back to unpaid (residual due appears; cash history untouched) → amps DECREASE leaves over-coverage CLAMPED (remaining never nets it) → **the negative-wallet root cause reproduced** (only a raw-SQL bypass deleting a SETTLED receipt goes negative; the v35 delete guard is shown blocking exactly that row).
+- ✅ **Gap scenarios added after a 3-agent verification fleet** (independent recomputation of all 40 figures — all MATCH; app-path fidelity confirmed): two partials accumulating to paid, refund of a DISCOUNTED receipt (cash + waived amount both restore), cash/card wallet separation (a card settlement never moves or locks the cash side), settlement REJECTION (balance intact, never locks), month isolation for receipts (wallet intentionally all-time), price-0 free-month semantics (due 0 → everyone paid).
+- ✅ Test-only batch — zero app/backend changes; analyze clean; Flutter 99 tests.
+
 ## Backlog
 - ⬜ Localize backend plan names/descriptions (currently English server data).
 - ⬜ DB migration path (schema v1, `onCreate` only); index on `expenses.date`.
