@@ -47,6 +47,14 @@ class SettlementController extends GetxController {
   String? get _acctId => _auth.currentUser.value?.id;
   double _d(dynamic v) => ((v as num?) ?? 0).toDouble();
 
+  /// v37 item 5: a wallet BALANCE is never shown negative. Structural causes
+  /// are already prevented (v31 reversal lock, v35 delete guards); a negative
+  /// here is either TRANSIENT — the local fallback counts only the PULLED
+  /// (month-scoped) receipts against ALL-TIME settlements until the server
+  /// figure/pull catches up — or pre-guard historical data. The raw
+  /// collected/settled sub-figures stay visible for diagnosis.
+  double _clamp0(double v) => v < 0 ? 0 : v;
+
   @override
   void onInit() {
     super.onInit();
@@ -105,10 +113,10 @@ class SettlementController extends GetxController {
             final card = (res['card'] as Map?) ?? const {};
             cashCollected.value = _d(cash['collected']);
             cashSettled.value = _d(cash['settled']);
-            cashBalance.value = _d(cash['balance']);
+            cashBalance.value = _clamp0(_d(cash['balance'])); // v37 item 5
             cardCollected.value = _d(card['collected']);
             cardSettled.value = _d(card['settled']);
-            cardBalance.value = _d(card['balance']);
+            cardBalance.value = _clamp0(_d(card['balance'])); // v37 item 5
             gotServer = true;
           }
         } catch (_) {/* offline-ish → local fallback */}
@@ -117,10 +125,10 @@ class SettlementController extends GetxController {
         final w = await _repo.wallet(id);
         cashCollected.value = w.cashCollected;
         cashSettled.value = w.cashSettled;
-        cashBalance.value = w.cashBalance;
+        cashBalance.value = _clamp0(w.cashBalance); // v37 item 5
         cardCollected.value = w.cardCollected;
         cardSettled.value = w.cardSettled;
-        cardBalance.value = w.cardBalance;
+        cardBalance.value = _clamp0(w.cardBalance); // v37 item 5
       }
       hasPendingCash.value = await _repo.hasPending(id, 'cash');
       hasPendingCard.value = await _repo.hasPending(id, 'card');

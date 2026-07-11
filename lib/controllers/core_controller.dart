@@ -495,26 +495,78 @@ class CoreController extends GetxController {
     // `??= writeBranchId` silently MOVED a subscriber edited from the
     // consolidated (All-branches) view into the MAIN branch (its receipts/
     // board/circuit stayed behind → due reset, lists/counts corrupted).
-    if (sub.accountantId == null ||
-        sub.createdAt == null ||
-        sub.branchId == null) {
-      final orig = await _subscriberRepo.getById(sub.id);
-      sub.accountantId ??= orig?.accountantId;
-      sub.createdAt ??= orig?.createdAt;
-      sub.branchId ??= orig?.branchId;
-    }
+    // v37: the original row is now fetched ALWAYS — the validator needs it to
+    // know which fields actually changed.
+    final orig = await _subscriberRepo.getById(sub.id);
+    sub.accountantId ??= orig?.accountantId;
+    sub.createdAt ??= orig?.createdAt;
+    sub.branchId ??= orig?.branchId;
     // Last resort for legacy rows that never carried a branch.
     sub.branchId ??= _branch.writeBranchId;
-    await _validateSubscriber(sub, exceptId: sub.id);
+    await _validateSubscriber(sub, exceptId: sub.id, orig: orig);
+    // v37 item 3: a BILLING-RELEVANT edit (amps / subscription type) is blocked
+    // while the subscriber has a receipt of the CURRENT month inside an ACTIVE
+    // settlement — changing the due after the money was settled would corrupt
+    // the settled figures. Name/phone/board fixes stay allowed.
+    if (orig != null &&
+        (sub.amps != orig.amps ||
+            SubscriberCategory.normalize(sub.category) !=
+                SubscriberCategory.normalize(orig.category))) {
+      if (await _billingEditLocked(sub)) {
+        throw ValidationException('edit_blocked_settled');
+      }
+    }
     await _subscriberRepo.update(sub);
     loadSubscribers();
     _refreshDashboard();
     update();
   }
 
+  /// v37 item 3: true when [sub] has ANY valid receipt inside an ACTIVE
+  /// (pending|approved) settlement — the same lock rule as receipt reversal.
+  /// Checks ALL months (review fix): an amps/category edit changes the DERIVED
+  /// due of EVERY month, so a month-scoped check was bypassable by simply
+  /// rolling the global month forward after settling. Uses the delete guard's
+  /// scope query (no branch clause), so legacy NULL-branch receipts are
+  /// covered too. Fail-OPEN (an edit is recoverable, unlike a delete): a guard
+  /// error must not brick all editing.
+  Future<bool> _billingEditLocked(Subscriber sub) async {
+    try {
+      final receipts = await _guardReceiptRepo.validReceiptsForDeleteScope(
+          subscriberId: sub.id);
+      final cache = <String, String?>{};
+      for (final r in receipts) {
+        final acct = r.accountantId;
+        if (acct == null || acct.isEmpty) continue;
+        final method = r.paymentMethod == 'card' ? 'card' : 'cash';
+        final key = '$acct|$method';
+        if (!cache.containsKey(key)) {
+          cache[key] =
+              await _guardSettleRepo.lastActiveRequestAt(acct, method);
+        }
+        if (BillingController.isLockedBySettlement(
+            lastActiveRequestAt: cache[key], issuedAt: r.issuedAt)) {
+          return true;
+        }
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// R8 (unique name, per branch) + R7 (one active subscriber per socket, per
   /// branch). Throws [ValidationException] with a translation key for the UI.
-  Future<void> _validateSubscriber(Subscriber sub, {String? exceptId}) async {
+  ///
+  /// v37 items 1/2: on an EDIT ([orig] given), the name check runs ONLY when
+  /// the name changed and the circuit check ONLY when the circuit changed. A
+  /// pre-existing data duplicate (e.g. the deleted-then-recreated subscriber
+  /// incident, where two rows share one circuit) used to block an unrelated
+  /// AMPS edit with a misleading 'circuit_in_use' error — and only after a
+  /// pull had brought the twin row in, so it looked like an online-only bug.
+  /// New subscribers ([orig] null) keep both checks unconditionally.
+  Future<void> _validateSubscriber(Subscriber sub,
+      {String? exceptId, Subscriber? orig}) async {
     // v35 audit BUG 4: amps must be POSITIVE — 0 made the subscriber
     // permanently "paid" (due 0) and a negative SUBTRACTED from total-amps /
     // expected, silently corrupting the report totals.
@@ -522,12 +574,21 @@ class CoreController extends GetxController {
       throw ValidationException('amps_invalid');
     }
     final branch = sub.branchId ?? _branch.writeBranchId;
-    if (await _subscriberRepo.nameExists(sub.name,
-        branchId: branch, exceptId: exceptId)) {
+    // Exact trimmed compare (review fix): a Dart toLowerCase() fold disagreed
+    // with SQLite's ASCII-only NOCASE for accented names — any textual change
+    // (even case-only) re-runs the duplicate check; only a truly unchanged
+    // name skips it.
+    final bool nameChanged =
+        orig == null || sub.name.trim() != orig.name.trim();
+    if (nameChanged &&
+        await _subscriberRepo.nameExists(sub.name,
+            branchId: branch, exceptId: exceptId)) {
       throw ValidationException('duplicate_name');
     }
-    if (await _subscriberRepo.isCircuitTaken(sub.circuitId,
-        branchId: branch, exceptId: exceptId)) {
+    final bool circuitChanged = orig == null || sub.circuitId != orig.circuitId;
+    if (circuitChanged &&
+        await _subscriberRepo.isCircuitTaken(sub.circuitId,
+            branchId: branch, exceptId: exceptId)) {
       throw ValidationException('circuit_in_use');
     }
   }
