@@ -160,7 +160,7 @@ class Messages extends Translations {
           'Cannot delete: it has receipts included in a settlement.',
       // v37 item 3: billing-relevant edits are locked once settled this month.
       'edit_blocked_settled':
-          'Cannot edit amps/type: this subscriber has a receipt included in a settlement.',
+          'Cannot edit amps/type: this subscriber has a receipt included in a settlement this month.',
       // v32: Home amps-by-status section, discounts card, report formula info.
       'amps_by_status': 'Amps by payment status',
       // v34: short group headers (narrow phones would ellipsize the long
@@ -751,7 +751,7 @@ class Messages extends Translations {
           'لا يمكن الحذف: توجد وصولات مشمولة بتسوية.',
       // v37 item 3: قفل تعديل الأمبير/الفئة بعد التسوية لهذا الشهر.
       'edit_blocked_settled':
-          'لا يمكن تعديل الأمبير/الفئة: لدى المشترك وصل مشمول بتسوية.',
+          'لا يمكن تعديل الأمبير/الفئة: لدى المشترك وصل مشمول بتسوية لهذا الشهر.',
       // v32: قسم الأمبيرات حسب الحالة، بطاقة الخصومات، معادلة التقرير.
       'amps_by_status': 'الأمبيرات حسب حالة التسديد',
       // v34: عناوين قصيرة لمجموعتَي البطاقة (الشاشات الضيقة).

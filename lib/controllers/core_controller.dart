@@ -522,18 +522,21 @@ class CoreController extends GetxController {
     update();
   }
 
-  /// v37 item 3: true when [sub] has ANY valid receipt inside an ACTIVE
-  /// (pending|approved) settlement — the same lock rule as receipt reversal.
-  /// Checks ALL months (review fix): an amps/category edit changes the DERIVED
-  /// due of EVERY month, so a month-scoped check was bypassable by simply
-  /// rolling the global month forward after settling. Uses the delete guard's
-  /// scope query (no branch clause), so legacy NULL-branch receipts are
-  /// covered too. Fail-OPEN (an edit is recoverable, unlike a delete): a guard
+  /// v37 item 3: true when [sub] has a valid receipt of the CURRENT global
+  /// month inside an ACTIVE (pending|approved) settlement — the same lock rule
+  /// as receipt reversal. OWNER DECISION (v37b): the lock covers ONLY the
+  /// current month — once the month rolls forward, amps/type edits are allowed
+  /// again (accepted trade-off: such an edit retroactively changes a past
+  /// month's derived due). The month filter is applied in Dart over the
+  /// no-branch-clause scope query, so legacy NULL-branch receipts stay
+  /// covered. Fail-OPEN (an edit is recoverable, unlike a delete): a guard
   /// error must not brick all editing.
   Future<bool> _billingEditLocked(Subscriber sub) async {
     try {
-      final receipts = await _guardReceiptRepo.validReceiptsForDeleteScope(
-          subscriberId: sub.id);
+      final month = Get.find<MonthController>().selectedMonth.value;
+      final receipts = (await _guardReceiptRepo.validReceiptsForDeleteScope(
+              subscriberId: sub.id))
+          .where((r) => r.month == month);
       final cache = <String, String?>{};
       for (final r in receipts) {
         final acct = r.accountantId;
