@@ -493,7 +493,8 @@ function fmtDate(iso){
   // Fallback returns the RAW value (callers render via textContent / el({text}),
   // which escapes for us — esc() here would double-encode, e.g. "&lt;b&gt;x").
   var d=new Date(iso); if(isNaN(d)) return String(iso);
-  return d.toLocaleString(undefined,{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
+  // v39 item 6: 12-hour clock (display-only, matches the app).
+  return d.toLocaleString(undefined,{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:true});
 }
 function fmtDateShort(iso){
   if(!iso) return "—";
@@ -772,11 +773,11 @@ function acctData(entity,opts){
   if(bid && isBranchScopedEntity(entity)) o=Object.assign({},o,{branchId:bid});
   return API.myData(entity,o);
 }
-// v28: fetch ALL settlement rows across pages (the mirror caps a page at 200 and
-// has NO server-side month filter for settlements), so a month-scoped summary /
-// salary total never misses rows outside the newest-page window when stepping
-// back to older months. Bounded by MAX_PAGES so it can't run away. [extra] adds
-// filters (e.g. {relField:'accountant_id',relValue}). Resolves to a records[].
+// v28: fetch ALL settlement rows across pages (a page caps at 200). v39: pass
+// {month:'YYYY-MM'} in [extra] and the SERVER filters by the requested_at
+// prefix — the pages then only span the selected month, so the summary never
+// misses rows even in months with >5000 settlements. [extra] also adds filters
+// (e.g. {relField:'accountant_id',relValue}). Resolves to a records[].
 function fetchAllSettlements(extra){
   var out=[], page=1, LIMIT=200, MAX_PAGES=25;
   function next(){
@@ -2662,13 +2663,13 @@ function viewMyReports(){
 }
 
 /* ---------- owner settlements screen (#/my/settlements) ----------
-   Mirrors the Flutter accountant-settlements screen: a month stepper +
-   accountant filter, three summary cards (الوارد الكلي / الراتب المستلم /
-   صافي الإيرادات), then settlement tiles with inline approve/reject. Salary
-   received is summed CLIENT-side from approved salary settlements (the mirror
-   has no month filter for settlements); collected/expenses come from the
-   month+accountant-scoped /api/account/stats dashboard. Branch-aware via
-   acctData/acctStats/API.decideSettlement (they target the active branch). */
+   Mirrors the Flutter admin-settlements screen (v39): a month stepper +
+   accountant filter, three summary cards (إجمالي التسويات / صافي المصروفات /
+   صافي الربح), then settlement tiles with inline approve/reject — everything
+   strictly isolated to the selected month (settlements by their UTC
+   requested_at prefix, server-side via the data endpoint's month param;
+   expenses via the month-scoped /api/account/stats dashboard). Branch-aware
+   via acctData/acctStats/API.decideSettlement (they target the active branch). */
 function viewMySettlements(){
   var month=repMonthNow();
   var accountantId="";       // "" = all accountants
@@ -2715,12 +2716,14 @@ function viewMySettlements(){
     content.appendChild(inner);
     shell("#/my/settlements",content);
   }
-  // A settlement's request month (requested_at, else decided_at) === selected?
+  // A settlement's request month === selected? v39 items 2/4: bucketed by the
+  // UTC requested_at PREFIX — the app's own convention (settlement_repository
+  // approvedSumForMonth) — not the browser's local timezone, so the panel and
+  // the app put every settlement in the SAME month. Safety net on top of the
+  // server-side month filter (older backends ignore the param).
   function inMonth(d){
     var t=(d&&(d.requested_at||d.decided_at))||""; if(!t) return false;
-    var dt=new Date(t);
-    var m=isNaN(dt)?String(t).slice(0,7):(dt.getFullYear()+"-"+("0"+(dt.getMonth()+1)).slice(-2));
-    return m===month;
+    return String(t).slice(0,7)===month;
   }
   function summaryCards(revenue,expenses){
     function cell(icon,color,val,lbl){
@@ -2730,16 +2733,15 @@ function viewMySettlements(){
         el("div",{class:"s-lbl",text:lbl})
       ]);
     }
-    // v30 T1 (parity with the app): ALL revenue figures are SETTLEMENT-based —
-    // revenue = approved cash/card settlements (never subscriber receipts);
-    // net = revenue − expenses. v35 item 12: the salary wallet was removed, so
-    // the salaries / final-profit cards are gone (legacy salary rows still
-    // render in the list below).
-    var netRevenue=revenue-expenses;
+    // v39 item 5 (parity with the app's 3-card layout): Total Settlement =
+    // approved cash/card settlements REQUESTED in the month (never subscriber
+    // receipts); Net Expenses = the month's expenses; Net Profit = settlements
+    // − expenses. Legacy salary rows still render in the list below.
+    var netProfit=revenue-expenses;
     return el("div",{class:"set-summary"},[
-      cell("account_balance_wallet","#1565C0",revenue,"إجمالي الإيرادات"),
-      cell("receipt_long","#fb8c00",expenses,"المصروفات"),
-      cell("trending_up",netRevenue<0?"#d32f2f":"#2e7d32",netRevenue,"صافي الإيرادات")
+      cell("account_balance_wallet","#1565C0",revenue,"إجمالي التسويات"),
+      cell("receipt_long","#fb8c00",expenses,"صافي المصروفات"),
+      cell("trending_up",netProfit<0?"#d32f2f":"#2e7d32",netProfit,"صافي الربح")
     ]);
   }
   function methodInfo(m){
@@ -2795,7 +2797,12 @@ function viewMySettlements(){
   function load(){
     var reqMonth=month, reqAcc=accountantId, reqBranch=ownerBranch.id+"|"+acctBranch.id;
     paint(loadingBlock("جارٍ تحميل التسويات…"));
-    var setFilter=accountantId?{relField:"accountant_id",relValue:accountantId}:null;
+    // v39 items 1/4: the month goes to the SERVER (requested_at prefix filter),
+    // so only the selected month's settlements are fetched — no cross-month
+    // accumulation and no 25-page cap distortion. inMonth() stays as a
+    // client-side safety net for older backends.
+    var setFilter={month:reqMonth};
+    if(accountantId){ setFilter.relField="accountant_id"; setFilter.relValue=accountantId; }
     Promise.all([acctStats(reqMonth,reqAcc),ensureAccountants(),fetchAllSettlements(setFilter)]).then(function(all){
       if(reqMonth!==month||reqAcc!==accountantId||reqBranch!==(ownerBranch.id+"|"+acctBranch.id)) return; // stale
       var dash=(all[0]&&all[0].dashboard)||{};

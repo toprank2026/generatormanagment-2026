@@ -107,10 +107,11 @@ class SettlementRepository {
     final where = <String>[];
     final args = <dynamic>[];
     if (month != null && month.isNotEmpty) {
-      // v27 review: a month filter must NEVER hide a PENDING approval (a
-      // pending request from another month would otherwise be silently missed).
-      // Pending rows always surface; the summary banner stays month-scoped.
-      where.add("(s.requested_at LIKE ? OR s.status = 'pending')");
+      // v39 item 1 (owner decision, overriding the v27 rule): the history is
+      // STRICTLY month-isolated — a settlement appears only in its request
+      // month, pending included. An out-of-month pending request is reached by
+      // browsing to its month (the pending banner is month-scoped the same way).
+      where.add("s.requested_at LIKE ?");
       args.add('$month%');
     }
     if (accountantId != null && accountantId.isNotEmpty) {
@@ -163,15 +164,50 @@ class SettlementRepository {
     return ((r.isNotEmpty ? r.first['s'] as num? : 0) ?? 0).toDouble();
   }
 
-  /// v16: count of PENDING settlements (Admin badge on the Settings tile).
-  Future<int> pendingCount() async {
+  /// v16: count of PENDING settlements (the admin screen's pending banner).
+  /// v39 item 1: optional [month] scopes the count to the requests of that
+  /// month (`requested_at` UTC prefix), matching the strictly month-isolated
+  /// history list. Omitting it keeps the all-time count.
+  Future<int> pendingCount({String? month}) async {
     final db = await _dbHelper.database;
+    final bool scoped = month != null && month.isNotEmpty;
     return Sqflite.firstIntValue(
           await db.rawQuery(
-            "SELECT COUNT(*) FROM settlements WHERE status = 'pending'",
+            "SELECT COUNT(*) FROM settlements WHERE status = 'pending'"
+            "${scoped ? " AND requested_at LIKE ?" : ""}",
+            scoped ? ['$month%'] : null,
           ),
         ) ??
         0;
+  }
+
+  /// v39 item 3 — the MONTH-ISOLATED unsettled balance for one accountant:
+  /// max(0, Σ cash actually received on the month's valid receipts −
+  ///        Σ approved cash/card settlements REQUESTED in the month).
+  /// Both sides are scoped to [month] (receipts by their billing `month`
+  /// column, settlements by the `requested_at` UTC prefix), unlike [wallet]
+  /// which is deliberately an all-time balance. Clamped at 0: money of this
+  /// month settled in a LATER month keeps this month's figure at 0 or above,
+  /// never negative. Legacy 'salary' settlements are excluded (not collection
+  /// money), matching [approvedSumForMonth].
+  Future<double> monthUnsettled(String accountantId, String month) async {
+    final db = await _dbHelper.database;
+    final c = await db.rawQuery(
+      "SELECT COALESCE(SUM(paid_amount),0) s FROM receipts "
+      "WHERE accountant_id = ? AND status = 'valid' AND month = ?",
+      [accountantId, month],
+    );
+    final s = await db.rawQuery(
+      "SELECT COALESCE(SUM(amount),0) s FROM settlements "
+      "WHERE accountant_id = ? AND status = 'approved' "
+      "AND COALESCE(method,'cash') IN ('cash','card') "
+      "AND requested_at LIKE ?",
+      [accountantId, '$month%'],
+    );
+    final double collected = ((c.first['s'] as num?) ?? 0).toDouble();
+    final double settled = ((s.first['s'] as num?) ?? 0).toDouble();
+    final double diff = collected - settled;
+    return diff > 0 ? diff : 0;
   }
 
   // v35 item 12: the salary-wallet helpers (v27 approvedSum, v28
@@ -209,13 +245,17 @@ class SettlementRepository {
   }
 
   /// Paginated settlement history for [accountantId], newest first.
+  /// v39 item 1: optional [month] restricts the history to that month's
+  /// requests (`requested_at` UTC prefix) — used by the accountant's My Wallet
+  /// so the list follows the globally selected pricing month.
   Future<List<Settlement>> history(String accountantId,
-      {required int limit, required int offset}) async {
+      {required int limit, required int offset, String? month}) async {
     final db = await _dbHelper.database;
+    final bool scoped = month != null && month.isNotEmpty;
     final maps = await db.query(
       'settlements',
-      where: 'accountant_id = ?',
-      whereArgs: [accountantId],
+      where: 'accountant_id = ?${scoped ? " AND requested_at LIKE ?" : ""}',
+      whereArgs: [accountantId, if (scoped) '$month%'],
       orderBy: 'requested_at DESC',
       limit: limit,
       offset: offset,

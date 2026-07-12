@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:intl/intl.dart';
+import 'package:generatormanagment/utils/date_fmt.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/reports_controller.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
@@ -160,6 +160,6 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
   String _formatDate(String iso) {
     final t = DateTime.tryParse(iso);
     if (t == null) return iso;
-    return DateFormat('yyyy-MM-dd HH:mm').format(t);
+    return fmtDateTime12(t);
   }
 }

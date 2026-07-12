@@ -515,3 +515,65 @@ test('pull?receiptsMonth=YYYY-MM scopes only receipts; other entities unaffected
   assert.ok(ids.includes('rm-rec-jun'), 'June receipt is included');
   assert.ok(!ids.includes('rm-rec-jul'), 'July receipt is excluded by receiptsMonth=2026-06');
 });
+
+// ---------------------------------------------------------------------------
+// v39 item 1/4 — the data endpoint's month param now also filters SETTLEMENTS
+// (requested_at UTC prefix), so the owner-panel settlements screen is strictly
+// month-isolated server-side. Omitting month keeps the old all-months list.
+// ---------------------------------------------------------------------------
+test('v39: GET /api/account/data?entity=settlements&month= filters by requested_at prefix', async () => {
+  const owner = await registerOwner();
+  const acct = await makeAccountant(owner);
+
+  const rows = [
+    { localId: 'm-sep-appr', status: 'approved', requested_at: '2026-09-10T09:00:00.000Z', amount: 6000 },
+    { localId: 'm-sep-pend', status: 'pending', requested_at: '2026-09-20T09:00:00.000Z', amount: 2000 },
+    { localId: 'm-aug-appr', status: 'approved', requested_at: '2026-08-10T09:00:00.000Z', amount: 4000 },
+    { localId: 'm-aug-pend', status: 'pending', requested_at: '2026-08-20T09:00:00.000Z', amount: 1000 },
+  ];
+  const push = await api('POST', '/api/sync/push', {
+    token: acct.token,
+    body: {
+      records: rows.map((r) => ({
+        entity: 'settlements',
+        localId: r.localId,
+        deleted: false,
+        updatedAt: r.requested_at,
+        data: {
+          id: r.localId,
+          accountant_id: acct.created.localId,
+          amount: r.amount,
+          method: 'cash',
+          status: r.status,
+          requested_at: r.requested_at,
+          updated_at: r.requested_at,
+        },
+      })),
+    },
+  });
+  assert.equal(push.status, 200, `push should 200, got ${push.status} ${JSON.stringify(push.data)}`);
+
+  // month=2026-09 -> ONLY September rows, pending included (strict isolation:
+  // August's pending must NOT leak into September's view).
+  const sep = await api('GET', '/api/account/data?entity=settlements&month=2026-09&limit=200', { token: owner.token });
+  assert.equal(sep.status, 200);
+  const sepIds = sep.data.records.map((r) => r.localId).sort();
+  assert.deepEqual(sepIds, ['m-sep-appr', 'm-sep-pend'], 'September view = September rows only');
+  assert.equal(sep.data.total, 2, 'total respects the month filter');
+
+  const aug = await api('GET', '/api/account/data?entity=settlements&month=2026-08&limit=200', { token: owner.token });
+  const augIds = aug.data.records.map((r) => r.localId).sort();
+  assert.deepEqual(augIds, ['m-aug-appr', 'm-aug-pend']);
+
+  // Backward compatible: no month param -> all rows, exactly as before.
+  const all = await api('GET', '/api/account/data?entity=settlements&limit=200', { token: owner.token });
+  assert.equal(all.data.total, 4, 'omitting month keeps the all-months list');
+
+  // The month param composes with the accountant relation filter (panel usage).
+  const scoped = await api(
+    'GET',
+    `/api/account/data?entity=settlements&month=2026-09&relField=accountant_id&relValue=${encodeURIComponent(acct.created.localId)}&limit=200`,
+    { token: owner.token }
+  );
+  assert.equal(scoped.data.total, 2, 'month + accountant filters compose');
+});

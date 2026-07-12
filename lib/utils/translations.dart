@@ -153,6 +153,11 @@ class Messages extends Translations {
       'approved_settlement_total': 'Approved settlements',
       'last_settlement': 'Last settlement',
       'by_accountant': 'By accountant',
+      // v39 item 5: the 3-card settlements summary.
+      'net_expenses': 'Net expenses',
+      // v39 item 6: 12-hour clock markers (display-only).
+      'time_am': 'AM',
+      'time_pm': 'PM',
       // v30 T3: creator-only expense deletion.
       'expense_delete_own_only': 'Only its creator can delete this expense',
       // v35 item 5: deletes that would erase settled money are refused.
@@ -744,6 +749,11 @@ class Messages extends Translations {
       'approved_settlement_total': 'التسويات المعتمدة',
       'last_settlement': 'آخر تسوية',
       'by_accountant': 'حسب المحاسب',
+      // v39 item 5: بطاقات ملخص التسويات الثلاث.
+      'net_expenses': 'صافي المصروفات',
+      // v39 item 6: مؤشرا نظام 12 ساعة (عرض فقط).
+      'time_am': 'ص',
+      'time_pm': 'م',
       // v30 T3: حذف المصروف من قبل منشئه فقط.
       'expense_delete_own_only': 'يمكن حذف المصروف من قِبل منشئه فقط',
       // v35 item 5: منع الحذف الذي يمسح أموالاً مشمولة بتسوية.

@@ -10,7 +10,7 @@ import 'package:generatormanagment/data/repositories/core_repositories.dart';
 import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/utils/printer_prefs.dart';
 import 'package:generatormanagment/utils/usb_print_service.dart';
-import 'package:intl/intl.dart';
+import 'package:generatormanagment/utils/date_fmt.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -101,7 +101,8 @@ class BluetoothPrintService {
 
     // All receipt data inside a bordered ROUNDED table — each row gated by its
     // section + an expressive icon (v28 items 9/12). A row = (key,label,value).
-    final df = DateFormat('yyyy-MM-dd HH:mm');
+    // v39 item 6: 12-hour receipt time; the receipt is always Arabic → ص/م.
+    String fmtDate(DateTime d) => fmtDateTime12(d, amText: 'ص', pmText: 'م');
     final rows = <({String key, String label, String value})>[];
     void add(String key, String label, String value) {
       if (PrinterPrefs.showSection(key)) {
@@ -109,7 +110,7 @@ class BluetoothPrintService {
       }
     }
     add('sec_receipt_no', "رقم الوصل", receipt.receiptNo.toString());
-    add('sec_date', "التاريخ", df.format(DateTime.parse(receipt.issuedAt)));
+    add('sec_date', "التاريخ", fmtDate(DateTime.parse(receipt.issuedAt)));
     add('sec_subscriber', "المشترك", sub.name);
     add('sec_month', "الشهر", receipt.month);
     // v27 item 7: NEW printed rows — board + circuit names.

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:intl/intl.dart';
 import 'package:generatormanagment/controllers/settlement_controller.dart';
 import 'package:generatormanagment/data/models/settlement_model.dart';
+import 'package:generatormanagment/utils/date_fmt.dart';
 import 'package:generatormanagment/utils/money.dart';
 
 const Color _kBlue = Color(0xFF1565C0);
@@ -231,8 +231,7 @@ class _MyWalletScreenState extends State<MyWalletScreen> {
         subtitle: Text(s.requestedAt == null
             ? ''
             : (DateTime.tryParse(s.requestedAt!) != null
-                ? DateFormat('yyyy-MM-dd HH:mm')
-                    .format(DateTime.parse(s.requestedAt!).toLocal())
+                ? fmtDateTime12(DateTime.parse(s.requestedAt!).toLocal())
                 : s.requestedAt!)),
         trailing: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),

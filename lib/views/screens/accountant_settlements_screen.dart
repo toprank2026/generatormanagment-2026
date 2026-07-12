@@ -10,6 +10,7 @@ import 'package:generatormanagment/data/models/settlement_model.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/data/repositories/expense_repository.dart';
 import 'package:generatormanagment/data/repositories/settlement_repository.dart';
+import 'package:generatormanagment/utils/date_fmt.dart';
 import 'package:generatormanagment/utils/money.dart';
 
 const Color _kBlue = Color(0xFF1565C0);
@@ -51,19 +52,17 @@ class _AccountantSettlementsScreenState
       : DateFormat('yyyy-MM').format(DateTime.now());
   String? _acctFilter; // null = all accountants
   List<Accountant> _accountants = const [];
-  // v30 T1 — summary figures for the active (month, accountant) scope. ALL
-  // money cards derive from SETTLEMENTS (never subscriber receipts):
-  //   Total Revenue = Σ APPROVED cash+card settlement amounts
-  //   Net Revenue   = revenue − expenses
+  // v30 T1 / v39 item 5 — summary figures for the active (month, accountant)
+  // scope, ALL strictly month-isolated (v39 items 2/4):
+  //   Total Settlement = Σ APPROVED cash+card settlements REQUESTED this month
+  //   Net Expenses     = the month's expenses
+  //   Net Profit       = Total Settlement − Net Expenses
   // so the admin can reconcile every figure with a calculator.
   // v35 item 12: the salary wallet was removed — no salary figures/cards.
   double _sumRevenue = 0, _sumExpenses = 0;
-  // Money currently HELD by accountants that is not yet inside an approved
-  // settlement (Σ per-accountant wallet balances — exactly the sum of the
-  // breakdown rows below, so the card and the rows always reconcile).
-  double _pendingBalance = 0;
-  // Per-accountant breakdown: approved settlement total (month), current
-  // unsettled wallet balance, latest settlement status + date.
+  // Per-accountant breakdown: approved settlement total (month), the month's
+  // unsettled balance (v39 item 3 — month-scoped, no longer the all-time
+  // wallet), latest settlement of the month (status + date).
   List<
       ({
         Accountant acct,
@@ -130,18 +129,17 @@ class _AccountantSettlementsScreenState
       // Fetch one extra to detect the next page (canonical pattern).
       final rows = await _repo.listAllForOwner(
           limit: _perPage + 1, month: _month, accountantId: _acctFilter);
-      // v23 review: the pending banner must reflect the TRUE total, not the page.
+      // v23 review: the pending banner must reflect the TRUE total, not the
+      // page. v39 item 1: scoped to the selected month, like the list.
       int pendingTotal = 0;
       try {
-        pendingTotal = await _repo.pendingCount();
+        pendingTotal = await _repo.pendingCount(month: _month);
       } catch (_) {}
-      // v30 T1: ALL revenue figures come from APPROVED SETTLEMENTS (never
-      // subscriber receipts) — a settlement is money actually handed over after
-      // the admin's approval. Expenses keep the month/accountant scope; salary
-      // keys off the settlement request month like revenue, so every card
-      // reconciles: settlements = revenue + salaries, net = revenue − expenses,
-      // final profit = net − salaries.
-      double revenue = 0, expenses = 0, pendingBalance = 0;
+      // v30 T1 / v39: ALL settlement figures come from APPROVED SETTLEMENTS
+      // (never subscriber receipts) — a settlement is money actually handed
+      // over after the admin's approval — and EVERY figure on this page is
+      // isolated to the selected month (v39 items 1-4).
+      double revenue = 0, expenses = 0;
       double revenueOther = 0;
       final breakdown = <({
         Accountant acct,
@@ -168,9 +166,10 @@ class _AccountantSettlementsScreenState
             : _accountants.where((a) => a.id == _acctFilter).toList();
         double sumApproved = 0;
         for (final a in scoped) {
-          final w = await _repo.wallet(a.id);
-          final double pend = (w.cashBalance > 0 ? w.cashBalance : 0) +
-              (w.cardBalance > 0 ? w.cardBalance : 0);
+          // v39 item 3: the unsettled figure is MONTH-ISOLATED — the month's
+          // received cash minus the month's approved settlements (clamped ≥ 0)
+          // — no longer the all-time wallet balance.
+          final double pend = await _repo.monthUnsettled(a.id, _month);
           final double appr = await _repo.approvedSumForMonth(_month, 'cash',
                   accountantId: a.id) +
               await _repo.approvedSumForMonth(_month, 'card',
@@ -178,7 +177,9 @@ class _AccountantSettlementsScreenState
           String? lastStatus;
           String? lastDate;
           try {
-            final last = await _repo.history(a.id, limit: 1, offset: 0);
+            // v39 item 1: the newest settlement OF THE SELECTED MONTH.
+            final last =
+                await _repo.history(a.id, limit: 1, offset: 0, month: _month);
             if (last.isNotEmpty) {
               lastStatus = last.first.status;
               lastDate = last.first.requestedAt;
@@ -191,7 +192,6 @@ class _AccountantSettlementsScreenState
             lastStatus: lastStatus,
             lastDate: lastDate,
           ));
-          pendingBalance += pend;
           sumApproved += appr;
         }
         // Approved settlements whose accountant was deleted locally — surfaced
@@ -219,7 +219,6 @@ class _AccountantSettlementsScreenState
         _pendingTotal = pendingTotal;
         _sumRevenue = revenue;
         _sumExpenses = expenses;
-        _pendingBalance = pendingBalance;
         _acctBreakdown = breakdown;
         _revenueOther = revenueOther;
         _expByAccountant = expByAcct;
@@ -468,44 +467,37 @@ class _AccountantSettlementsScreenState
     );
   }
 
-  /// v30 T1 / v35 item 12: the financial-summary grid — settlement-based cards,
-  /// all mutually reconciling (the salary wallet was removed, so the salary /
-  /// final-profit cards are gone and Total Settlements ≡ Total Revenue —
-  /// dropped as redundant):
-  ///   revenue (approved cash+card) · pending balance (Σ wallet holdings) ·
-  ///   expenses · net revenue (revenue−expenses).
+  /// v39 item 5 — exactly THREE summary cards (owner decision), all isolated
+  /// to the selected month:
+  ///   Total Settlement (Σ approved cash+card settlements requested this month)
+  ///   · Net Expenses (the month's expenses)
+  ///   · Net Profit (Total Settlement − Net Expenses).
   /// Responsive: column count + card sizing adapt to the available width.
   Widget _summaryCards() {
-    final double netRevenue = _sumRevenue - _sumExpenses;
+    final double netProfit = _sumRevenue - _sumExpenses;
     final items = <({IconData icon, String label, double value, Color color})>[
       (
         icon: Icons.account_balance_wallet,
-        label: 'total_revenue',
+        label: 'total_settlements',
         value: _sumRevenue,
         color: _kBlue,
       ),
       (
-        icon: Icons.hourglass_top,
-        label: 'pending_settlement_balance',
-        value: _pendingBalance,
-        color: const Color(0xFFEF6C00),
-      ),
-      (
         icon: Icons.receipt_long,
-        label: 'total_expenses',
+        label: 'net_expenses',
         value: _sumExpenses,
         color: const Color(0xFFFB8C00),
       ),
       (
-        icon: netRevenue >= 0 ? Icons.trending_up : Icons.trending_down,
-        label: 'net_revenue',
-        value: netRevenue,
-        color: netRevenue < 0 ? Colors.red : const Color(0xFF2E7D32),
+        icon: netProfit >= 0 ? Icons.trending_up : Icons.trending_down,
+        label: 'net_profit',
+        value: netProfit,
+        color: netProfit < 0 ? Colors.red : const Color(0xFF2E7D32),
       ),
     ];
     return LayoutBuilder(builder: (context, box) {
       final double w = box.maxWidth;
-      final int cols = w >= 900 ? 4 : (w >= 560 ? 3 : 2);
+      final int cols = w >= 560 ? 3 : 2;
       final double scale = w >= 900 ? 1.2 : (w >= 560 ? 1.1 : 1.0);
       final double gap = w >= 560 ? 14 : 10;
       return GridView.count(
@@ -559,10 +551,10 @@ class _AccountantSettlementsScreenState
     );
   }
 
-  /// v30 T1: per-accountant breakdown — approved settlement total, current
-  /// UNSETTLED holdings (warning-highlighted when > 0), latest settlement
-  /// status + date. Σ(approved) + residual == the Total Revenue card;
-  /// Σ(pending) == the Pending Settlement Balance card, by construction.
+  /// v30 T1 / v39: per-accountant breakdown — the month's approved settlement
+  /// total, the month's UNSETTLED balance (warning-highlighted when > 0), and
+  /// the month's latest settlement status + date. Σ(approved) + residual ==
+  /// the Total Settlement card, by construction.
   List<Widget> _accountantBreakdown() {
     if (_acctBreakdown.isEmpty && _revenueOther <= 0) return const [];
     return [
@@ -615,9 +607,7 @@ class _AccountantSettlementsScreenState
     String dateText = '';
     if (b.lastDate != null && b.lastDate!.isNotEmpty) {
       final d = DateTime.tryParse(b.lastDate!);
-      dateText = d == null
-          ? b.lastDate!
-          : DateFormat('yyyy-MM-dd HH:mm').format(d.toLocal());
+      dateText = d == null ? b.lastDate! : fmtDateTime12(d.toLocal());
     }
     final bool warn = b.pending > 0;
     Widget kv(String label, String value, Color color, {bool highlight = false}) =>
@@ -786,8 +776,7 @@ class _AccountantSettlementsScreenState
     final when = s.requestedAt == null
         ? ''
         : (DateTime.tryParse(s.requestedAt!) != null
-            ? DateFormat('yyyy-MM-dd HH:mm')
-                .format(DateTime.parse(s.requestedAt!).toLocal())
+            ? fmtDateTime12(DateTime.parse(s.requestedAt!).toLocal())
             : s.requestedAt!);
     return Container(
       margin: const EdgeInsets.only(bottom: 10),

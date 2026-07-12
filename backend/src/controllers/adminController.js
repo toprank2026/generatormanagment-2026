@@ -235,9 +235,17 @@ async function listUserData(userId, query = {}) {
 
   // v23 (§7): optional month=YYYY-MM prefix filter on data.date (expenses date
   // browsing on the owner panel). Same convention buildDashboard uses.
+  // v39 item 1: settlements accept the same param on their requested_at (UTC
+  // ISO prefix — the app's own month convention), so the owner-panel
+  // settlements screen is strictly month-isolated server-side. Additive: no
+  // existing client sends month for settlements.
   const month = typeof query.month === 'string' ? query.month.trim() : '';
-  if (month && /^\d{4}-\d{2}$/.test(month) && entity === 'expenses') {
-    filter['data.date'] = { $regex: '^' + month };
+  if (month && /^\d{4}-\d{2}$/.test(month)) {
+    if (entity === 'expenses') {
+      filter['data.date'] = { $regex: '^' + month };
+    } else if (entity === 'settlements') {
+      filter['data.requested_at'] = { $regex: '^' + month };
+    }
   }
 
   // Optional active-branch scope (full isolation): composes with q/relField so a

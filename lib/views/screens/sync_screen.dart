@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:intl/intl.dart';
+import 'package:generatormanagment/utils/date_fmt.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
 
 /// Offline-sync status + manual control on its own screen. Reached from a single
@@ -152,6 +152,6 @@ class SyncScreen extends StatelessWidget {
     if (iso == null || iso.isEmpty) return 'never'.tr;
     final dt = DateTime.tryParse(iso);
     if (dt == null) return iso;
-    return DateFormat('yyyy-MM-dd HH:mm').format(dt.toLocal());
+    return fmtDateTime12(dt.toLocal());
   }
 }

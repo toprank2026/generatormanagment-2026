@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:uuid/uuid.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
+import 'package:generatormanagment/controllers/month_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
 import 'package:generatormanagment/core/api_client.dart';
 import 'package:generatormanagment/core/api_config.dart';
@@ -19,7 +20,11 @@ class SettlementController extends GetxController {
   final SettlementRepository _repo = SettlementRepository();
   final AuthController _auth = Get.find();
   final BranchController _branch = Get.find();
+  final MonthController _month = Get.find();
   final ConnectivityService _net = ConnectivityService();
+  // v39 item 1: the history follows the global pricing month. Workers on the
+  // PERMANENT MonthController must be stored + disposed (v36 review pattern).
+  Worker? _monthFollow;
 
   // Cash wallet.
   final cashCollected = 0.0.obs;
@@ -68,6 +73,17 @@ class SettlementController extends GetxController {
         load();
       }
     });
+    // v39 item 1: the settlement HISTORY is isolated to the globally selected
+    // pricing month — re-load when it changes (wallet balances stay all-time).
+    _monthFollow = ever(_month.selectedMonth, (_) {
+      if (_acctId != null) load();
+    });
+  }
+
+  @override
+  void onClose() {
+    _monthFollow?.dispose();
+    super.onClose();
   }
 
   /// Zeroes all wallet figures + history (logout cleanup).
@@ -133,7 +149,9 @@ class SettlementController extends GetxController {
       hasPendingCash.value = await _repo.hasPending(id, 'cash');
       hasPendingCard.value = await _repo.hasPending(id, 'card');
       _page = 1;
-      final page = await _repo.history(id, limit: _perPage + 1, offset: 0);
+      // v39 item 1: history shows ONLY the selected pricing month's requests.
+      final page = await _repo.history(id,
+          limit: _perPage + 1, offset: 0, month: _month.selectedMonth.value);
       hasMore.value = page.length > _perPage;
       history.assignAll(hasMore.value ? page.sublist(0, _perPage) : page);
     } finally {
@@ -148,8 +166,10 @@ class SettlementController extends GetxController {
     if (id == null) return;
     isMoreLoading.value = true;
     try {
-      final next =
-          await _repo.history(id, limit: _perPage + 1, offset: _page * _perPage);
+      final next = await _repo.history(id,
+          limit: _perPage + 1,
+          offset: _page * _perPage,
+          month: _month.selectedMonth.value);
       hasMore.value = next.length > _perPage;
       history.addAll(hasMore.value ? next.sublist(0, _perPage) : next);
       _page++;

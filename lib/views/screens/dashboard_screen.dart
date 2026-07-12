@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
+import 'package:generatormanagment/utils/date_fmt.dart';
 import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
@@ -9,14 +10,14 @@ import 'package:generatormanagment/views/widgets/shimmer_loading.dart';
 import 'package:generatormanagment/views/screens/subscribers_screen.dart';
 import 'package:generatormanagment/views/screens/boards_screen.dart';
 
-/// Compact "last pull" timestamp for the banner: `HH:mm` when it happened
-/// today, `d/M HH:mm` otherwise, or `never` when no pull has run yet.
+/// Compact "last pull" timestamp for the banner: `hh:mm AM/PM` when it
+/// happened today, `d/M hh:mm AM/PM` otherwise, or `never` when no pull has
+/// run yet (v39 item 6: 12-hour display).
 String _formatPullTime(String? iso) {
   final t = iso == null ? null : DateTime.tryParse(iso);
   if (t == null) return 'never'.tr;
   final now = DateTime.now();
-  final hm = '${t.hour.toString().padLeft(2, '0')}:'
-      '${t.minute.toString().padLeft(2, '0')}';
+  final hm = fmtTime12(t);
   final sameDay = t.year == now.year && t.month == now.month && t.day == now.day;
   return sameDay ? hm : '${t.day}/${t.month} $hm';
 }

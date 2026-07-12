@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:intl/intl.dart';
+import 'package:generatormanagment/utils/date_fmt.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/settings_controller.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
@@ -279,7 +279,7 @@ class _BackupScreenState extends State<BackupScreen> {
     if (iso == null || iso.isEmpty) return 'never'.tr;
     final dt = DateTime.tryParse(iso);
     if (dt == null) return iso;
-    return DateFormat('yyyy-MM-dd HH:mm').format(dt.toLocal());
+    return fmtDateTime12(dt.toLocal());
   }
 
   String _formatSize(int bytes) {

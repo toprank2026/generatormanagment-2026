@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
-import 'package:intl/intl.dart';
+import 'package:generatormanagment/utils/date_fmt.dart';
 
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
@@ -259,7 +259,8 @@ class UsbPrintService {
     Subscriber sub,
     String accountantName,
   ) async {
-    final df = DateFormat('yyyy-MM-dd HH:mm');
+    // v39 item 6: 12-hour receipt time; the receipt is always Arabic → ص/م.
+    String fmtDate(DateTime d) => fmtDateTime12(d, amText: 'ص', pmText: 'م');
     final List<img.Image> out = [];
 
     // v27 item 7: board + circuit names (additive lookups) + per-section gates
@@ -288,7 +289,7 @@ class UsbPrintService {
       }
     }
     add('sec_receipt_no', 'رقم الوصل', receipt.receiptNo.toString());
-    add('sec_date', 'التاريخ', df.format(DateTime.parse(receipt.issuedAt)));
+    add('sec_date', 'التاريخ', fmtDate(DateTime.parse(receipt.issuedAt)));
     add('sec_subscriber', 'المشترك', sub.name);
     add('sec_month', 'الشهر', receipt.month);
     if (boardName.isNotEmpty) {
