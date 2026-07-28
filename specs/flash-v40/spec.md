@@ -55,9 +55,16 @@ existing deployments keep working; legacy rows keep legacy behavior.
    prefix; admin synced-data grid shows the new month column.
 5. **Sync compatibility** (same pattern as v12 `method` / v13 `payment_note`):
    new app pulling legacy rows → month NULL → fallback ✓. Old app pulling a
-   new stamped row → that pull fails silently and retries later (stale until
-   the device updates) — the documented, precedented trade-off of the
-   whole-row mirror; sync engine itself is untouched (standing rule).
+   new stamped row → **the WHOLE pull fails** (one transaction — no entity
+   updates on that device, every retry, until the APK is updated; push still
+   works and the server mirror is never harmed). Review-verified blast radius:
+   an old-APK device must NOT switch branches during the rollout (push→clear→
+   pull would leave it empty until updated). ROLLOUT RULE: update every device
+   of an account together, BEFORE the first settlement is requested on v40.
+   Precedented trade-off of the whole-row mirror; the sync engine itself is
+   untouched (standing rule). Optional future hardening: column-filtered /
+   per-record-isolated pull applies, which would close this window for all
+   future schema additions.
 
 ## Acceptance arithmetic (asserted in tests)
 Tariff month 2026-08, today 2026-07-28: collect 15,000 → receipt
