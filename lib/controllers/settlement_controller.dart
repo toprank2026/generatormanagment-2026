@@ -205,6 +205,10 @@ class SettlementController extends GetxController {
         amount: bal,
         method: method,
         status: 'pending',
+        // v40: the TARIFF month is the accounting bucket — a settlement of
+        // August money requested on July 28 books into August. requestedAt
+        // below stays the untouched historical transaction timestamp.
+        month: _month.selectedMonth.value,
         requestedAt: now,
       ));
       SyncController.poke(); // push the request into the owner's mirror

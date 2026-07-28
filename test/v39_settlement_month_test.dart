@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
@@ -33,7 +34,7 @@ void main() {
   final receipts = ReceiptRepository();
 
   Settlement st(String id, String status, String requestedAt,
-          {double amount = 1000, String method = 'cash'}) =>
+          {double amount = 1000, String method = 'cash', String? month}) =>
       Settlement(
         id: id,
         accountantId: acct,
@@ -41,6 +42,7 @@ void main() {
         amount: amount,
         method: method,
         status: status,
+        month: month,
         requestedAt: requestedAt,
       );
 
@@ -48,7 +50,8 @@ void main() {
           {required double cash,
           required String month,
           String status = 'valid',
-          String method = 'cash'}) =>
+          String method = 'cash',
+          String? issuedAt}) =>
       Receipt(
         uuid: uuid,
         receiptNo: 0,
@@ -63,7 +66,7 @@ void main() {
         categorySnapshot: SubscriberCategory.standard,
         status: status,
         paymentMethod: method,
-        issuedAt: '$month-05T10:00:00.000Z',
+        issuedAt: issuedAt ?? '$month-05T10:00:00.000Z',
       );
 
   test('history / listAllForOwner / pendingCount are STRICTLY month-isolated',
@@ -143,5 +146,82 @@ void main() {
 
     // October only sees its own receipt.
     expect(await settles.monthUnsettled(acct, '2026-10'), 7000);
+  });
+
+  // v40 — FUTURE-MONTH BILLING: the stamped TARIFF month is the accounting
+  // bucket; the transaction timestamps stay historical-only. Acceptance
+  // scenario from the owner spec: tariff month = August, today = July 28.
+  test('v40: tariff-month stamp buckets settlements; timestamps stay history',
+      () async {
+    // Collect 15,000 of AUGUST subscriptions on JULY 28: the receipt carries
+    // month='2026-08' (tariff) with the TRUE July issue timestamp — already
+    // the app behavior (billing stamps the global month, issuedAt = now).
+    await receipts.insertWithAllocatedNumber(
+        rc('rAug',
+            cash: 15000,
+            month: '2026-08',
+            issuedAt: '2026-07-28T10:00:00.000Z'),
+        branchId: main);
+    final aug = (await receipts.getByUuid('rAug'))!;
+    expect(aug.month, '2026-08');
+    expect(await receipts.getCollectedSum('2026-08', branchId: main), 15000);
+    expect(await receipts.getCollectedSum('2026-07', branchId: main), 0);
+
+    // The accountant settles on JULY 29 — the request carries the TARIFF
+    // month (August); requested_at remains the true July timestamp.
+    await settles.insert(st('stAug', 'pending', '2026-07-29T09:00:00.000Z',
+        amount: 15000, month: '2026-08'));
+
+    // Pending banner + histories + admin list: the request lives in AUGUST.
+    expect(await settles.pendingCount(month: '2026-08'), 1);
+    expect(await settles.pendingCount(month: '2026-07'), 0);
+    expect(
+        (await settles.history(acct, limit: 10, offset: 0, month: '2026-08'))
+            .map((s) => s.id),
+        ['stAug']);
+    expect(
+        (await settles.history(acct, limit: 10, offset: 0, month: '2026-07'))
+            .isEmpty,
+        true);
+    expect((await settles.listAllForOwner(month: '2026-08'))
+        .map((r) => r.settlement.id), ['stAug']);
+    expect((await settles.listAllForOwner(month: '2026-07')).isEmpty, true);
+
+    // Approve → Total Settlement books into AUGUST, July stays 0, and the
+    // August unsettled balance closes (was the v39 phantom: August kept
+    // showing 15,000 unsettled forever while July got the credit).
+    final req = (await settles.listAllForOwner(month: '2026-08'))
+        .first.settlement;
+    expect(await settles.decide(req, 'approved', decidedBy: 'owner'), true);
+    expect(await settles.approvedSumForMonth('2026-08', 'cash'), 15000);
+    expect(await settles.approvedSumForMonth('2026-07', 'cash'), 0);
+    expect(await settles.monthUnsettled(acct, '2026-08'), 0,
+        reason: '15,000 August cash − 15,000 August-stamped settlement');
+    expect(await settles.monthUnsettled(acct, '2026-07'), 0,
+        reason: 'July collected nothing and is charged nothing');
+    // The stamp survives the decision round-trip.
+    final decided = (await settles.listAllForOwner(month: '2026-08'))
+        .first.settlement;
+    expect(decided.month, '2026-08');
+    expect(decided.status, 'approved');
+    expect(decided.requestedAt, '2026-07-29T09:00:00.000Z',
+        reason: 'the historical transaction timestamp is NEVER rewritten');
+
+    // MIXED DB: a legacy (unstamped) settlement keeps its old bucketing.
+    await settles.insert(
+        st('stLegacy', 'approved', '2026-07-10T09:00:00.000Z', amount: 500));
+    expect(await settles.approvedSumForMonth('2026-07', 'cash'), 500,
+        reason: 'legacy row buckets by requested_at prefix, unchanged');
+    expect(await settles.approvedSumForMonth('2026-08', 'cash'), 15000,
+        reason: 'stamped row unaffected by the legacy neighbor');
+
+    // CROSS-MONTH LOCK PIN: the July-28 receipt is inside the July-29 request
+    // (the wallet is all-time) → locked, regardless of either month stamp.
+    final lastReq = await settles.lastActiveRequestAt(acct, 'cash');
+    expect(
+        BillingController.isLockedBySettlement(
+            lastActiveRequestAt: lastReq, issuedAt: aug.issuedAt),
+        true,
+        reason: 'locks compare timestamps — month stamping must not change them');
   });
 }

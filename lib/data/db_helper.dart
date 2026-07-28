@@ -34,7 +34,7 @@ class DbHelper {
     final String path = testPath ?? await _defaultPath();
     return await openDatabase(
       path,
-      version: 13,
+      version: 14,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -311,6 +311,14 @@ class DbHelper {
       // 'salary' in v27 — free-form TEXT, no schema change needed.)
       await _addColumn(db, 'receipts', 'payment_note', 'TEXT');
     }
+    if (oldVersion < 14) {
+      // v14 (Flash v40): settlements gain the TARIFF/billing month ('YYYY-MM',
+      // stamped from the global pricing month at request time) so settlement
+      // figures bucket by the accounting month, not the request timestamp —
+      // future-month collection (August money settled in July) books into
+      // August. Nullable: legacy rows fall back to the requested_at prefix.
+      await _addColumn(db, 'settlements', 'month', 'TEXT');
+    }
   }
 
   Future<String> _defaultPath() async {
@@ -493,6 +501,7 @@ class DbHelper {
         amount REAL NOT NULL,
         method TEXT DEFAULT 'cash', -- v12: 'cash' | 'card' (which wallet)
         status TEXT DEFAULT 'pending', -- 'pending' | 'approved' | 'rejected'
+        month TEXT, -- v14: tariff/billing month 'YYYY-MM'; NULL = legacy row
         requested_at TEXT,
         decided_at TEXT,
         decided_by TEXT,

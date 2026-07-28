@@ -235,16 +235,24 @@ async function listUserData(userId, query = {}) {
 
   // v23 (§7): optional month=YYYY-MM prefix filter on data.date (expenses date
   // browsing on the owner panel). Same convention buildDashboard uses.
-  // v39 item 1: settlements accept the same param on their requested_at (UTC
-  // ISO prefix — the app's own month convention), so the owner-panel
-  // settlements screen is strictly month-isolated server-side. Additive: no
-  // existing client sends month for settlements.
+  // v39 item 1: settlements accept the same param, so the owner-panel
+  // settlements screen is strictly month-isolated server-side.
+  // v40: the settlement bucket is the app-stamped TARIFF month (data.month);
+  // legacy rows without the stamp fall back to the requested_at UTC prefix.
+  // Composed under $and so it never clobbers the q-search $or above.
   const month = typeof query.month === 'string' ? query.month.trim() : '';
   if (month && /^\d{4}-\d{2}$/.test(month)) {
     if (entity === 'expenses') {
       filter['data.date'] = { $regex: '^' + month };
     } else if (entity === 'settlements') {
-      filter['data.requested_at'] = { $regex: '^' + month };
+      // NOTE: {'data.month': null} matches both an explicit null and a
+      // missing key in MongoDB — exactly the legacy-row shape.
+      filter.$and = (filter.$and || []).concat([{
+        $or: [
+          { 'data.month': month },
+          { 'data.month': null, 'data.requested_at': { $regex: '^' + month } },
+        ],
+      }]);
     }
   }
 

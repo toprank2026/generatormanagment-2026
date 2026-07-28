@@ -108,11 +108,13 @@ class SettlementRepository {
     final args = <dynamic>[];
     if (month != null && month.isNotEmpty) {
       // v39 item 1 (owner decision, overriding the v27 rule): the history is
-      // STRICTLY month-isolated — a settlement appears only in its request
-      // month, pending included. An out-of-month pending request is reached by
+      // STRICTLY month-isolated — a settlement appears only in its month,
+      // pending included. An out-of-month pending request is reached by
       // browsing to its month (the pending banner is month-scoped the same way).
-      where.add("s.requested_at LIKE ?");
-      args.add('$month%');
+      // v40: the bucket is the stamped TARIFF month; legacy rows (month NULL)
+      // keep falling back to the requested_at UTC prefix.
+      where.add("COALESCE(s.month, substr(s.requested_at, 1, 7)) = ?");
+      args.add(month);
     }
     if (accountantId != null && accountantId.isNotEmpty) {
       where.add("s.accountant_id = ?");
@@ -138,21 +140,21 @@ class SettlementRepository {
         .toList();
   }
 
-  /// v27 item 6: Σ APPROVED settlements of [method] in [month] (requested_at
-  /// prefix), optionally scoped to one [accountantId]. Feeds the summary
-  /// banner's "salary received" figure. Additive, read-only.
-  /// NOTE: [month] matches the UTC `requested_at` prefix, so at a month boundary
-  /// it can differ by a few hours from the local calendar month (banner-only;
-  /// no stored balance / sync is affected).
+  /// v27 item 6: Σ APPROVED settlements of [method] in [month], optionally
+  /// scoped to one [accountantId] — the "Total Settlement" figure.
+  /// v40: bucketed by the stamped TARIFF month (the accounting reference);
+  /// legacy rows without a stamp fall back to the `requested_at` UTC prefix,
+  /// which at a month boundary can differ a few hours from local time
+  /// (legacy-only caveat; no stored balance / sync is affected).
   Future<double> approvedSumForMonth(String month, String method,
       {String? accountantId}) async {
     final db = await _dbHelper.database;
     final where = <String>[
       "status = 'approved'",
       "COALESCE(method,'cash') = ?",
-      "requested_at LIKE ?",
+      "COALESCE(month, substr(requested_at, 1, 7)) = ?",
     ];
-    final args = <dynamic>[method, '$month%'];
+    final args = <dynamic>[method, month];
     if (accountantId != null && accountantId.isNotEmpty) {
       where.add('accountant_id = ?');
       args.add(accountantId);
@@ -165,17 +167,17 @@ class SettlementRepository {
   }
 
   /// v16: count of PENDING settlements (the admin screen's pending banner).
-  /// v39 item 1: optional [month] scopes the count to the requests of that
-  /// month (`requested_at` UTC prefix), matching the strictly month-isolated
-  /// history list. Omitting it keeps the all-time count.
+  /// v39 item 1: optional [month] scopes the count to that month, matching the
+  /// strictly month-isolated history list. Omitting it keeps the all-time
+  /// count. v40: bucketed by the stamped tariff month, requested_at fallback.
   Future<int> pendingCount({String? month}) async {
     final db = await _dbHelper.database;
     final bool scoped = month != null && month.isNotEmpty;
     return Sqflite.firstIntValue(
           await db.rawQuery(
             "SELECT COUNT(*) FROM settlements WHERE status = 'pending'"
-            "${scoped ? " AND requested_at LIKE ?" : ""}",
-            scoped ? ['$month%'] : null,
+            "${scoped ? " AND COALESCE(month, substr(requested_at, 1, 7)) = ?" : ""}",
+            scoped ? [month] : null,
           ),
         ) ??
         0;
@@ -185,7 +187,8 @@ class SettlementRepository {
   /// max(0, Σ cash actually received on the month's valid receipts −
   ///        Σ approved cash/card settlements REQUESTED in the month).
   /// Both sides are scoped to [month] (receipts by their billing `month`
-  /// column, settlements by the `requested_at` UTC prefix), unlike [wallet]
+  /// column; settlements by their stamped tariff month, v40, with the
+  /// `requested_at` UTC prefix as the legacy fallback), unlike [wallet]
   /// which is deliberately an all-time balance. Clamped at 0: money of this
   /// month settled in a LATER month keeps this month's figure at 0 or above,
   /// never negative. Legacy 'salary' settlements are excluded (not collection
@@ -201,8 +204,8 @@ class SettlementRepository {
       "SELECT COALESCE(SUM(amount),0) s FROM settlements "
       "WHERE accountant_id = ? AND status = 'approved' "
       "AND COALESCE(method,'cash') IN ('cash','card') "
-      "AND requested_at LIKE ?",
-      [accountantId, '$month%'],
+      "AND COALESCE(month, substr(requested_at, 1, 7)) = ?",
+      [accountantId, month],
     );
     final double collected = ((c.first['s'] as num?) ?? 0).toDouble();
     final double settled = ((s.first['s'] as num?) ?? 0).toDouble();
@@ -245,17 +248,19 @@ class SettlementRepository {
   }
 
   /// Paginated settlement history for [accountantId], newest first.
-  /// v39 item 1: optional [month] restricts the history to that month's
-  /// requests (`requested_at` UTC prefix) — used by the accountant's My Wallet
-  /// so the list follows the globally selected pricing month.
+  /// v39 item 1: optional [month] restricts the history to that month — used
+  /// by the accountant's My Wallet so the list follows the globally selected
+  /// pricing month. v40: bucketed by the stamped tariff month; legacy rows
+  /// fall back to the `requested_at` UTC prefix.
   Future<List<Settlement>> history(String accountantId,
       {required int limit, required int offset, String? month}) async {
     final db = await _dbHelper.database;
     final bool scoped = month != null && month.isNotEmpty;
     final maps = await db.query(
       'settlements',
-      where: 'accountant_id = ?${scoped ? " AND requested_at LIKE ?" : ""}',
-      whereArgs: [accountantId, if (scoped) '$month%'],
+      where: 'accountant_id = ?'
+          '${scoped ? " AND COALESCE(month, substr(requested_at, 1, 7)) = ?" : ""}',
+      whereArgs: [accountantId, if (scoped) month],
       orderBy: 'requested_at DESC',
       limit: limit,
       offset: offset,

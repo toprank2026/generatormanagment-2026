@@ -1734,6 +1734,9 @@ var SYNC_COLUMNS={
     // v12: payment method ('cash'→نقدي, 'card'→بطاقة, default نقدي).
     {label:"الطريقة",get:function(d){ return settlementMethodLabel(d.method); }},
     {label:"الحالة",get:function(d){ return settlementStatusBadge(d.status); }},
+    // v40: the stamped TARIFF month (accounting bucket); legacy rows show the
+    // requested_at prefix — same fallback the money figures use.
+    {label:"الشهر",get:function(d){ return syncText(d.month||String(d.requested_at||"").slice(0,7)); }},
     {label:"تاريخ الطلب",get:function(d){ return d.requested_at?fmtDate(d.requested_at):"—"; }}
   ]
 };
@@ -2716,12 +2719,14 @@ function viewMySettlements(){
     content.appendChild(inner);
     shell("#/my/settlements",content);
   }
-  // A settlement's request month === selected? v39 items 2/4: bucketed by the
-  // UTC requested_at PREFIX — the app's own convention (settlement_repository
-  // approvedSumForMonth) — not the browser's local timezone, so the panel and
-  // the app put every settlement in the SAME month. Safety net on top of the
-  // server-side month filter (older backends ignore the param).
+  // A settlement's accounting month === selected? v40: the app stamps the
+  // TARIFF month on the row (d.month) — that is the bucket; legacy rows
+  // without the stamp fall back to the UTC requested_at prefix (v39 rule).
+  // Matches the app's COALESCE(month, substr(requested_at,1,7)) exactly.
+  // Safety net on top of the server-side month filter (older backends
+  // ignore the param).
   function inMonth(d){
+    if(d&&d.month) return String(d.month)===month;
     var t=(d&&(d.requested_at||d.decided_at))||""; if(!t) return false;
     return String(t).slice(0,7)===month;
   }
@@ -2797,10 +2802,10 @@ function viewMySettlements(){
   function load(){
     var reqMonth=month, reqAcc=accountantId, reqBranch=ownerBranch.id+"|"+acctBranch.id;
     paint(loadingBlock("جارٍ تحميل التسويات…"));
-    // v39 items 1/4: the month goes to the SERVER (requested_at prefix filter),
-    // so only the selected month's settlements are fetched — no cross-month
-    // accumulation and no 25-page cap distortion. inMonth() stays as a
-    // client-side safety net for older backends.
+    // v39 items 1/4 + v40: the month goes to the SERVER, which buckets by the
+    // stamped TARIFF month (data.month) with the requested_at prefix as the
+    // legacy fallback — no cross-month accumulation and no 25-page cap
+    // distortion. inMonth() stays as a client-side safety net (matching rule).
     var setFilter={month:reqMonth};
     if(accountantId){ setFilter.relField="accountant_id"; setFilter.relValue=accountantId; }
     Promise.all([acctStats(reqMonth,reqAcc),ensureAccountants(),fetchAllSettlements(setFilter)]).then(function(all){
@@ -3251,8 +3256,10 @@ function entityDetailContent(entity,rec,d,maps){
     row("المبلغ",d.amount!=null?fmtPrice(d.amount):null);
     row("الطريقة",settlementMethodLabel(d.method));
     badgeRow("الحالة",settlementStatusBadge(d.status));
+    // v40: the stamped tariff/accounting month (legacy rows: requested_at prefix).
+    row("الشهر",d.month||String(d.requested_at||"").slice(0,7));
     row("تاريخ الطلب",d.requested_at?fmtDate(d.requested_at):null);
-    mark("accountant_id","amount","method","status","requested_at");
+    mark("accountant_id","amount","method","status","month","requested_at");
   }
   // Common branch field when present + not already shown.
   if(d.branch_id!=null&&!handled.branch_id){ row("الفرع",nameOf("branches",d.branch_id)); handled.branch_id=1; }

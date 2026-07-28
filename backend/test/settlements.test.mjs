@@ -577,3 +577,99 @@ test('v39: GET /api/account/data?entity=settlements&month= filters by requested_
   );
   assert.equal(scoped.data.total, 2, 'month + accountant filters compose');
 });
+
+// ---------------------------------------------------------------------------
+// v40 — the TARIFF month (data.month, stamped by the app at request time) is
+// the accounting bucket for the settlements month filter; legacy rows without
+// the stamp keep falling back to the requested_at UTC prefix. Timestamps are
+// never rewritten.
+// ---------------------------------------------------------------------------
+test('v40: settlements month filter buckets by data.month with requested_at fallback', async () => {
+  const owner = await registerOwner();
+  const acct = await makeAccountant(owner);
+
+  const push = await api('POST', '/api/sync/push', {
+    token: acct.token,
+    body: {
+      records: [
+        {
+          // AUGUST tariff money settled on JULY 29 — stamped with the tariff month.
+          entity: 'settlements',
+          localId: 'v40-aug',
+          deleted: false,
+          updatedAt: '2026-07-29T09:00:00.000Z',
+          data: {
+            id: 'v40-aug',
+            accountant_id: acct.created.localId,
+            amount: 15000,
+            method: 'cash',
+            status: 'pending',
+            month: '2026-08',
+            requested_at: '2026-07-29T09:00:00.000Z',
+            updated_at: '2026-07-29T09:00:00.000Z',
+          },
+        },
+        {
+          // Legacy row: no month stamp — buckets by its July requested_at.
+          entity: 'settlements',
+          localId: 'v40-legacy',
+          deleted: false,
+          updatedAt: '2026-07-10T09:00:00.000Z',
+          data: {
+            id: 'v40-legacy',
+            accountant_id: acct.created.localId,
+            amount: 500,
+            method: 'cash',
+            status: 'approved',
+            requested_at: '2026-07-10T09:00:00.000Z',
+            updated_at: '2026-07-10T09:00:00.000Z',
+          },
+        },
+      ],
+    },
+  });
+  assert.equal(push.status, 200, `push should 200, got ${push.status} ${JSON.stringify(push.data)}`);
+
+  // August view = the stamped row ONLY (even though it was uploaded in July).
+  const augView = await api('GET', '/api/account/data?entity=settlements&month=2026-08&limit=200', { token: owner.token });
+  assert.equal(augView.status, 200);
+  assert.deepEqual(augView.data.records.map((r) => r.localId), ['v40-aug'],
+    'August returns the tariff-stamped settlement regardless of its July upload date');
+
+  // July view = the legacy row ONLY (the stamped row moved to August).
+  const julView = await api('GET', '/api/account/data?entity=settlements&month=2026-07&limit=200', { token: owner.token });
+  assert.deepEqual(julView.data.records.map((r) => r.localId), ['v40-legacy'],
+    'legacy rows keep the requested_at bucketing; stamped rows never leak back');
+
+  // The owner decision preserves the stamp and the historical timestamp.
+  const decide = await api('POST', '/api/account/settlements/v40-aug/decision', {
+    token: owner.token,
+    body: { status: 'approved' },
+  });
+  assert.equal(decide.status, 200);
+  assert.equal(decide.data.settlement.month, '2026-08', 'tariff stamp survives approval');
+  assert.equal(decide.data.settlement.requested_at, '2026-07-29T09:00:00.000Z',
+    'the historical transaction timestamp is never rewritten');
+
+  // month filter still composes with the q search ($and never clobbers $or).
+  const composed = await api(
+    'GET',
+    '/api/account/data?entity=settlements&month=2026-08&q=approved&limit=200',
+    { token: owner.token }
+  );
+  assert.equal(composed.status, 200);
+  assert.deepEqual(composed.data.records.map((r) => r.localId), ['v40-aug'],
+    'month ($and) + q search ($or) compose');
+
+  // The clobber-detector (review finding): a q that matches NOTHING must win
+  // over the month clause. If the month $and ever overwrote the q $or, this
+  // would wrongly return the August row instead of an empty list.
+  const noMatch = await api(
+    'GET',
+    '/api/account/data?entity=settlements&month=2026-08&q=zzz-no-such-status&limit=200',
+    { token: owner.token }
+  );
+  assert.equal(noMatch.status, 200);
+  assert.deepEqual(noMatch.data.records, [],
+    'a non-matching q returns empty even with a matching month — $or preserved');
+});
