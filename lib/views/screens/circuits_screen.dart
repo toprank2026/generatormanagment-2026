@@ -203,30 +203,117 @@ class _CircuitsScreenState extends State<CircuitsScreen> {
   void _showAddCircuitDialog(BuildContext context) {
     final nameCtrl = TextEditingController();
     final phaseCtrl = TextEditingController();
+    // v41 item 2: OPTIONAL bulk mode (a number range) — off by default so the
+    // existing single-add flow stays the unchanged default.
+    final fromCtrl = TextEditingController();
+    final toCtrl = TextEditingController();
+    bool bulk = false;
 
     Get.defaultDialog(
       title: "add_circuit".tr,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppTextField(
-            controller: nameCtrl,
-            label: "circuit_name".tr,
-            icon: Icons.electrical_services,
-          ),
-          const SizedBox(height: 14),
-          AppTextField(
-            controller: phaseCtrl,
-            label: "phase_optional".tr,
-            icon: Icons.bolt,
-          ),
-        ],
+      content: StatefulBuilder(
+        builder: (context, setDialogState) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!bulk)
+              AppTextField(
+                controller: nameCtrl,
+                label: "circuit_name".tr,
+                icon: Icons.electrical_services,
+              )
+            else ...[
+              AppTextField(
+                controller: fromCtrl,
+                label: "bulk_from".tr,
+                icon: Icons.first_page,
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 14),
+              AppTextField(
+                controller: toCtrl,
+                label: "bulk_to".tr,
+                icon: Icons.last_page,
+                keyboardType: TextInputType.number,
+              ),
+            ],
+            const SizedBox(height: 14),
+            AppTextField(
+              controller: phaseCtrl,
+              label: "phase_optional".tr,
+              icon: Icons.bolt,
+            ),
+            const SizedBox(height: 6),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: Text("bulk_add_circuits".tr,
+                  style: const TextStyle(fontSize: 13)),
+              activeThumbColor: const Color(0xFF1565C0),
+              value: bulk,
+              onChanged: (v) => setDialogState(() => bulk = v),
+            ),
+          ],
+        ),
       ),
       textConfirm: "add".tr,
       textCancel: "cancel".tr,
       // Await the write BEFORE closing so the dialog always closes exactly once
       // and only after the circuit is persisted (R2). Empty name keeps it open.
       onConfirm: () async {
+        if (bulk) {
+          // v41 item 2: bulk range path (single-add path below is untouched).
+          final int? from = int.tryParse(fromCtrl.text.trim());
+          final int? to = int.tryParse(toCtrl.text.trim());
+          if (from == null || to == null || from < 0 || to < from) {
+            Get.snackbar('error'.tr, 'bulk_invalid_range'.tr,
+                backgroundColor: Colors.redAccent, colorText: Colors.white);
+            return;
+          }
+          // Overflow-proof cap (review): with from ≥ 0 and to ≥ from the
+          // subtraction can't wrap, unlike `to - from + 1` at int64 max.
+          if (to - from >= CoreController.bulkRangeMax) {
+            Get.snackbar('error'.tr, 'bulk_range_too_large'.tr,
+                backgroundColor: Colors.redAccent, colorText: Colors.white);
+            return;
+          }
+          // Error/close ordering mirrors the single-add path: hide the
+          // overlay FIRST (finally), snackbars only after; close the dialog
+          // via the root navigator — Get.back() while a snackbar is open
+          // swallows the pop and strands the dialog (documented gotcha,
+          // same workaround as _showDeleteConfirm). Navigator captured
+          // BEFORE the awaits (no context across async gaps).
+          final nav = Navigator.of(context, rootNavigator: true);
+          SyncProgress.show('saving'.tr);
+          ({int created, int skipped})? res;
+          Object? err;
+          try {
+            res = await controller.addCircuitsRange(
+                widget.board.id, from, to, phaseCtrl.text.trim());
+          } catch (e) {
+            err = e;
+          } finally {
+            SyncProgress.hide();
+          }
+          if (err != null || res == null) {
+            Get.snackbar(
+                'error'.tr,
+                err is ValidationException
+                    ? err.messageKey.tr
+                    : '${err ?? ''}',
+                backgroundColor: Colors.redAccent,
+                colorText: Colors.white);
+            return;
+          }
+          nav.pop();
+          Get.snackbar(
+            "success".tr,
+            "${'circuits_added'.tr}: ${res.created}"
+            "${res.skipped > 0 ? ' • ${'circuits_skipped'.tr}: ${res.skipped}' : ''}",
+            backgroundColor: Colors.green,
+            colorText: Colors.white,
+          );
+          return;
+        }
         if (nameCtrl.text.trim().isEmpty) return;
         // v14: loading overlay until saved; hide BEFORE any snackbar.
         SyncProgress.show('saving'.tr);

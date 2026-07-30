@@ -393,6 +393,59 @@ class CoreController extends GetxController {
     update();
   }
 
+  /// v41 item 2 — OPTIONAL bulk creation: circuits named [from]..[to]
+  /// (inclusive, plain sequential numbers) on [boardId]. The single-add path
+  /// above is untouched. Numbers whose name already exists on the board are
+  /// SKIPPED (never an error — safe to re-run a partial range). Returns the
+  /// created/skipped counts. Range is capped at [bulkRangeMax] per call.
+  static const int bulkRangeMax = 500;
+
+  Future<({int created, int skipped})> addCircuitsRange(
+      String boardId, int from, int to, String? phase) async {
+    // Defense-in-depth (review): the UI validates too, but the cap is
+    // enforced here as promised — overflow-proof form (from ≥ 0, to ≥ from
+    // ⇒ the subtraction can't wrap, unlike `to - from + 1`).
+    if (from < 0 || to < from || to - from >= bulkRangeMax) {
+      throw ValidationException('bulk_range_too_large');
+    }
+    final branch = _branch.writeBranchId;
+    // One query instead of N nameExists roundtrips: bulk names are pure
+    // digits, so trimmed comparison matches the TRIM+NOCASE rule exactly.
+    final existing = (await _circuitRepo.getByBoardId(boardId,
+            branchId: branch))
+        .map((c) => c.name.trim())
+        .toSet();
+    int created = 0, skipped = 0;
+    try {
+      for (int n = from; n <= to; n++) {
+        final name = '$n';
+        if (existing.contains(name)) {
+          skipped++;
+          continue;
+        }
+        await _circuitRepo.insert(Circuit(
+          id: const Uuid().v4(),
+          boardId: boardId,
+          name: name,
+          phase: (phase == null || phase.isEmpty) ? null : phase,
+          accountantId: _auth.scopeAccountantId,
+          branchId: branch,
+          // v20 rule: creation stamp keeps the grid in true creation order —
+          // sequential stamps preserve the numeric order of the range.
+          createdAt: DateTime.now().toUtc().toIso8601String(),
+        ));
+        created++;
+      }
+    } finally {
+      // Review: refresh even on a mid-loop failure so partially created
+      // circuits are visible immediately (the skip rule makes re-runs safe).
+      loadCircuits(boardId);
+      _refreshDashboard();
+      update();
+    }
+    return (created: created, skipped: skipped);
+  }
+
   /// v35 item 5: returns false (and deletes nothing) when the circuit's
   /// cascade would erase receipts already inside a settlement.
   Future<bool> deleteCircuit(String id, String boardId) async {

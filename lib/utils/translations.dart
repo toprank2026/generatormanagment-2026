@@ -239,6 +239,14 @@ class Messages extends Translations {
       'code': 'Code',
       'circuits_in': 'Circuits in',
       'circuit_added': 'Circuit Added Successfully',
+      // v41 item 2: optional bulk circuit creation by number range.
+      'bulk_add_circuits': 'Bulk add (number range)',
+      'bulk_from': 'From number',
+      'bulk_to': 'To number',
+      'bulk_invalid_range': 'Enter a valid range (from ≤ to)',
+      'bulk_range_too_large': 'Range too large (max 500 at once)',
+      'circuits_added': 'Circuits added',
+      'circuits_skipped': 'Skipped (already exist)',
       'circuit_deleted': 'Circuit Deleted Successfully',
       'delete_circuit_title': 'Delete Circuit',
       'delete_circuit_confirm':
@@ -834,6 +842,14 @@ class Messages extends Translations {
       'code': 'الكود',
       'circuits_in': 'الجوزات في',
       'circuit_added': 'تم إضافة الجوزة بنجاح',
+      // v41 item 2: الإضافة الجماعية للجوزات بنطاق أرقام.
+      'bulk_add_circuits': 'إضافة دفعة (نطاق أرقام)',
+      'bulk_from': 'من رقم',
+      'bulk_to': 'إلى رقم',
+      'bulk_invalid_range': 'أدخل نطاقاً صحيحاً (من ≤ إلى)',
+      'bulk_range_too_large': 'النطاق كبير جداً (الحد 500 في المرة الواحدة)',
+      'circuits_added': 'الجوزات المضافة',
+      'circuits_skipped': 'تم تخطيها (موجودة مسبقاً)',
       'circuit_deleted': 'تم حذف الجوزة بنجاح',
       'delete_circuit_title': 'حذف جوزة',
       'delete_circuit_confirm':

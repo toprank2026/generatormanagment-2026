@@ -36,6 +36,26 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
   // are excluded from the circuit picker (except the edited subscriber's own).
   Set<String> _takenCircuitIds = {};
 
+  // v41 item 3: the picker's OWN full circuit list for the selected board.
+  // The shared controller.circuits list is PAGINATED (first 100 only — nothing
+  // in this form ever loads more pages), so boards with >100 جوزة silently
+  // truncated the dropdown. The picker now fetches ALL of the board's circuits
+  // directly (same repo + branch scope, same creation order); the paginated
+  // circuits SCREEN is untouched.
+  List<Circuit> _pickerCircuits = [];
+
+  Future<void> _loadPickerCircuits(String boardId) async {
+    final all = await CircuitRepository().getByBoardId(
+      boardId,
+      branchId: Get.find<BranchController>().scopeBranchId,
+    );
+    if (mounted) {
+      setState(() => _pickerCircuits = all);
+    } else {
+      _pickerCircuits = all;
+    }
+  }
+
   bool get isEdit => widget.subscriber != null;
 
   // R4: human-readable category labels for the dropdown.
@@ -75,8 +95,10 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
         (b) => b.id == widget.subscriber!.boardId,
       );
       if (selectedBoard != null) {
-        await controller.loadCircuits(selectedBoard!.id);
-        selectedCircuit = controller.circuits.firstWhereOrNull(
+        // v41 item 3: full (unpaginated) list so the subscriber's own circuit
+        // is found even when it sits beyond the first 100.
+        await _loadPickerCircuits(selectedBoard!.id);
+        selectedCircuit = _pickerCircuits.firstWhereOrNull(
           (c) => c.id == widget.subscriber!.circuitId,
         );
       }
@@ -226,9 +248,15 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
                           setState(() {
                             selectedBoard = val;
                             selectedCircuit = null;
+                            // v41 review: clear SYNCHRONOUSLY (the old
+                            // loadCircuits cleared before its first await) so
+                            // the stale previous-board list can never be
+                            // picked during the reload window.
+                            _pickerCircuits = [];
                           });
                           if (val != null) {
-                            await controller.loadCircuits(val.id);
+                            // v41 item 3: full list for the picker.
+                            await _loadPickerCircuits(val.id);
                             // R5: refresh taken-set when the board changes.
                             await _loadTakenCircuits();
                           }
@@ -239,35 +267,39 @@ class _AddSubscriberScreenState extends State<AddSubscriberScreen> {
 
                     const SizedBox(height: 20),
 
-                    // Circuit Dropdown (R5: exclude circuits already taken by an
-                    // active subscriber in this branch)
-                    Obx(
-                      () => DropdownButtonFormField<Circuit>(
-                        decoration: _inputDecoration(
-                          "circuit_jawza".tr,
-                          Icons.settings_input_component,
-                        ),
-                        value: selectedCircuit,
-                        items: controller.circuits
-                            .where((c) => !_takenCircuitIds.contains(c.id))
-                            .map(
-                              (c) => DropdownMenuItem(
-                                value: c,
-                                child: Text(c.name),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (val) {
-                          setState(() {
-                            selectedCircuit = val;
-                          });
-                        },
-                        validator: (v) => v == null
-                            ? (selectedBoard == null
-                                  ? "select_board_first".tr
-                                  : "required".tr)
-                            : null,
+                    // Circuit Dropdown (R5: exclude circuits already taken by
+                    // an active subscriber in this branch). v41 item 3: fed by
+                    // the form's own FULL list (_pickerCircuits — all of the
+                    // board's circuits, not the paginated first page) with a
+                    // bounded, scrollable menu; plain widget, NOT Obx (it no
+                    // longer reads an observable — the Obx gotcha).
+                    DropdownButtonFormField<Circuit>(
+                      decoration: _inputDecoration(
+                        "circuit_jawza".tr,
+                        Icons.settings_input_component,
                       ),
+                      value: selectedCircuit,
+                      isExpanded: true,
+                      menuMaxHeight: 420,
+                      items: _pickerCircuits
+                          .where((c) => !_takenCircuitIds.contains(c.id))
+                          .map(
+                            (c) => DropdownMenuItem(
+                              value: c,
+                              child: Text(c.name),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (val) {
+                        setState(() {
+                          selectedCircuit = val;
+                        });
+                      },
+                      validator: (v) => v == null
+                          ? (selectedBoard == null
+                                ? "select_board_first".tr
+                                : "required".tr)
+                          : null,
                     ),
 
                     const SizedBox(height: 32),

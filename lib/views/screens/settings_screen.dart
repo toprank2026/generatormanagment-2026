@@ -1039,8 +1039,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showPrinterSelection(SettingsController controller) async {
     final BluetoothPrintService printService = BluetoothPrintService();
 
+    // v41 item 1: the sheet previously opened NON-scroll-controlled, so GetX
+    // capped it around half the screen and squeezed the device list — long
+    // lists showed only a few printers and fought the sheet's drag gesture.
+    // Now: scroll-controlled fixed-height sheet (75%) whose list owns the
+    // full remaining space, so EVERY paired device is reachable by scrolling.
     Get.bottomSheet(
+      isScrollControlled: true,
       Container(
+        height: Get.height * 0.75,
         padding: const EdgeInsets.all(16),
         decoration: const BoxDecoration(
           color: Colors.white,
@@ -1050,7 +1057,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: SafeArea(
           top: false,
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 'select_bluetooth_printer_title'.tr,
@@ -1060,28 +1066,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              FutureBuilder<List<BluetoothDevice>>(
-                future: printService.getPairedDevices(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.hasError) {
-                    return Text("${'error'.tr}: ${snapshot.error}");
-                  }
-                  final devices = snapshot.data ?? [];
-                  if (devices.isEmpty) {
-                    return Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Text('no_paired_devices'.tr),
-                    );
-                  }
-                  // v23 item 5: bound the paired-device list so a long list
-                  // scrolls instead of overflowing the sheet.
-                  return ConstrainedBox(
-                    constraints: BoxConstraints(maxHeight: Get.height * 0.5),
-                    child: ListView.builder(
-                      shrinkWrap: true,
+              Expanded(
+                child: FutureBuilder<List<BluetoothDevice>>(
+                  future: printService.getPairedDevices(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Text("${'error'.tr}: ${snapshot.error}");
+                    }
+                    final devices = snapshot.data ?? [];
+                    if (devices.isEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Text('no_paired_devices'.tr),
+                      );
+                    }
+                    return ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
                       itemCount: devices.length,
                       itemBuilder: (ctx, i) {
                         final d = devices[i];
@@ -1103,9 +1106,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           },
                         );
                       },
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ],
           ),
