@@ -93,15 +93,17 @@ class AuthRepository {
   /// `isNetworkError` (offline → "connect to the internet").
   Future<({String requestId, String code, String status, String? expiresAt})>
       requestPasswordReset({
-    required String username,
     required String phone,
     required String newPassword,
   }) async {
     final res = await _api.post(
       ApiConfig.forgotPassword,
       auth: false,
+      // v42 follow-up: the PHONE alone identifies the account — one field to get
+      // right while locked out. The server still only files a PENDING request;
+      // the identity check is the super admin reading the code back before
+      // approving, so nothing here changes a password.
       body: {
-        'username': username,
         'phone': phone,
         'newPassword': newPassword,
       },

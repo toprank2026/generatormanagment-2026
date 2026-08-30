@@ -400,3 +400,91 @@ test('an expired request cannot be approved and reports "expired"', async () => 
   const still = await User.findById(owner.id).lean();
   assert.equal(still.blocked, false);
 });
+
+// ---------------------------------------------------------------------------
+// v42 follow-up — the SAME number written differently must still match.
+//
+// Reported from production: an owner whose account demonstrably existed was
+// told "no account matches this username and phone number". Cause: the identity
+// check compared the phone as a RAW STRING, so a number stored as
+// '+9647701234567' never matched the '07701234567' the owner typed — and since
+// the endpoint deliberately answers 404 for BOTH halves of the pair, it read as
+// "your details are wrong". Both sides are now normalised to the subscriber
+// number (digits only, minus the 964 country code and the trunk 0).
+// ---------------------------------------------------------------------------
+test('v42: the same phone in any common format matches (formatting is not identity)', async () => {
+  const owner = await registerOwner('orig-pass');           // stored '0770xxxxxxx'
+  const national = owner.phone.replace(/^0/, '');           // 770xxxxxxx
+
+  for (const variant of [
+    owner.phone,                       // 07701234567   (as stored)
+    `+964${national}`,                 // +9647701234567
+    `00964${national}`,                // 009647701234567
+    `964${national}`,                  // 9647701234567
+    national,                          // 7701234567    (no trunk 0)
+    owner.phone.replace(/(\d{4})(\d{3})(\d+)/, '$1 $2 $3'), // 0770 123 4567
+    owner.phone.replace(/(\d{4})(\d{3})(\d+)/, '$1-$2-$3'), // 0770-123-4567
+  ]) {
+    const r = await requestReset(owner.username, variant, 'variant-pass');
+    assert.equal(r.status, 201, `variant ${variant} -> ${r.status} ${JSON.stringify(r.data)}`);
+    assert.equal(r.data.status, 'pending');
+  }
+
+  // Normalising formatting must NOT loosen the check: a DIFFERENT number, and a
+  // too-short value, are still rejected exactly like an unknown username.
+  const other = `0771${String(Date.now()).slice(-7)}`;
+  const wrong = await requestReset(owner.username, other, 'nope');
+  assert.equal(wrong.status, 404);
+  assert.equal(wrong.data.code, 'ACCOUNT_NOT_FOUND');
+
+  const tooShort = await requestReset(owner.username, '0770', 'nope');
+  assert.equal(tooShort.status, 404, 'a too-short phone can never collide into a match');
+
+  // The password is still untouched — none of the above approved anything.
+  assert.equal((await login(owner.username, 'orig-pass')).status, 200);
+  assert.equal((await login(owner.username, 'variant-pass')).status, 401);
+});
+
+// ---------------------------------------------------------------------------
+// v42 follow-up — PHONE-ONLY recovery (owner request).
+//
+// The owner is locked out, so they should have exactly one thing to get right.
+// The phone only FINDS the account and files a pending request; it grants
+// nothing on its own — the super admin still reads the 6-digit code back to the
+// caller before approving, and no password changes until they do.
+// ---------------------------------------------------------------------------
+test('v42: phone alone files the request — no username needed', async () => {
+  const owner = await registerOwner('orig-pass');
+
+  const r = await api('POST', '/api/auth/forgot-password', {
+    body: { phone: owner.phone, newPassword: 'phone-only-pass' },   // NO username
+  });
+  assert.equal(r.status, 201, `phone-only -> ${r.status} ${JSON.stringify(r.data)}`);
+  assert.equal(r.data.status, 'pending');
+  assert.match(String(r.data.code), /^\d{6}$/);
+
+  // Still nothing changed until the super admin approves.
+  assert.equal((await login(owner.username, 'orig-pass')).status, 200);
+  assert.equal((await login(owner.username, 'phone-only-pass')).status, 401);
+
+  // Approving it applies the password chosen in the phone-only request.
+  const adminTok = await getAdminToken();
+  const ap = await api('POST', `/api/admin/password-resets/${r.data.requestId}/approve`, { token: adminTok });
+  assert.equal(ap.status, 200);
+  assert.equal((await login(owner.username, 'phone-only-pass')).status, 200);
+  assert.equal((await login(owner.username, 'orig-pass')).status, 401);
+
+  // An unknown phone is still a plain 404 — same answer, nothing leaked.
+  const unknown = await api('POST', '/api/auth/forgot-password', {
+    body: { phone: '07999999999', newPassword: 'nope' },
+  });
+  assert.equal(unknown.status, 404);
+  assert.equal(unknown.data.code, 'ACCOUNT_NOT_FOUND');
+
+  // A username, if an older APK still sends one, must AGREE with the phone.
+  const mismatched = await api('POST', '/api/auth/forgot-password', {
+    body: { username: 'someone-else', phone: owner.phone, newPassword: 'nope' },
+  });
+  assert.equal(mismatched.status, 404,
+    'a supplied username is an extra condition, never a substitute');
+});

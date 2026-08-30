@@ -16,6 +16,45 @@ const { upsertDevice, sameDevice } = require('../utils/devices');
 const { adminEvents } = require('../utils/events');
 const { HttpError } = require('../middleware/error');
 
+/**
+ * Flash v42 — phone matching for the forgot-password identity check.
+ *
+ * The same Iraqi number is written many ways in practice: `07701234567`,
+ * `+9647701234567`, `009647701234567`, `0770 123 4567`, `0770-123-4567`. A raw
+ * string comparison locks a legitimate owner out of their own recovery whenever
+ * the number was saved in a different shape from the one they type — and,
+ * because the endpoint deliberately answers "account not found" for both halves
+ * of the pair, the owner gets a message that looks like their details are simply
+ * wrong. So both sides are normalised to the SUBSCRIBER number before comparing:
+ * digits only, minus the 964 country code and any trunk 0.
+ *
+ * This is a formatting normalisation, NOT a loosening: the full subscriber
+ * number must still match exactly, and a number that normalises to fewer than 8
+ * digits is rejected outright so a short/garbage value can never collide.
+ */
+const samePhone = {
+  normalize(v) {
+    let d = String(v == null ? '' : v).replace(/\D+/g, '');
+    if (!d) return '';
+    if (d.startsWith('00964')) d = d.slice(5);
+    else if (d.startsWith('964')) d = d.slice(3);
+    while (d.startsWith('0')) d = d.slice(1);
+    return d.length >= 8 ? d : '';
+  },
+
+  /**
+   * A Mongo regex that finds the stored phone whatever separators it carries:
+   * the normalised digits with `[^0-9]*` allowed between them, and an optional
+   * country-code / trunk-0 prefix. Deliberately WIDE — it only narrows the
+   * candidate set; `normalize()` then decides the actual match, so a loose hit
+   * here can never become a false identification.
+   */
+  looseRegex(normalized) {
+    const body = normalized.split('').join('[^0-9]*');
+    return new RegExp(`^[^0-9]*(?:(?:00)?964)?[^0-9]*0?[^0-9]*${body}[^0-9]*$`);
+  },
+};
+
 /** POST /api/auth/register (public) */
 const register = asyncHandler(async (req, res) => {
   const { name, generatorName, phone, username, password, device } = req.body;
@@ -286,16 +325,39 @@ const me = asyncHandler(async (req, res) => {
 const forgotPassword = asyncHandler(async (req, res) => {
   const { username, phone, newPassword } = req.body;
 
-  const user = await User.findOne({ username: String(username).toLowerCase() });
-
+  // v42 follow-up — the PHONE alone identifies the account. An owner who is
+  // locked out should have exactly one thing to get right, and the phone is what
+  // they are certain of. This is not a weakening of the flow: the phone only
+  // FINDS the account and files a pending request; it grants nothing. The actual
+  // identity check is still the super admin reading the 6-digit code back to the
+  // caller before approving, and no password changes until they do.
+  //
+  // The stored value may be written any number of ways, so a candidate set is
+  // pulled with a separator-tolerant regex and then confirmed by normalising
+  // both sides (see samePhone).
+  const givenPhone = samePhone.normalize(phone);
+  const candidates = givenPhone
+    ? await User.find({ phone: samePhone.looseRegex(givenPhone) })
+    : [];
   // Owner/admin accounts only. An accountant's password is managed by its owner
-  // in the app, so it must NOT be recoverable here — and it is rejected with the
-  // same 404 as an unknown username (never reveal which half was wrong). An
-  // account with no phone on file can never match either.
-  const storedPhone = user ? String(user.phone || '').trim() : '';
-  const givenPhone = String(phone || '').trim();
-  if (!user || user.role === 'accountant' || !storedPhone || storedPhone !== givenPhone) {
+  // in the app, so it must NOT be recoverable here.
+  const matches = candidates.filter(
+    (u) => u.role !== 'accountant' && samePhone.normalize(u.phone) === givenPhone
+  );
+  // Exactly one account must own the number. Zero = nothing to recover;
+  // more than one = the number cannot identify anyone, so recovering "the first"
+  // would be a coin flip on whose password changes. Both answer identically, so
+  // the endpoint still reveals nothing about which case it was.
+  const user = matches.length === 1 ? matches[0] : null;
+  if (!user) {
     throw new HttpError(404, 'Account not found', 'ACCOUNT_NOT_FOUND');
+  }
+  // Backward-compat: an older APK still sends `username`. When present it must
+  // ALSO match — an extra condition, never a substitute for the phone.
+  if (username != null && String(username).trim() !== '') {
+    if (String(username).trim().toLowerCase() !== String(user.username || '').toLowerCase()) {
+      throw new HttpError(404, 'Account not found', 'ACCOUNT_NOT_FOUND');
+    }
   }
 
   // The plaintext never leaves this request: it is hashed here (same cost factor
@@ -318,7 +380,9 @@ const forgotPassword = asyncHandler(async (req, res) => {
     // the account is renamed before the decision (name/generatorName are not
     // snapshotted — the panel joins them from `user`).
     username: user.username,
-    phone: storedPhone,
+    // As STORED (not the normalised comparison key): the super admin reads
+    // this back to the owner, so it must look like the number they know.
+    phone: user.phone || null,
     newPasswordHash,
     code,
     status: 'pending',
@@ -335,7 +399,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
     userId: String(user._id),
     name: user.name,
     username: user.username,
-    phone: storedPhone,
+    phone: user.phone || null,
     generatorName: user.generatorName || null,
     code,
     createdAt: request.createdAt,

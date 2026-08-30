@@ -66,7 +66,11 @@ router.post(
   '/forgot-password',
   authLimiter,
   [
-    body('username').isString().trim().notEmpty().withMessage('username is required'),
+    // v42 follow-up: the owner recovers with their PHONE ALONE — one field to
+    // get wrong when you are already locked out. `username` stays OPTIONAL so an
+    // already-shipped APK that still sends it keeps working (when present it is
+    // checked as an extra condition, never as a substitute).
+    body('username').optional({ nullable: true }).isString().trim(),
     body('phone').isString().trim().notEmpty().withMessage('phone is required'),
     body('newPassword').isString().isLength({ min: 4 }).withMessage('newPassword must be at least 4 chars'),
   ],

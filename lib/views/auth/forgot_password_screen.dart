@@ -33,7 +33,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   /// strand the owner on step 2.
   static const String _kPendingReset = 'fp_pending_reset';
 
-  final _username = TextEditingController();
   final _phone = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
@@ -60,7 +59,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   @override
   void dispose() {
-    _username.dispose();
     _phone.dispose();
     _password.dispose();
     _confirm.dispose();
@@ -123,7 +121,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     setState(() => _loading = true);
     try {
       final res = await _repo.requestPasswordReset(
-        username: _username.text.trim(),
         phone: _phone.text.trim(),
         newPassword: _password.text,
       );
@@ -147,10 +144,22 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      // 404 = username + phone do not match an owner/admin account.
-      final message = e.statusCode == 404
-          ? 'fp_account_not_found'.tr
-          : (e.isNetworkError ? 'fp_online_required'.tr : e.message);
+      // Only the backend's OWN 'ACCOUNT_NOT_FOUND' means the username + phone
+      // did not match. A bare 404 with no code is the server's route-not-found
+      // handler — i.e. this build is talking to a backend that does not have the
+      // endpoint deployed yet. Reporting that as "your details are wrong" sends
+      // the owner off checking credentials that were never the problem, so the
+      // two are surfaced differently.
+      final String message;
+      if (e.code == 'ACCOUNT_NOT_FOUND') {
+        message = 'fp_account_not_found'.tr;
+      } else if (e.statusCode == 404) {
+        message = 'fp_unavailable'.tr;
+      } else if (e.isNetworkError) {
+        message = 'fp_online_required'.tr;
+      } else {
+        message = e.message;
+      }
       _snack('error'.tr, message, Colors.red);
     } catch (e) {
       if (!mounted) return;
@@ -278,10 +287,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             _banner(_statusText(_status!), Colors.red, Icons.error_outline),
           ],
           const SizedBox(height: 28),
-          _field(_username, 'fp_username'.tr, Icons.person,
-              keyboardType: TextInputType.phone,
-              validator: (v) => v!.trim().isEmpty ? 'required'.tr : null),
-          const SizedBox(height: 16),
+          // v42 follow-up: PHONE ONLY — the username field was removed. A
+          // locked-out owner should have exactly one thing to get right, and the
+          // super admin still verifies them by the code before approving.
           _field(_phone, 'fp_phone'.tr, Icons.phone,
               keyboardType: TextInputType.phone,
               validator: (v) => v!.trim().isEmpty ? 'required'.tr : null),
