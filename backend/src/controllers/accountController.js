@@ -184,13 +184,31 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     }
   }
 
+  // v42 item 5: a subscriber belongs to a month's billing ONLY from the month it
+  // was added onwards — the app's rule, mirrored here EXACTLY so the owner panel
+  // and the app never disagree about the same month. Same COALESCE fallback
+  // chain (billing_start_month -> created_at prefix -> always-include) and the
+  // same receipts SAFETY VALVE (a subscriber holding a receipt in the month is
+  // never excluded from it), so no existing mirrored record can be hidden.
+  const activeInMonth = (data, sid) => {
+    if (coverageBySubscriber.has(sid)) return true; // safety valve
+    const stamp = data.billing_start_month
+      || String(data.created_at || '').replace('T', ' ').slice(0, 7)
+      || '0000-00';
+    return String(stamp) <= month;
+  };
+  const activeSubscribers = subscribers.filter((s) => {
+    const data = s.data || {};
+    return activeInMonth(data, data.id || s.localId);
+  });
+
   let totalAmps = 0;
   let expected = 0; // Σ amps × priceMap[category] over all in-scope subscribers.
   let paidCount = 0;
   // Per-tariff PAID counts so the owner panel reports match the app (which shows
   // gold/standard/commercial paid counts). Unknown/legacy category => 'standard'.
   const paidByCategory = { gold: 0, standard: 0, commercial: 0 };
-  for (const s of subscribers) {
+  for (const s of activeSubscribers) {
     const data = s.data || {};
     const amps = num(data.amps);
     totalAmps += amps;
@@ -228,14 +246,14 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     // Per-category ampere price map { gold, standard, commercial, ... } so the
     // reports view can render all three tariffs (pricePerAmp stays for back-compat).
     categoryPrices: priceMap,
-    totalSubscribers: subscribers.length,
+    totalSubscribers: activeSubscribers.length, // v42 item 5: this month's members
     totalAmps,
     // v23 (§2.1): the category-aware expected total, so the owner panel can show
     // it directly instead of recomputing totalAmps × pricePerAmp(standard),
     // which was wrong for mixed-tariff accounts.
     expected,
     paidCount,
-    unpaidCount: subscribers.length - paidCount,
+    unpaidCount: activeSubscribers.length - paidCount,
     // Per-tariff paid counts (owner-panel reports parity with the app).
     paidByCategory,
     totalDue: remaining,
@@ -351,10 +369,9 @@ const getMyRecent = asyncHandler(async (req, res) => {
 });
 
 /**
- * GET /api/account/wallet (auth) — v12 per-method accountant wallet, computed
- * SERVER-SIDE from the full mirror (authoritative across all months, unaffected
- * by the device's current-month receipt scope). For an accountant: their own
- * figures; for an owner: the owner-collected (accountant_id null) figures.
+ * GET /api/account/wallet[?month=YYYY-MM] (auth) — v12 per-method accountant
+ * wallet, computed SERVER-SIDE from the full mirror. For an accountant: their
+ * own figures; for an owner: the owner-collected (accountant_id null) figures.
  *
  * Two wallets are tracked, bucketed by payment method M ('cash'|'card'):
  *  collected(M) = Σ paid_amount of valid receipts whose (payment_method||'cash')==M;
@@ -362,6 +379,14 @@ const getMyRecent = asyncHandler(async (req, res) => {
  *  balance(M)   = collected(M) − settled(M).
  * The top-level { collected, settled, balance } mirror the CASH wallet for
  * backward-compat with any old client that predates the per-method split.
+ *
+ * v42 item 1: the wallet becomes isolatable per ACCOUNTING month via the
+ * OPTIONAL `?month=YYYY-MM` param, mirroring the app's
+ * SettlementRepository.walletForMonth — collected by `receipts.month`, settled
+ * by the v40 tariff-month bucket `COALESCE(settlements.month,
+ * substr(requested_at,1,7))`. The param is additive: a malformed value is
+ * IGNORED (never an error) and an ABSENT one leaves the response byte-identical
+ * to the all-time figures every not-yet-updated device still expects.
  */
 const getWallet = asyncHandler(async (req, res) => {
   const ownerId = effectiveOwnerId(req.user);
@@ -370,8 +395,17 @@ const getWallet = asyncHandler(async (req, res) => {
       ? (req.user.localId || String(req.user._id))
       : null;
 
+  // Optional accounting-month scope. Anything that is not a well-formed
+  // 'YYYY-MM' falls back to null = the all-time wallet (no 400 — an old/odd
+  // client must never lose its wallet over a bad query string).
+  const requestedMonth = typeof req.query.month === 'string' ? req.query.month.trim() : '';
+  const month = /^\d{4}-\d{2}$/.test(requestedMonth) ? requestedMonth : null;
+
   const recFilter = { user: ownerId, entity: 'receipts', deleted: false, 'data.status': 'valid' };
   if (acctId) recFilter['data.accountant_id'] = acctId;
+  // Receipts carry the billing month directly (data.month), so a plain equality
+  // is the whole month scope on the collected side.
+  if (month) recFilter['data.month'] = month;
   const receipts = await SyncRecord.find(recFilter).lean();
   const collected = { cash: 0, card: 0 };
   for (const r of receipts) {
@@ -382,6 +416,20 @@ const getWallet = asyncHandler(async (req, res) => {
 
   const setFilter = { user: ownerId, entity: 'settlements', deleted: false, 'data.status': 'approved' };
   if (acctId) setFilter['data.accountant_id'] = acctId;
+  // v42 item 1: settlements bucket by the app-stamped TARIFF month (data.month);
+  // legacy rows without the stamp fall back to the requested_at UTC prefix — the
+  // exact v40 rule the settlements list endpoint uses. Composed under $and so it
+  // can never clobber the base user/entity/status/accountant filter.
+  // NOTE: {'data.month': null} matches both an explicit null and a missing key
+  // in MongoDB — exactly the legacy-row shape.
+  if (month) {
+    setFilter.$and = (setFilter.$and || []).concat([{
+      $or: [
+        { 'data.month': month },
+        { 'data.month': null, 'data.requested_at': { $regex: '^' + month } },
+      ],
+    }]);
+  }
   const setts = await SyncRecord.find(setFilter).lean();
   const settled = { cash: 0, card: 0 };
   for (const s of setts) {

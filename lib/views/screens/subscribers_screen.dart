@@ -273,6 +273,31 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                       );
                     }
                     final sub = ctrl.subscribers[index];
+                    // v42 item 5: a subscriber whose billing starts AFTER the
+                    // viewed accounting month (added later, and holding no
+                    // receipt in it) is not part of this month's billing at
+                    // all — it must never read as one of its unpaid rows.
+                    final bool notYetActive =
+                        ctrl.notYetActiveIds.contains(sub.id);
+                    // v22 item 2: paid/unpaid dot for the selected month —
+                    // green = paid, red = unpaid (derived status, one query per
+                    // list load).
+                    // v42 item 5: NEUTRAL grey for a not-yet-active subscriber
+                    // — a red dot there would accuse a September subscriber of
+                    // defaulting on August. Built once here so the tooltip can
+                    // wrap it without duplicating the widget.
+                    final Widget statusDot = Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: notYetActive
+                            ? Colors.grey[400]
+                            : (ctrl.paidIds.contains(sub.id)
+                                ? Colors.green
+                                : Colors.red),
+                      ),
+                    );
                     return Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -374,12 +399,38 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                                   ),
                                 ],
                               ),
+                            // v42 item 5: nothing is due for a month the
+                            // subscriber predates, so the amount-due line is
+                            // replaced by the reason — the row states the
+                            // state instead of showing a debt it does not owe.
+                            if (notYetActive)
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.event_available,
+                                    size: 14,
+                                    color: Colors.grey[500],
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      'not_yet_active'.tr,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
                             // v26 item 2: the amount still to collect from
                             // this subscriber for the selected month (batch
                             // coverage+price maps — no per-row queries).
                             // Hidden when the month has no price for the
                             // subscriber's category (not yet billable).
-                            if (ctrl.dueFor(sub) != null)
+                            else if (ctrl.dueFor(sub) != null)
                               Row(
                                 children: [
                                   Icon(
@@ -408,19 +459,15 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            // v22 item 2: paid/unpaid dot for the selected
-                            // month — green = paid, red = unpaid (derived
-                            // status, one query per list load).
-                            Container(
-                              width: 12,
-                              height: 12,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: ctrl.paidIds.contains(sub.id)
-                                    ? Colors.green
-                                    : Colors.red,
-                              ),
-                            ),
+                            // The paid/unpaid/not-yet-active dot (built above).
+                            // v42 item 5: only the grey one carries a tooltip,
+                            // so paid/unpaid rows behave exactly as before.
+                            notYetActive
+                                ? Tooltip(
+                                    message: 'not_yet_active'.tr,
+                                    child: statusDot,
+                                  )
+                                : statusDot,
                             const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(

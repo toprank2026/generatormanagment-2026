@@ -100,10 +100,11 @@ Phase D):
 
 `GET /api/auth/me` applies the same split for a branch token.
 
-**Rate limiting.** `POST /api/auth/login`, `POST /api/auth/register`, and
-`POST /api/auth/recover-device` are IP-rate-limited (~10 requests / minute / IP).
-Exceeding the limit returns `429 { "code": "RATE_LIMITED", "message": "..." }`.
-(Disabled under the test env.)
+**Rate limiting.** `POST /api/auth/login`, `POST /api/auth/register`,
+`POST /api/auth/recover-device` and (Flash v42) `POST /api/auth/forgot-password`
++ `GET /api/auth/forgot-password/status` are IP-rate-limited (~10 requests /
+minute / IP). Exceeding the limit returns
+`429 { "code": "RATE_LIMITED", "message": "..." }`. (Disabled under the test env.)
 
 ### POST `/api/auth/recover-device`  (public, rate-limited) — new in Phase-2
 Password-authenticated self-service for an **owner** locked out by `maxDevices`
@@ -124,6 +125,58 @@ already-known device just refreshes it (no eviction). **v23:** the Flutter app
 now calls this after a `403 code=DEVICE_LIMIT` login (the user opts to "move the
 account to this device").
 
+### POST `/api/auth/forgot-password`  (public, rate-limited) — new in Flash v42
+Owner/admin password recovery whose identity **verification and approval happen
+in the super-admin panel**, never automatically. The account is matched on
+`username` and the supplied `phone` must equal that account's **registered
+phone** (the identity check) — a phone mismatch is reported exactly like an
+unknown username, so the endpoint cannot be used to probe which usernames exist.
+```jsonc
+// request
+{ "username": "owner1", "phone": "0770...", "newPassword": "newsecret" }
+// 201 response
+{
+  "requestId": "mongoid",     // + `code` are the keys of the status endpoint
+  "code": "482913",           // 6-digit reference the owner reads back to the super admin
+  "status": "pending",
+  "expiresAt": "ISO"          // createdAt + 24h
+}
+```
+- `newPassword` is stored on the pending request **already bcrypt-hashed**; the
+  plaintext never leaves the request payload and is never written to the account.
+- **Nothing on the account changes here** — password, `tokenVersion` and every
+  live session are untouched until a super admin approves (see
+  `POST /api/admin/password-resets/:id/approve`, the only thing that changes a
+  password).
+- **One active pending request per account:** a new request **supersedes** any
+  still-pending request of that account, so an owner who retries always has
+  exactly one live code.
+- The request **expires 24 h** after creation; an expired request can never be
+  approved.
+
+Errors: `400 code=VALIDATION` (missing `username`/`phone`, or `newPassword`
+shorter than 4 chars), `404 code=ACCOUNT_NOT_FOUND` (no account whose username
+**and** registered phone both match), `429 code=RATE_LIMITED`.
+
+### GET `/api/auth/forgot-password/status?requestId=…&code=…`  (public, rate-limited)
+Polled by the app while the owner waits for the super admin's decision.
+`requestId` + the 6-digit `code` are the **only** keys (no session exists yet),
+and the pair rides `authLimiter` so the code cannot be brute-forced.
+```jsonc
+// 200 response
+{
+  "status": "pending",     // 'pending' | 'approved' | 'rejected' | 'expired'
+  "decidedAt": null,       // ISO once approved/rejected, else null
+  "expiresAt": "ISO"       // createdAt + 24h
+}
+```
+A stored-`pending` request whose `expiresAt` has passed reports `expired`. On
+`approved` the new password is already live on the account (and every older JWT
+is dead — see the approve endpoint), so the app just sends the owner back to the
+login screen. Errors: `400 code=VALIDATION` (missing `requestId`/`code`), `404`
+when no request matches that `requestId`+`code` pair (a wrong code never
+discloses another request's status), `429 code=RATE_LIMITED`.
+
 ### GET `/api/auth/me`  (auth)
 Returns the current account (used for offline-first re-validation on launch /
 reconnect). A `401`/`403` here is the **only** thing that ends the local session.
@@ -136,7 +189,10 @@ account's `tokenVersion` (`tv` claim). Any password change (e.g. an owner
 resetting an accountant's password via `PUT /api/account/accountants/:id`) bumps
 `tokenVersion`, so every token minted before the change is rejected by ALL
 authenticated routes with `401 code=TOKEN_STALE` (the client must sign in again).
-A legacy token with no `tv` claim is treated as `tv=0`.
+A legacy token with no `tv` claim is treated as `tv=0`. **Flash v42:** a
+super-admin **approved** password-reset request
+(`POST /api/admin/password-resets/:id/approve`) is a password change like any
+other and bumps `tokenVersion` the same way.
 
 ---
 
@@ -487,8 +543,12 @@ A **settlement** is an accountant **wallet** record — the cash an accountant o
 the owner — synced as a normal business entity (`entity:"settlements"`, device is
 the source of truth). Each row:
 `{ id, accountant_id, branch_id, amount, method:'cash'|'card', status:'pending'|'approved'|'rejected',
-requested_at, decided_at, decided_by, note, updated_at }`. `method` is the payment
-method the settlement is for (Flash v12; absent = `'cash'`); `data` is Mixed so it
+month, requested_at, decided_at, decided_by, note, updated_at }`. `method` is the payment
+method the settlement is for (Flash v12; absent = `'cash'`); `month` is the
+**tariff/accounting** month the settlement belongs to (`YYYY-MM`, Flash v40 —
+stamped from the device's global pricing month at request time, so it can differ
+from `requested_at`'s calendar month; absent on pre-v40 rows, for which
+`requested_at`'s `YYYY-MM` prefix is the fallback). `data` is Mixed so it
 rides through `/api/sync` with no schema change. An accountant CREATES a
 **pending** settlement by pushing it via `/api/sync/push` (always allowed; a
 branch-confined accountant's `branch_id`/`accountant_id` are server-stamped, so a
@@ -512,9 +572,10 @@ Errors: `400 code=BAD_STATUS` (status not `approved`/`rejected`),
 `404 code=SETTLEMENT_NOT_FOUND` (no such settlement in the caller's mirror),
 `403 code=FORBIDDEN` (caller is not an owner/admin).
 
-#### GET `/api/account/wallet`  (auth)
+#### GET `/api/account/wallet[?month=YYYY-MM]`  (auth)
 The accountant **wallet**, computed SERVER-SIDE from the full mirror (authoritative
-across all months, unaffected by the device's current-month receipt scope). For an
+across all months by default, unaffected by the device's current-month receipt
+scope; see the optional `month` scope below). For an
 **accountant** it reports their own figures (receipts/settlements with
 `data.accountant_id == localId`); for an **owner** the owner-collected figures
 (`accountant_id` null). Flash v12 returns a **per-method** breakdown: for each
@@ -538,6 +599,24 @@ backward-compat with pre-v12 clients.
   "collected": 5000, "settled": 3000, "balance": 2000
 }
 ```
+
+**Flash v42 — optional accounting-month scope.** Query param `month=YYYY-MM`
+(validated against `/^\d{4}-\d{2}$/`) restricts **both** sides of **both**
+wallets to that one accounting month, so an accountant's August money never
+carries into September:
+- `collected(M)` counts only receipts whose `data.month == month`;
+- `settled(M)` counts only approved settlements whose **tariff month** matches —
+  `data.month == month`, falling back to `data.requested_at` starting with the
+  month for pre-v40 rows that carry no `data.month` (an `$or` nested under
+  `$and`, so the base user/entity/status filter is never clobbered).
+
+The param is **optional and additive**: when it is absent (or does not match
+`YYYY-MM`) the endpoint computes the all-time figures and returns **exactly
+today's response, byte-for-byte** — every not-yet-updated device keeps working
+unchanged. With the param the response carries the same
+`{ cash, card, collected, settled, balance }` shape, scoped to the month. The
+device's local fallback (`SettlementRepository.walletForMonth`) buckets by the
+same rule, so the online and offline figures agree.
 
 ### Branches — `/api/account/branches`  (auth; role **owner only**)
 
@@ -636,6 +715,9 @@ Errors: `400` missing `entity`, `404 code=BRANCH_NOT_FOUND`, `403 code=FORBIDDEN
 - `DELETE /api/admin/users/:id/devices/:deviceId`   unbind a device
 - `GET    /api/admin/users/:id/data`                 list an owner's synced mirror rows (search + paginate, see below)
 - `DELETE /api/admin/users/:id/data/:entity/:localId` hard-delete one mirrored record
+- `GET    /api/admin/password-resets`                 list owner password-reset requests (search + paginate, see below)
+- `POST   /api/admin/password-resets/:id/approve`     approve — **this is what changes the password**
+- `POST   /api/admin/password-resets/:id/reject`      reject — body `{ "note": "..." }`; changes nothing
 - `GET    /api/admin/plans`                          list all plans
 - `PUT    /api/admin/plans`                          upsert a plan (body = Plan)
 - `DELETE /api/admin/plans/:code`                    delete a plan
@@ -711,6 +793,80 @@ the mirror). Does not touch the device's local SQLite source of truth.
 ```
 Errors: `404` record not found.
 
+### Password-reset requests — `/api/admin/password-resets`  (admin) — new in Flash v42
+
+The super-admin side of `POST /api/auth/forgot-password`. An owner phones the
+super admin and reads back the 6-digit `code`; the admin finds the request here,
+verifies the caller against the account's `name` / `generatorName` / `phone`, and
+approves or rejects it. **No password ever changes without an approval here.**
+
+#### GET `/api/admin/password-resets`  (admin)
+Query params (all optional): `q` — case-insensitive substring over the account's
+`name`, `generatorName`, `username`, `phone` and the request `code`; `status` —
+one of `pending · approved · rejected · expired`; `page` (1-based, default `1`);
+`limit` (default `25`, clamped to `1..200`). Filtering is applied **before**
+pagination; requests come back newest first (`createdAt` desc).
+```jsonc
+// 200 response
+{
+  "items": [
+    {
+      "id": "mongoid",
+      "userId": "mongoid",            // the account the request targets
+      "name": "Owner Name",
+      "generatorName": "Moldati",     // null when the account has none
+      "username": "owner1",
+      "phone": "0770...",             // the registered phone the requester had to match
+      "code": "482913",               // 6-digit reference, read back to verify the caller
+      "status": "pending",            // 'pending' | 'approved' | 'rejected' | 'expired'
+      "note": null,                   // the reject reason, when rejected
+      "createdAt": "ISO",
+      "expiresAt": "ISO",             // createdAt + 24h
+      "decidedAt": null               // ISO once approved/rejected
+    }
+  ],
+  "total": 7,   // matching requests after `q`/`status`, before the page slice
+  "page": 1,
+  "limit": 25
+}
+```
+The bcrypt hash of the requested password is stored on the request but is
+**never** returned by this (or any) endpoint.
+
+#### POST `/api/admin/password-resets/:id/approve`  (admin)
+**The approval is the moment the password changes.** It writes the request's
+stored bcrypt hash onto the target `User.passwordHash` (stored as-is — it is
+already a hash, so it is never re-hashed), bumps that user's `tokenVersion` so
+**every JWT minted before the approval dies** (`401 code=TOKEN_STALE` on every
+authed route — the owner and all their devices must sign in again with the new
+password), stamps `decidedAt` / `decidedBy` and moves the request to `approved`.
+```jsonc
+// 200 response
+{ "ok": true, "request": { /* the updated request, status:"approved" */ } }
+```
+Errors:
+- `404 code=RESET_NOT_FOUND` — no such request id.
+- `409 code=RESET_NOT_PENDING` — already decided, or superseded by a newer
+  request. **Approving twice is a no-op error, never a double-apply.**
+- `409 code=RESET_EXPIRED` — past the 24 h `expiresAt`. The request is persisted
+  as `expired` at that moment and can **never** be approved; the owner must file
+  a fresh one.
+- `409 code=RESET_INVALID` — the request carries no stored hash (defensive: an
+  owner's `passwordHash` is never blanked).
+- `404 code=USER_NOT_FOUND` — the target account no longer exists.
+
+#### POST `/api/admin/password-resets/:id/reject`  (admin)
+```jsonc
+// request
+{ "note": "could not verify the caller" }   // optional
+// 200 response
+{ "ok": true, "request": { /* status:"rejected", note, decidedAt */ } }
+```
+**A rejection changes nothing on the account** — the current password stands,
+`tokenVersion` is untouched and every live session keeps working. Errors:
+`404 code=RESET_NOT_FOUND` and `409 code=RESET_NOT_PENDING` (only a `pending`
+request can be rejected).
+
 ### GET `/api/admin/events`  (admin, real-time SSE)
 
 A long-lived **Server-Sent Events** stream the admin panel subscribes to so it
@@ -732,6 +888,10 @@ Emitted events:
 - `user_registered` — fired right after a new owner account is saved by
   `POST /api/auth/register`. Payload:
   `{ id, name, username, phone, generatorName, createdAt }`.
+- `password_reset_requested` (Flash v42) — fired right after
+  `POST /api/auth/forgot-password` stores a pending request, so an open panel
+  sees it live exactly like `user_registered`. Payload: the same request shape a
+  `GET /api/admin/password-resets` item carries.
 
 Client example:
 ```js

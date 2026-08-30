@@ -46,6 +46,14 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
   // v35 audit BUG 3: false = no price row for this category/month → NOT
   // billable yet (distinct from "paid"; getDueAmount returns 0.0 for both).
   bool _hasPrice = true;
+  // v42 item 3: months STRICTLY BEFORE the selected one that are still short —
+  // rendered as an amber NOTICE ONLY. Read by `_buildPrevUnpaidNotice()` and by
+  // nothing else on this screen: dueAmount, _hasPrice, the paid/unpaid badge,
+  // the collect button, the receipt history and every print path stay keyed to
+  // the selected month alone, so the current month's accounting remains
+  // completely independent of previous months.
+  List<({String month, double due, double coverage, double remaining})>
+      _prevUnpaid = const [];
 
   // R4: maps a subscriber category to its translation key (translated at use).
   static const Map<String, String> _categoryLabels = {
@@ -100,6 +108,18 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
     );
     // Load receipt history (page 1) via paginated controller list
     await controller.loadReceiptHistory(_sub.id);
+    // v42 item 3: the previous-months NOTICE. Swallowed on error (and left
+    // empty) on purpose — an informational card must NEVER be able to break the
+    // page or hold up the due/collect flow above it.
+    try {
+      _prevUnpaid = await SubscriberRepository().previousUnpaidMonths(
+        _sub.id,
+        beforeMonth: controller.selectedMonth.value,
+        branchId: _sub.branchId,
+      );
+    } catch (_) {
+      _prevUnpaid = const [];
+    }
     // Pre-fill amount with due
     _amountCtrl.text = dueAmount.toStringAsFixed(0);
     if (mounted) setState(() {});
@@ -244,6 +264,15 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
             ),
             const SizedBox(height: 20),
 
+            // 2b. v42 item 3: PREVIOUS OUTSTANDING MONTHS — a notice, nothing
+            // more. It is deliberately rendered BEFORE (and visually apart
+            // from) the due card so it can never read as part of this month's
+            // figure; no other widget/value below consults `_prevUnpaid`.
+            if (_prevUnpaid.isNotEmpty) ...[
+              _buildPrevUnpaidNotice(),
+              const SizedBox(height: 20),
+            ],
+
             // 3. Due Amount / Payment Status. v35 audit BUG 3: a month with NO
             // price for this category is "not billable yet" (amber), NEVER a
             // false green "paid in full" — the lists/counts derive it UNPAID.
@@ -349,6 +378,104 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
           ],
         ),
       )),
+    );
+  }
+
+  /// v42 item 3: the arrears NOTICE card (amber). Purely informational — it
+  /// reports months already closed short, and the figures it prints come from
+  /// [SubscriberRepository.previousUnpaidMonths] alone. Nothing here feeds the
+  /// selected month's due, badge, collect flow or printed receipt.
+  Widget _buildPrevUnpaidNotice() {
+    final double totalRemaining =
+        _prevUnpaid.fold<double>(0, (sum, m) => sum + m.remaining);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        // Same amber notice palette as the other in-app hints (branches screen).
+        color: const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFE082)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.history_toggle_off, color: Color(0xFFFF8F00)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'prev_unpaid_title'.tr,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: Color(0xFFE65100),
+                  ),
+                ),
+              ),
+              Text(
+                "${_prevUnpaid.length} ${'prev_unpaid_months_count'.tr}",
+                style: const TextStyle(fontSize: 12, color: Color(0xFFFF8F00)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'prev_unpaid_total'.tr,
+                style: const TextStyle(fontSize: 13, color: Colors.black87),
+              ),
+              Text(
+                "${'iqd'.tr} ${fmtAmount(totalRemaining)}",
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17,
+                  color: Color(0xFFE65100),
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 20, color: Color(0xFFFFE082)),
+          // Per-month breakdown, newest first (the repository's order).
+          ..._prevUnpaid.map(
+            (m) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    m.month,
+                    style: const TextStyle(fontSize: 13, color: Colors.black87),
+                  ),
+                  Text(
+                    "${'iqd'.tr} ${fmtAmount(m.remaining)}",
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFEF6C00),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'prev_unpaid_body'.tr,
+            style: TextStyle(fontSize: 11.5, color: Colors.grey[700]),
+          ),
+        ],
+      ),
     );
   }
 

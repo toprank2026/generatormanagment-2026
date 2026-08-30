@@ -62,6 +62,64 @@ class SettlementRepository {
     );
   }
 
+  /// v42 item 1 — the MONTH-ISOLATED wallet. Same shape as [wallet], but both
+  /// sides are bucketed to one accounting month, so August money never carries
+  /// into September and each month settles independently:
+  ///
+  ///  * collected(M) = Σ cash on that month's VALID receipts of method M
+  ///    (`receipts.month` — the tariff/billing month, the v40 accounting
+  ///    reference, not the receipt timestamp);
+  ///  * settled(M)   = Σ approved settlements of method M stamped to that month
+  ///    (`COALESCE(settlements.month, substr(requested_at,1,7))` — the v40 rule,
+  ///    so LEGACY rows keep their exact previous requested_at behaviour and no
+  ///    stored row is reinterpreted).
+  ///
+  /// [wallet] (all-time) is deliberately kept alongside this.
+  Future<
+      ({
+        double cashCollected,
+        double cashSettled,
+        double cashBalance,
+        double cardCollected,
+        double cardSettled,
+        double cardBalance,
+      })> walletForMonth(String accountantId, String month) async {
+    final db = await _dbHelper.database;
+    Future<double> collected(String m) async {
+      final r = await db.rawQuery(
+        "SELECT COALESCE(SUM(paid_amount),0) s FROM receipts "
+        "WHERE accountant_id = ? AND status = 'valid' AND month = ? "
+        "AND COALESCE(payment_method,'cash') = ?",
+        [accountantId, month, m],
+      );
+      return ((r.first['s'] as num?) ?? 0).toDouble();
+    }
+
+    Future<double> settled(String m) async {
+      final r = await db.rawQuery(
+        "SELECT COALESCE(SUM(amount),0) s FROM settlements "
+        "WHERE accountant_id = ? AND status = 'approved' "
+        "AND COALESCE(method,'cash') = ? "
+        "AND COALESCE(month, substr(requested_at, 1, 7)) = ?",
+        [accountantId, m, month],
+      );
+      return ((r.first['s'] as num?) ?? 0).toDouble();
+    }
+
+    final cc = await collected('cash');
+    final cs = await settled('cash');
+    final dc = await collected('card');
+    final ds = await settled('card');
+    return (
+      cashCollected: cc,
+      cashSettled: cs,
+      cashBalance: cc - cs,
+      cardCollected: dc,
+      cardSettled: ds,
+      cardBalance: dc - ds,
+    );
+  }
+
   /// v30 (reversal lock): the NEWEST ACTIVE (pending|approved) settlement
   /// request time for [accountantId]+[method], or null when none exists. A
   /// receipt issued AT/BEFORE this moment had its cash included in that
@@ -81,12 +139,28 @@ class SettlementRepository {
 
   /// True when the accountant already has an outstanding (pending) request for
   /// the given [method] — blocks duplicate settlement requests per wallet.
-  Future<bool> hasPending(String accountantId, String method) async {
+  ///
+  /// v42 item 1: with wallets isolated per accounting month, the guard must be
+  /// per MONTH too — otherwise a still-pending August request would permanently
+  /// block September's settlement, which is exactly the cross-month coupling
+  /// this batch removes. Omitting [month] keeps the previous all-time guard.
+  ///
+  /// v42 review fix — LEGACY (pre-v40) PENDING ROWS ALSO BLOCK. An unstamped
+  /// pending request (`month IS NULL`) buckets by its `requested_at`, so a
+  /// purely month-scoped guard would stop seeing it as soon as the accountant
+  /// browsed to another month, and they could file a SECOND request while the
+  /// first was still awaiting the owner — a duplicate the all-time guard used to
+  /// prevent. An unstamped request has no reliable accounting month, so it is
+  /// treated as covering every month until the owner decides it.
+  Future<bool> hasPending(String accountantId, String method,
+      {String? month}) async {
     final db = await _dbHelper.database;
+    final bool scoped = month != null && month.isNotEmpty;
     final r = await db.rawQuery(
       "SELECT COUNT(*) c FROM settlements WHERE accountant_id = ? "
-      "AND status = 'pending' AND COALESCE(method,'cash') = ?",
-      [accountantId, method],
+      "AND status = 'pending' AND COALESCE(method,'cash') = ?"
+      "${scoped ? " AND (month = ? OR month IS NULL)" : ""}",
+      [accountantId, method, if (scoped) month],
     );
     return (Sqflite.firstIntValue(r) ?? 0) > 0;
   }

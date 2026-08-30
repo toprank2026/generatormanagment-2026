@@ -34,7 +34,7 @@ class DbHelper {
     final String path = testPath ?? await _defaultPath();
     return await openDatabase(
       path,
-      version: 14,
+      version: 15,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -319,6 +319,49 @@ class DbHelper {
       // August. Nullable: legacy rows fall back to the requested_at prefix.
       await _addColumn(db, 'settlements', 'month', 'TEXT');
     }
+    if (oldVersion < 15) {
+      // v15 (Flash v42 item 5): the month a subscriber STARTS being billed
+      // ('YYYY-MM', stamped from the global TARIFF month at creation — not the
+      // wall clock, so a September subscriber entered in August while browsing
+      // September bills from September, consistent with v40).
+      //
+      // Nullable and NEVER backfilled: an existing row keeps `NULL` and the
+      // derived queries fall back to its `created_at` prefix, so no production
+      // record changes meaning and nothing is rewritten.
+      await _addColumn(db, 'subscribers', 'billing_start_month', 'TEXT');
+      await _createV42Indexes(db);
+    }
+  }
+
+  /// v42: index for the subscriber activation filter (item 5). Idempotent, so
+  /// it is safe to run from both `_onCreate` and `_onUpgrade`.
+  Future<void> _createV42Indexes(Database db) async {
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_subscribers_billing_start '
+        'ON subscribers(billing_start_month)');
+  }
+
+  /// v42 item 6 — the ONE canonical "oldest → newest" ordering for boards,
+  /// circuits and subscribers. Two production defects made the old
+  /// `created_at ASC, rowid ASC` non-deterministic:
+  ///
+  ///  1. rows created before v20 have `created_at = NULL`; SQLite sorts NULLs
+  ///     FIRST, so the tie-break decided the order — and `rowid` is DEVICE-LOCAL
+  ///     and re-assigned in *pull arrival order* by every sync pull, delete-local
+  ///     -data, branch switch and reinstall. That is the "order changes
+  ///     unexpectedly between views" complaint.
+  ///  2. two timestamp formats coexist — `'YYYY-MM-DD HH:MM:SS'` (SQLite
+  ///     CURRENT_TIMESTAMP) and `'YYYY-MM-DDTHH:MM:SS.mmmZ'` (Dart ISO-8601).
+  ///     Since `' ' < 'T'`, every legacy row sorted before every new row created
+  ///     on the SAME DAY regardless of the actual time.
+  ///
+  /// `REPLACE(...,'T',' ')` normalises the two formats into one comparable key,
+  /// and the `id` (UUID) tie-break is IDENTICAL on every device — so the order
+  /// is now stable across devices, pulls, branch switches and views.
+  /// Display-only: no stored value is read differently and nothing is rewritten.
+  static String creationOrder([String alias = '']) {
+    final String a = alias.isEmpty ? '' : '$alias.';
+    return "COALESCE(NULLIF(REPLACE(${a}created_at, 'T', ' '), ''), "
+        "'0000-00-00 00:00:00') ASC, ${a}id ASC";
   }
 
   Future<String> _defaultPath() async {
@@ -414,6 +457,10 @@ class DbHelper {
         category TEXT DEFAULT 'standard', -- 'commercial' | 'standard' | 'gold' (R4)
         accountant_id TEXT,
         branch_id TEXT,
+        -- v42 item 5: first billed month ('YYYY-MM'), stamped from the global
+        -- TARIFF month at creation. NULL on legacy rows → the derived queries
+        -- fall back to the created_at prefix (no backfill, ever).
+        billing_start_month TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (board_id) REFERENCES boards (id),
         FOREIGN KEY (circuit_id) REFERENCES circuits (id)
@@ -523,6 +570,7 @@ class DbHelper {
     await _createSyncInfra(db);
 
     await _createV8Indexes(db);
+    await _createV42Indexes(db);
     await _addUpdatedAtColumns(db);
     // v10 (Flash item 5): pricing start-day metadata.
     await _addColumn(db, 'monthly_prices', 'start_date', 'TEXT');

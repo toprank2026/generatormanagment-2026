@@ -78,12 +78,18 @@ class DashboardController extends GetxController {
       final branch = _branchScope; // active branch (null = consolidated/all)
       // 1. Subscribers & Amps (branch-scoped) — SQL aggregates, NOT a full
       //    materialization of every subscriber row (audit: scale).
-      totalSubscribers.value = await _subRepo.countByBranch(branchId: branch);
-      final ampsByCat = await _subRepo.ampsByCategory(branchId: branch);
+      //    v42 items 2+5: scoped to the selected ACCOUNTING MONTH as well, so a
+      //    subscriber added in month 9 is not retro-counted into month 8's
+      //    figures. The dashboard is a month view — every card on it now
+      //    belongs to exactly one month.
+      final month = currentMonth.value;
+      totalSubscribers.value =
+          await _subRepo.countByBranch(branchId: branch, month: month);
+      final ampsByCat =
+          await _subRepo.ampsByCategory(branchId: branch, month: month);
       totalAmps.value = ampsByCat.values.fold(0.0, (sum, a) => sum + a);
 
       // 2. Month pricing check: has the owner set any price for this month/branch?
-      final month = currentMonth.value;
       final prices = await _priceRepo.pricesForMonth(month, branchId: branch);
       hasPriceForMonth.value = prices.isNotEmpty;
 

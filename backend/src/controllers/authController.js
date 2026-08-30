@@ -1,7 +1,13 @@
 'use strict';
 
 const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
+// v42 item 4: the 6-digit verification code the owner reads back to the super
+// admin is generated with the CSPRNG — Math.random is predictable and would make
+// a pending reset guessable.
+const { randomInt } = require('node:crypto');
 const User = require('../models/User');
+const PasswordResetRequest = require('../models/PasswordResetRequest');
 const asyncHandler = require('../utils/asyncHandler');
 const { signToken } = require('../utils/token');
 const { serializeAccount, serializeSubscription } = require('../utils/serialize');
@@ -265,4 +271,129 @@ const me = asyncHandler(async (req, res) => {
   res.status(200).json({ account });
 });
 
-module.exports = { register, login, me, recoverDevice };
+/**
+ * POST /api/auth/forgot-password (public, rate-limited like login)
+ * Body: { username, phone, newPassword }
+ *
+ * Flash v42 item 4: super-admin-APPROVED password recovery. Nothing on the
+ * account changes here — the requested password is stored bcrypt-hashed on a
+ * PENDING request and only the super admin's approve (adminController) writes it
+ * onto the user. The identity check is `username` + the account's REGISTERED
+ * phone: both halves must match, and a mismatch on either always answers the
+ * same 404 ACCOUNT_NOT_FOUND so this endpoint can neither enumerate accounts nor
+ * confirm a known account's phone number.
+ */
+const forgotPassword = asyncHandler(async (req, res) => {
+  const { username, phone, newPassword } = req.body;
+
+  const user = await User.findOne({ username: String(username).toLowerCase() });
+
+  // Owner/admin accounts only. An accountant's password is managed by its owner
+  // in the app, so it must NOT be recoverable here — and it is rejected with the
+  // same 404 as an unknown username (never reveal which half was wrong). An
+  // account with no phone on file can never match either.
+  const storedPhone = user ? String(user.phone || '').trim() : '';
+  const givenPhone = String(phone || '').trim();
+  if (!user || user.role === 'accountant' || !storedPhone || storedPhone !== givenPhone) {
+    throw new HttpError(404, 'Account not found', 'ACCOUNT_NOT_FOUND');
+  }
+
+  // The plaintext never leaves this request: it is hashed here (same cost factor
+  // as register) and only the hash is persisted or logged.
+  const newPasswordHash = await bcrypt.hash(newPassword, 10);
+
+  // One active request per account: an older pending one is superseded so the
+  // super admin can never be shown two approvable hashes for the same owner.
+  await PasswordResetRequest.updateMany(
+    { user: user._id, status: 'pending' },
+    { $set: { status: 'expired' } }
+  );
+
+  const code = String(randomInt(0, 1000000)).padStart(6, '0');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  const request = await PasswordResetRequest.create({
+    user: user._id,
+    // Identity snapshot as submitted, so the admin list can search on it even if
+    // the account is renamed before the decision (name/generatorName are not
+    // snapshotted — the panel joins them from `user`).
+    username: user.username,
+    phone: storedPhone,
+    newPasswordHash,
+    code,
+    status: 'pending',
+    expiresAt,
+    // Abuse triage on this public route (no `trust proxy` here, so this is the
+    // socket peer — indicative, never an identity check).
+    ip: req.ip || null,
+  });
+
+  // Notify any connected admin panels in real time (SSE). Best-effort; never
+  // blocks the response — exactly like register's 'user_registered'.
+  adminEvents.emit('password_reset_requested', {
+    id: String(request._id),
+    userId: String(user._id),
+    name: user.name,
+    username: user.username,
+    phone: storedPhone,
+    generatorName: user.generatorName || null,
+    code,
+    createdAt: request.createdAt,
+  });
+
+  res.status(201).json({
+    requestId: String(request._id),
+    code,
+    status: request.status,
+    expiresAt: request.expiresAt,
+  });
+});
+
+/**
+ * GET /api/auth/forgot-password/status?requestId=&code= (public, rate-limited)
+ *
+ * Flash v42 item 4: the app polls this while the owner waits for the super
+ * admin's decision. requestId + code is the ONLY key (no session exists — the
+ * owner is locked out by definition), so both must match; the pending password
+ * hash is never part of the response.
+ */
+const forgotPasswordStatus = asyncHandler(async (req, res) => {
+  const { requestId, code } = req.query;
+
+  // A malformed id is attacker-supplied and says nothing about whether the
+  // request exists, so it answers like an unknown one (404) instead of letting
+  // Mongoose's CastError surface as a 400.
+  const request = mongoose.isValidObjectId(requestId)
+    ? await PasswordResetRequest.findOne({
+        _id: requestId,
+        code: String(code).trim(),
+      })
+    : null;
+  if (!request) {
+    throw new HttpError(404, 'Request not found', 'REQUEST_NOT_FOUND');
+  }
+
+  // Lazy expiry: a pending request past its 24h window reports AND persists
+  // 'expired' on first read (the model's isExpired() is the single definition of
+  // "past the window"), so a stale hash can no longer be approved even if nobody
+  // polled in between.
+  if (request.status === 'pending' && request.isExpired()) {
+    request.status = 'expired';
+    await request.save();
+  }
+
+  res.status(200).json({
+    status: request.status,
+    decidedAt: request.decidedAt || null,
+    expiresAt: request.expiresAt,
+  });
+});
+
+module.exports = {
+  register,
+  login,
+  me,
+  recoverDevice,
+  forgotPassword,
+  forgotPasswordStatus,
+};

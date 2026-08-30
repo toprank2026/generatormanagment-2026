@@ -293,7 +293,11 @@ test('pagination walks pages: page 1/2/3 are disjoint and cover all 30; page 4 i
   }
 });
 
-test('sort is updatedAt desc (newest first)', async () => {
+// v42 item 6: boards / circuits / subscribers are now returned in CREATION
+// order (oldest first) so the panel matches the app, where the fixed
+// oldest->newest order is a stated requirement. Every OTHER entity keeps the
+// original `updatedAt desc` (newest first) ordering — asserted below.
+test('v42: subscribers sort oldest-first by created_at (creation order)', async () => {
   const owner = await seededOwner();
   const adminTok = await getAdminToken();
 
@@ -304,6 +308,26 @@ test('sort is updatedAt desc (newest first)', async () => {
   );
   assert.equal(r.status, 200);
   assert.equal(r.data.records.length, SUBSCRIBER_COUNT);
+
+  const created = r.data.records.map((rec) => (rec.data && rec.data.created_at) || '');
+  for (let i = 1; i < created.length; i += 1) {
+    assert.ok(
+      created[i - 1] <= created[i],
+      `records must be sorted created_at ascending (${created[i - 1]} then ${created[i]})`
+    );
+  }
+});
+
+test('sort is updatedAt desc (newest first) for non-creation-ordered entities', async () => {
+  const owner = await seededOwner();
+  const adminTok = await getAdminToken();
+
+  const r = await api(
+    'GET',
+    `/api/admin/users/${owner.account.id}/data?entity=receipts&page=1&limit=30`,
+    { token: adminTok }
+  );
+  assert.equal(r.status, 200);
 
   const times = r.data.records.map((rec) => new Date(rec.updatedAt).getTime());
   for (let i = 1; i < times.length; i += 1) {

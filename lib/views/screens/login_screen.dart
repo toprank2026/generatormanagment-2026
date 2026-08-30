@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/views/auth/forgot_password_screen.dart';
 import 'package:generatormanagment/views/auth/signup_screen.dart';
 import 'package:generatormanagment/views/root_handler.dart';
 
@@ -246,6 +247,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  // v42 item 4: the locked-out owner files a reset request that
+                  // only a super admin can approve (no self-service reset).
+                  TextButton(
+                    onPressed: () => Get.to(() => const ForgotPasswordScreen()),
+                    child: Text('forgot_password'.tr),
+                  ),
                   TextButton(
                     onPressed: () => Get.to(() => const SignupScreen()),
                     child: Text('no_account_sign_up'.tr),

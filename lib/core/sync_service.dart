@@ -88,16 +88,47 @@ class SyncService {
     return records.length;
   }
 
+  /// v42 (forward-compatible pull): the real column set of each local table,
+  /// read once per process via `PRAGMA table_info`. The mirror is a WHOLE-ROW
+  /// store, so a server row written by a NEWER app version carries columns this
+  /// (older) install's schema does not have yet — and `insert` with an unknown
+  /// column throws, which used to abort the ENTIRE pull transaction (every
+  /// entity, every retry, silently: the documented v40 "old-APK pull freeze").
+  /// Filtering the incoming map to the columns that actually exist degrades
+  /// that to "the unknown column is ignored". When the schemas match — the
+  /// normal case — the map is unchanged and behaviour is identical.
+  final Map<String, Set<String>> _columnsCache = {};
+
+  Future<Set<String>> _columnsOf(DatabaseExecutor db, String table) async {
+    final cached = _columnsCache[table];
+    if (cached != null) return cached;
+    final info = await db.rawQuery('PRAGMA table_info($table)');
+    final cols = info
+        .map((r) => (r['name'] ?? '').toString())
+        .where((c) => c.isNotEmpty)
+        .toSet();
+    // Never cache an empty result (a missing table would poison the cache).
+    if (cols.isNotEmpty) _columnsCache[table] = cols;
+    return cols;
+  }
+
   /// Pulls this account's data from the server mirror and writes it into local
   /// SQLite (upsert by primary key; tombstones delete the local row). The writes
   /// fire the change-capture triggers, so any outbox rows they create are removed
   /// inside the same transaction — a pull must never turn into a re-push.
   /// Returns the number of records applied.
+  ///
+  /// v42: forward-compatible + per-record isolated. Unknown columns are dropped
+  /// (see [_columnsOf]) and a record that still fails to write is SKIPPED rather
+  /// than aborting the batch, so one malformed/incompatible mirror row can no
+  /// longer freeze all synchronization for the whole account.
   Future<int> pull({String? since, String? receiptsMonth}) async {
     final records = await _repo.pull(since: since, receiptsMonth: receiptsMonth);
     if (records.isEmpty) return 0;
 
     final db = await _db.database;
+    int applied = 0;
+    int skipped = 0;
     await db.transaction((txn) async {
       final seqRow = await txn.rawQuery('SELECT MAX(seq) m FROM sync_outbox');
       final int seqBefore = Sqflite.firstIntValue(seqRow) ?? 0;
@@ -109,17 +140,34 @@ class SyncService {
         final localId = '${rec['localId']}';
         final deleted = rec['deleted'] == true;
 
-        if (deleted) {
-          await txn.delete(entity, where: '$pk = ?', whereArgs: [localId]);
-          continue;
-        }
-        final data = rec['data'];
-        if (data is Map) {
-          await txn.insert(
-            entity,
-            data.cast<String, dynamic>(),
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
+        try {
+          if (deleted) {
+            await txn.delete(entity, where: '$pk = ?', whereArgs: [localId]);
+            applied++;
+            continue;
+          }
+          final data = rec['data'];
+          if (data is Map) {
+            final cols = await _columnsOf(txn, entity);
+            final row = <String, dynamic>{};
+            data.forEach((k, v) {
+              final key = '$k';
+              // Empty cols = PRAGMA gave nothing back; fall back to the raw map
+              // rather than writing an empty row.
+              if (cols.isEmpty || cols.contains(key)) row[key] = v;
+            });
+            if (row.isEmpty) continue;
+            await txn.insert(
+              entity,
+              row,
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+            applied++;
+          }
+        } catch (e) {
+          // Per-record isolation: never let one row abort the whole pull.
+          skipped++;
+          Log.d('SyncService: pull skipped $entity/$localId — $e');
         }
       }
 
@@ -127,8 +175,9 @@ class SyncService {
       await txn.delete('sync_outbox', where: 'seq > ?', whereArgs: [seqBefore]);
     });
 
-    Log.d('SyncService: pulled ${records.length} records');
-    return records.length;
+    Log.d('SyncService: pulled $applied records'
+        '${skipped > 0 ? ' ($skipped skipped)' : ''}');
+    return applied;
   }
 
   /// v12 (item 4): wipe EVERY local table (business + users + accountants +

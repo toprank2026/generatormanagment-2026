@@ -654,6 +654,20 @@ var API={
   upsertPlan:function(body){ return api("PUT","/api/admin/plans",body); },
   deletePlan:function(code){ return api("DELETE","/api/admin/plans/"+encodeURIComponent(code)); },
   recentData:function(limit,page){ return api("GET","/api/admin/recent-data?limit="+(limit||10)+"&page="+(page||1)); },
+  // v42 item 4: owner "forgot password" queue. NOTHING changes on the account
+  // until a super admin approves here — approval is the moment the password is
+  // written and every old session dies; rejection changes nothing.
+  passwordResets:function(opts){
+    opts=opts||{};
+    var q=[];
+    if(opts.q) q.push("q="+encodeURIComponent(opts.q));
+    if(opts.status) q.push("status="+encodeURIComponent(opts.status));
+    if(opts.page) q.push("page="+encodeURIComponent(opts.page));
+    if(opts.limit) q.push("limit="+encodeURIComponent(opts.limit));
+    return api("GET","/api/admin/password-resets"+(q.length?("?"+q.join("&")):""));
+  },
+  approvePasswordReset:function(id){ return api("POST","/api/admin/password-resets/"+encodeURIComponent(id)+"/approve",{}); },
+  rejectPasswordReset:function(id,note){ return api("POST","/api/admin/password-resets/"+encodeURIComponent(id)+"/reject",{note:note||""}); },
   // Landing: advertisement banners (admin CRUD) + promo video (singleton).
   banners:function(){ return api("GET","/api/admin/banners"); },
   createBanner:function(form){ return api("POST","/api/admin/banners",form,true); },
@@ -883,6 +897,15 @@ function connectEvents(){
     // If the Users list is open, refresh it so the new account appears live.
     if((location.hash||"")==="#/users"){ try{ viewUsers(); }catch(err){} }
   });
+  // v42 item 4: an owner asked for a password reset — the panel is the only
+  // place it can be approved, so surface it live exactly like a registration.
+  es.addEventListener("password_reset_requested",function(e){
+    var d=null; try{ d=JSON.parse(e.data); }catch(err){ d=null; }
+    d=d||{};
+    var name=d.name||d.username||"مالك";
+    toast("طلب استعادة كلمة المرور: "+name+(d.username?(" ("+d.username+")"):""),"ok");
+    if((location.hash||"")==="#/password-resets"){ try{ viewPasswordResets(); }catch(err){} }
+  });
   es.onerror=function(){
     // EventSource auto-reconnects, but if the connection is fully closed (e.g.
     // token rejected) re-open it ourselves after a short delay while signed in.
@@ -967,6 +990,7 @@ function shell(activeRoute,content){
   var nav=el("nav",[
     navLink("#/dashboard","لوحة التحكم",activeRoute),
     navLink("#/users","المستخدمون",activeRoute),
+    navLink("#/password-resets","طلبات استعادة كلمة المرور",activeRoute),   // v42 item 4
     navLink("#/plans","الخطط",activeRoute),
     navLink("#/landing","اللافتات والفيديو",activeRoute)
   ]);
@@ -1107,6 +1131,7 @@ var routes=[
   {re:/^#\/users\/([^\/]+)\/data\/([^\/]+)$/, view:viewUserEntity},
   {re:/^#\/users\/([^\/]+)\/sub\/([^\/]+)$/, view:viewUserStatement},
   {re:/^#\/users\/([^\/]+)$/, view:viewUserDetail},
+  {re:/^#\/password-resets$/, view:viewPasswordResets},   // v42 item 4 (super admin only)
   {re:/^#\/plans$/, view:viewPlans},
   {re:/^#\/landing$/, view:viewLanding}
 ];
@@ -1188,11 +1213,15 @@ function viewDashboard(){
   shell("#/dashboard",loadingBlock("جارٍ تحميل لوحة التحكم…"));
   Promise.all([
     API.users().catch(function(){return {users:[]};}),
-    API.plans().catch(function(){return {plans:[]};})
+    API.plans().catch(function(){return {plans:[]};}),
+    // v42 item 4: pending password-reset count only (limit 1 — we read `total`).
+    // Swallowed like the others so a backend without the endpoint still renders.
+    API.passwordResets({status:"pending",page:1,limit:1}).catch(function(){return {total:0};})
   ])
   .then(function(res){
     var users=normalizeList(res[0],"users");
     var plans=normalizeList(res[1],"plans");
+    var pwPending=Number((res[2]&&res[2].total)||0);
     var total=users.length;
     var blocked=0,active=0,pending=0,admins=0;
     users.forEach(function(u){
@@ -1210,6 +1239,7 @@ function viewDashboard(){
     grid.appendChild(statCard("إجمالي المستخدمين",total,"groups"));
     grid.appendChild(statCard("اشتراكات نشطة",active,"check_circle"));
     grid.appendChild(statCard("خطط قيد الانتظار",pending,"hourglass_top"));
+    grid.appendChild(statCard("طلبات استعادة كلمة المرور",pwPending,"lock_reset"));   // v42 item 4
     grid.appendChild(statCard("المحظورون",blocked,"block"));
     grid.appendChild(statCard("المديرون",admins,"key"));
     grid.appendChild(statCard("الخطط النشطة",activePlans+"/"+plans.length,"inventory_2"));
@@ -1251,6 +1281,7 @@ function viewDashboard(){
     quick.appendChild(el("div",{class:"card-h"},["إجراءات سريعة"]));
     quick.appendChild(el("div",{class:"card-b"},[el("div",{class:"pill-actions"},[
       el("a",{class:"btn ghost",href:"#/users",text:"إدارة المستخدمين"}),
+      el("a",{class:"btn ghost",href:"#/password-resets",text:"طلبات استعادة كلمة المرور"+(pwPending?(" ("+pwPending+")"):"")}),   // v42 item 4
       el("a",{class:"btn ghost",href:"#/plans",text:"إدارة الخطط"})
     ])]));
     content.appendChild(quick);
@@ -1763,18 +1794,31 @@ function settlementStatusBadge(status){
    fetchFn(entity,opts) -> promise of the mirror endpoint (owner: API.myData,
    admin: API.userData bound to the user id). Failures degrade to empty maps. */
 function loadNameMaps(fetchFn,entities){
-  return Promise.all(entities.map(function(en){
-    return fetchFn(en,{limit:200}).then(function(res){
-      var m={};
-      normalizeList(res,"records").forEach(function(r){
+  // v42 review fix: PAGINATE the map instead of taking one 200-row page.
+  // Boards/circuits are now returned oldest-first (item 6), so a single page
+  // covered the OLDEST 200 and every recently-created جوزة rendered as "—" or a
+  // raw UUID. (Before v42 the newest-first sort hid this, since the rows being
+  // looked at were the recent ones.) The endpoint hard-caps limit at 200, so we
+  // walk pages until one comes back short — bounded, and each page merges into
+  // the same map, so a mid-way failure still leaves the earlier pages usable.
+  var PAGE=200, MAX_PAGES=25;   // up to 5,000 names per entity
+  function collect(en,page,m){
+    return fetchFn(en,{limit:PAGE,page:page}).then(function(res){
+      var rows=normalizeList(res,"records");
+      rows.forEach(function(r){
         var d=(r&&r.data)||{};
         var nm=d.name||d.code;
         if(nm==null||nm==="") return;
         if(r.localId!=null) m[r.localId]=nm;
         if(d.id!=null) m[d.id]=nm;
       });
-      return m;
-    }).catch(function(){ return {}; });
+      // A short page means we reached the end.
+      if(rows.length<PAGE || page>=MAX_PAGES) return m;
+      return collect(en,page+1,m);
+    }).catch(function(){ return m; });
+  }
+  return Promise.all(entities.map(function(en){
+    return collect(en,1,{});
   })).then(function(arr){
     var out={};
     entities.forEach(function(en,i){ out[en]=arr[i]; });
@@ -3410,6 +3454,188 @@ function openCreateUser(onDone){
     ]),
     footer:[el("button",{class:"btn neutral",text:"إلغاء",onclick:closeModal}),saveBtn]
   });
+}
+
+/* ============================================================
+   View: Password reset requests (#/password-resets)
+   ------------------------------------------------------------
+   v42 item 4: the owner asks for a new password from the app and NOTHING
+   changes until a super admin decides here. The admin reads the 6-digit
+   verification code back to the owner as the identity check, then approves
+   (the stored hash is written and every old JWT dies) or rejects (no change).
+   Search + status filter + pagination are SERVER-side, like the synced grids.
+   ============================================================ */
+var PWRESET_PAGE_LIMIT=25;
+var PWRESET_STATUS_LABELS={pending:"قيد الانتظار",approved:"تمت الموافقة",rejected:"مرفوض",expired:"منتهٍ"};
+function pwResetStatusBadge(status){
+  var s=status||"pending";
+  var cls=s==="approved"?"green":(s==="rejected"?"red":(s==="expired"?"gray":"orange"));
+  return el("span",{class:"badge "+cls},[el("span",{class:"dot"}),PWRESET_STATUS_LABELS[s]||syncText(s)]);
+}
+function viewPasswordResets(){
+  // Screen-local state; it survives an in-screen reload, and any filter change
+  // resets to page 1 (the server owns the paging — we never fetch everything).
+  var query="";
+  var status="";
+  var page=1;
+
+  var searchIn=el("input",{class:"input",type:"text",placeholder:"ابحث بالاسم أو اسم المستخدم أو الهاتف أو رمز التحقق…"});
+  var statusSel=el("select",{class:"input",style:"max-width:170px"},[
+    optEl("","كل الحالات"),optEl("pending","قيد الانتظار"),optEl("approved","تمت الموافقة"),
+    optEl("rejected","مرفوض"),optEl("expired","منتهٍ")
+  ]);
+  var countEl=el("span",{class:"muted",text:""});
+  // Stable regions repainted per load, so typing in the search box never loses
+  // focus/caret to a full-screen rebuild.
+  var tableWrap=el("div");
+  var pagerWrap=el("div");
+
+  function buildShell(){
+    var content=el("div");
+    content.appendChild(pageHead("طلبات استعادة كلمة المرور"));
+    content.appendChild(el("div",{class:"toolbar"},[
+      el("div",{class:"search"},[el("span",{class:"ic"},[mi("search")]),searchIn]),
+      statusSel,
+      el("div",{class:"grow"}),
+      countEl,
+      el("button",{class:"btn ghost",onclick:function(){ load(); }},["تحديث"])
+    ]));
+    content.appendChild(tableWrap);
+    content.appendChild(pagerWrap);
+    shell("#/password-resets",content);
+  }
+
+  function paintPager(total){
+    clear(pagerWrap);
+    var pages=Math.max(1,Math.ceil((total||0)/PWRESET_PAGE_LIMIT));
+    if(!total) return;
+    pagerWrap.appendChild(el("div",{class:"toolbar",style:"justify-content:center;margin-top:6px"},[
+      el("button",{class:"btn neutral sm",disabled:page<=1?"":false,onclick:function(){ if(page>1){ page--; load(); } }},["السابق ›"]),
+      el("span",{class:"muted",style:"min-width:120px;text-align:center",text:"صفحة "+page+" / "+pages}),
+      el("button",{class:"btn neutral sm",disabled:page>=pages?"":false,onclick:function(){ if(page<pages){ page++; load(); } }},["‹ التالي"])
+    ]));
+  }
+
+  function renderTable(items){
+    var card=el("div",{class:"card"});
+    var b=el("div",{class:"card-b flush"});
+    var tw=el("div",{class:"tbl-wrap"});
+    var tbl=el("table");
+    tbl.appendChild(el("thead",[el("tr",[
+      th("المالك"),th("اسم المولدة"),th("اسم المستخدم"),th("الهاتف"),
+      th("رمز التحقق"),th("وقت الطلب"),th("الحالة"),th("")
+    ])]));
+    var tb=el("tbody");
+    if(!items.length){
+      tb.appendChild(el("tr",[el("td",{colspan:"8"},[el("div",{class:"empty"},[
+        el("div",{class:"big"},[mi("lock_reset")]),"لا توجد طلبات تطابق عوامل التصفية."
+      ])])]));
+    }
+    items.forEach(function(r){
+      var st=r.status||"pending";
+      // Nothing sweeps the collection, so a lapsed request still arrives here as
+      // `pending`; flag it for the admin. DISPLAY ONLY — the server stays the
+      // authority (it retires the row and answers 409 RESET_EXPIRED), so a
+      // clock-skewed browser can never block an approval that would succeed.
+      var lapsed=!!(st==="pending" && r.expiresAt && new Date(r.expiresAt).getTime()<=Date.now());
+      // Approve/Reject exist ONLY while the request is still pending — a decided
+      // (or expired) request is history and must never be re-decided.
+      var actions=el("div",{class:"pill-actions",style:"justify-content:flex-end"});
+      if(st==="pending"){
+        actions.appendChild(el("button",{class:"btn sm success",onclick:function(){ approve(r); }},["موافقة"]));
+        actions.appendChild(el("button",{class:"btn sm danger ghost",onclick:function(){ reject(r); }},["رفض"]));
+      }
+      tb.appendChild(el("tr",[
+        el("td",[r.userId
+          ? el("a",{href:"#/users/"+r.userId,text:r.name||"—",style:"font-weight:700"})
+          : el("span",{style:"font-weight:700",text:r.name||"—"})]),
+        el("td",{class:"muted",text:syncText(r.generatorName)}),
+        el("td",{class:"muted nowrap",text:syncText(r.username)}),
+        el("td",{class:"muted nowrap",text:syncText(r.phone)}),
+        // The code is the identity check: the admin reads it back to the owner,
+        // so it is big, monospace and select-all friendly.
+        el("td",[el("span",{class:"mono",style:"font-size:16px;font-weight:800;letter-spacing:3px;user-select:all",text:syncText(r.code)})]),
+        el("td",{class:"nowrap",title:r.expiresAt?("ينتهي: "+fmtDate(r.expiresAt)):null},[
+          el("div",{class:"muted",text:fmtDate(r.createdAt)}),
+          lapsed?el("div",{style:"color:var(--danger);font-size:12px;font-weight:700",text:"انتهت الصلاحية"}):null
+        ]),
+        el("td",[pwResetStatusBadge(st),r.note?el("div",{class:"muted",style:"margin-top:4px",text:r.note}):null]),
+        // Decided rows show WHEN they were decided in place of the buttons.
+        el("td",{class:"right"},[st==="pending"?actions:el("span",{class:"muted nowrap",text:r.decidedAt?fmtDate(r.decidedAt):"—"})])
+      ]));
+    });
+    tbl.appendChild(tb); tw.appendChild(tbl); b.appendChild(tw); card.appendChild(b);
+    return card;
+  }
+
+  function load(){
+    clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
+    clear(pagerWrap);
+    API.passwordResets({q:query,status:status,page:page,limit:PWRESET_PAGE_LIMIT}).then(function(res){
+      var items=normalizeList(res,"items");
+      var total=(res&&typeof res.total==="number")?res.total:items.length;
+      if(res&&res.page) page=res.page;
+      // Defensive (same as the synced grids): never leave the admin staring at
+      // an empty page past the end — step back and refetch.
+      if(!items.length && total>0 && page>1){ page--; load(); return; }
+      countEl.textContent=total?(total+" طلبًا"):"";
+      paintPager(total);
+      clear(tableWrap);
+      tableWrap.appendChild(renderTable(items));
+    }).catch(function(err){
+      if(err.status===401) return;
+      countEl.textContent="";
+      clear(tableWrap); tableWrap.appendChild(errorBlock(err,load));
+    });
+  }
+
+  function who(r){ return esc(r.name||r.username||"مالك"); }
+
+  function approve(r){
+    confirmModal({
+      title:"الموافقة على استعادة كلمة المرور",
+      confirmText:"موافقة",
+      alert:"عند الموافقة تتغيّر كلمة مرور الحساب فورًا، ويتم تسجيل الخروج من جميع أجهزته وجلساته الحالية.",
+      alertType:"err",
+      message:"تأكّد من هوية صاحب الحساب بقراءة رمز التحقق <b>"+esc(r.code||"—")+"</b> عليه أولًا."
+        +"<br>الموافقة على طلب <b>"+who(r)+"</b> (اسم المستخدم: "+esc(r.username||"—")+")؟",
+      onConfirm:function(){
+        return API.approvePasswordReset(r.id).then(function(){
+          toast("تمت الموافقة — تم تغيير كلمة المرور","ok");
+          load();
+        });
+      }
+    });
+  }
+  function reject(r){
+    // Optional note first (window.prompt, as with the salary amount), then the
+    // usual confirm modal — the note is echoed there for review before sending.
+    var raw=window.prompt("سبب الرفض (اختياري):","");
+    if(raw===null) return;   // cancelled the prompt -> nothing is sent
+    var note=String(raw).trim();
+    confirmModal({
+      title:"رفض طلب استعادة كلمة المرور", danger:true, confirmText:"رفض",
+      message:"رفض طلب <b>"+who(r)+"</b>؟ لن تتغيّر كلمة المرور ولن تتأثر جلساته."
+        +(note?("<div class=\"muted\" style=\"margin-top:8px\">الملاحظة: "+esc(note)+"</div>"):""),
+      onConfirm:function(){
+        return API.rejectPasswordReset(r.id,note).then(function(){
+          toast("تم رفض الطلب","ok");
+          load();
+        });
+      }
+    });
+  }
+
+  // debounced search / instant filter -> both reset to page 1
+  var debTimer=null;
+  searchIn.addEventListener("input",function(){
+    if(debTimer) clearTimeout(debTimer);
+    debTimer=setTimeout(function(){ query=searchIn.value.trim(); page=1; load(); },300);
+  });
+  statusSel.addEventListener("change",function(){ status=statusSel.value; page=1; load(); });
+
+  buildShell();
+  load();
 }
 
 /* ============================================================

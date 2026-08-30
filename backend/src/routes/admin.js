@@ -84,6 +84,23 @@ router.post('/users/:id/approve-plan', ctrl.approvePlan);
 router.post('/users/:id/reject-plan', ctrl.rejectPlan);
 router.delete('/users/:id/devices/:deviceId', ctrl.unbindDevice);
 
+// ---- Password reset requests (v42 item 4) ----
+// An owner never changes their own password from the app: the request lands here
+// as `pending` and the super admin approves it only after reading the account's
+// verification code back from the owner. Approval is the single moment the
+// stored hash is written to the user (and every old JWT killed); a rejection
+// changes nothing. Protected by the router-level requireAuth + requireAdmin.
+router.get('/password-resets', ctrl.listPasswordResets);
+router.post('/password-resets/:id/approve', ctrl.approvePasswordReset);
+router.post(
+  '/password-resets/:id/reject',
+  // Optional free-text reason, kept on the request so the panel can show why it
+  // was refused; the decision itself needs no payload.
+  [body('note').optional().isString()],
+  validate,
+  ctrl.rejectPasswordReset
+);
+
 // ---- Plans ----
 router.get('/plans', ctrl.listPlans);
 router.put(

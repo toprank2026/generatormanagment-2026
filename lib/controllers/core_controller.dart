@@ -39,6 +39,10 @@ class CoreController extends GetxController {
   // v22 item 2: ids of subscribers PAID for the selected month (one query per
   // list load, not per row) — every list row paints its green/red dot from it.
   final Set<String> paidIds = <String>{};
+  // v42 item 5: subscribers NOT YET active in the selected accounting month
+  // (added in a later month). Their row dot is NEUTRAL grey instead of a false
+  // red "unpaid" — they simply do not belong to this month's billing yet.
+  final Set<String> notYetActiveIds = <String>{};
   // v22 item 9: circuit id → display name, so rows show their جوزة without N+1.
   final Map<String, String> circuitNames = <String, String>{};
   // v34 item 6: board id → display name — the subscriber row shows its BOARD
@@ -71,9 +75,15 @@ class CoreController extends GetxController {
       final coverage = await _subscriberRepo.coverageBySubscriber(
           month: month, branchId: _branchScope);
       final prices = await MonthlyPriceRepository().pricesForMonthByBranch(month);
+      // v42 item 5: everything in scope minus everything active this month.
+      final notYet = await _subscriberRepo.notYetActiveIds(
+          month: month, branchId: _branchScope);
       paidIds
         ..clear()
         ..addAll(paid);
+      notYetActiveIds
+        ..clear()
+        ..addAll(notYet);
       circuitNames
         ..clear()
         ..addEntries(allCircuits.map((c) => MapEntry(c.id, c.name)));
@@ -533,6 +543,13 @@ class CoreController extends GetxController {
     // v22 item 5: stamp creation time so subscribers sort in true creation
     // order (the lists order by created_at; without this it would be NULL).
     sub.createdAt ??= DateTime.now().toUtc().toIso8601String();
+    // v42 item 5: stamp the FIRST BILLED MONTH from the global TARIFF month —
+    // not the wall clock — so the subscriber is billed from the month the owner
+    // is actually working in (a September subscriber entered in August while
+    // browsing September bills from September, consistent with v40's
+    // future-month billing). It is what keeps five subscribers added in month 9
+    // out of month 8's unpaid list.
+    sub.billingStartMonth ??= Get.find<MonthController>().selectedMonth.value;
     await _validateSubscriber(sub); // R7/R8 — throws ValidationException
     await _subscriberRepo.insert(sub);
     loadSubscribers(); // Refresh list if showing all
@@ -553,6 +570,11 @@ class CoreController extends GetxController {
     final orig = await _subscriberRepo.getById(sub.id);
     sub.accountantId ??= orig?.accountantId;
     sub.createdAt ??= orig?.createdAt;
+    // v42 item 5: an EDIT must never move a subscriber's first billed month —
+    // the edit form doesn't carry it, and re-stamping it from the currently
+    // selected month would retroactively erase the subscriber from the months
+    // it was already billed in. Preserve the original, always.
+    sub.billingStartMonth ??= orig?.billingStartMonth;
     sub.branchId ??= orig?.branchId;
     // Last resort for legacy rows that never carried a branch.
     sub.branchId ??= _branch.writeBranchId;

@@ -4,8 +4,9 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const Plan = require('../models/Plan');
 const SyncRecord = require('../models/SyncRecord');
+const PasswordResetRequest = require('../models/PasswordResetRequest');
 const asyncHandler = require('../utils/asyncHandler');
-const { serializeAccount, serializePlan } = require('../utils/serialize');
+const { toIso, serializeAccount, serializePlan } = require('../utils/serialize');
 const { HttpError } = require('../middleware/error');
 
 // ---- Users ----
@@ -185,12 +186,22 @@ function escapeRegex(str) {
 }
 
 /**
+ * v42 item 6: the three "structure" entities are browsed as a catalogue, not as
+ * a change feed, so the panel lists them OLDEST→NEWEST by creation — matching
+ * the app, which orders the same three tables with DbHelper.creationOrder. Every
+ * other entity keeps its newest-first `updatedAt` ordering unchanged.
+ */
+const CREATION_ORDERED_ENTITIES = new Set(['boards', 'circuits', 'subscribers']);
+
+/**
  * Core mirror listing shared by the admin endpoint (any user id) and the owner
  * self-service endpoint (`/api/account/data`, the JWT user's own data).
  *
  * Lists the mirrored business rows an owner pushed for a single entity, newest
- * first. Optional case-insensitive substring search (q) is applied (over the
- * entity's SEARCH_FIELDS, or localId for unknown entities) before pagination.
+ * first — except boards/circuits/subscribers, ordered oldest→newest by creation
+ * (v42 item 6, see CREATION_ORDERED_ENTITIES). Optional case-insensitive
+ * substring search (q) is applied (over the entity's SEARCH_FIELDS, or localId
+ * for unknown entities) before pagination.
  * Deleted tombstones are excluded unless includeDeleted=true. Also supports a
  * localId exact fetch and a whitelisted relField/relValue relationship filter.
  *
@@ -285,9 +296,18 @@ async function listUserData(userId, query = {}) {
   if (!Number.isFinite(limit) || limit < 1) limit = 25;
   limit = Math.min(200, Math.max(1, limit));
 
+  // v42 item 6: boards/circuits/subscribers by creation, everything else newest
+  // first. `localId` (the device UUID) is the tie-break, so the order is
+  // identical on every load instead of following push arrival. A record with no
+  // `data.created_at` sorts first (MongoDB orders missing/null before strings) —
+  // legacy rows stay at the top of the list and none can drop out.
+  const sort = CREATION_ORDERED_ENTITIES.has(entity)
+    ? { 'data.created_at': 1, localId: 1 }
+    : { updatedAt: -1 };
+
   const total = await SyncRecord.countDocuments(filter);
   const docs = await SyncRecord.find(filter)
-    .sort({ updatedAt: -1 })
+    .sort(sort)
     .skip((page - 1) * limit)
     .limit(limit);
 
@@ -477,6 +497,176 @@ const deletePlan = asyncHandler(async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
+// ---- Password reset requests (v42 item 4) ----
+
+/** The statuses a request can be filtered by; anything else is ignored. */
+const RESET_STATUSES = new Set(['pending', 'approved', 'rejected', 'expired']);
+
+/**
+ * Panel shape of a password-reset request.
+ *
+ * `newPasswordHash` is NEVER serialized: the requested password enters the
+ * collection already hashed and only ever leaves it by being written onto the
+ * user in approvePasswordReset. `owner` is the request's account, resolved by
+ * the caller (the ref itself is never populated — see listPasswordResets).
+ */
+function serializeResetRequest(doc, owner) {
+  const acct = owner || null;
+  return {
+    id: String(doc._id),
+    userId: doc.user ? String(doc.user) : null,
+    name: acct ? acct.name || null : null,
+    generatorName: acct ? acct.generatorName || null : null,
+    username: doc.username || null,
+    phone: doc.phone || null,
+    // The 6-digit reference the owner reads out to the super admin. The schema
+    // field is `code` (PasswordResetRequest.js) — reading a `verificationCode`
+    // that does not exist would silently null out the whole identity check.
+    code: doc.code || null,
+    status: doc.status,
+    note: doc.note || null,
+    createdAt: toIso(doc.createdAt),
+    expiresAt: toIso(doc.expiresAt),
+    decidedAt: toIso(doc.decidedAt),
+  };
+}
+
+/**
+ * GET /api/admin/password-resets?q=&status=&page=1&limit=25
+ *
+ * The owner-initiated password-reset queue, newest first, with the same
+ * search + server-side pagination shape as the other admin lists. `q` matches
+ * the request's own username/phone plus the account's name/generatorName —
+ * those two live on the referenced User, which a Mongo regex can't reach
+ * through a ref, so the matching accounts are resolved FIRST and folded into
+ * the $or as a `user: { $in }` term (the two-step listUserData already uses for
+ * the accountants branch scope).
+ */
+const listPasswordResets = asyncHandler(async (req, res) => {
+  const filter = {};
+
+  const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+  if (status && RESET_STATUSES.has(status)) filter.status = status;
+
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (q) {
+    const regex = { $regex: escapeRegex(q), $options: 'i' };
+    const namedAccounts = await User.find(
+      { $or: [{ name: regex }, { generatorName: regex }] },
+      { _id: 1 }
+    ).lean();
+    filter.$or = [
+      { username: regex },
+      { phone: regex },
+      // The 6-digit reference the owner reads back over the phone — in practice
+      // the admin's PRIMARY lookup, so it must be searchable (API_CONTRACT.md
+      // lists it alongside name/generatorName/username/phone).
+      { code: regex },
+      // Empty $in matches nothing — the right answer when no account's
+      // name/generatorName matched, not "match everything".
+      { user: { $in: namedAccounts.map((a) => a._id) } },
+    ];
+  }
+
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  let limit = parseInt(req.query.limit, 10);
+  if (!Number.isFinite(limit) || limit < 1) limit = 25;
+  limit = Math.min(200, Math.max(1, limit));
+
+  const total = await PasswordResetRequest.countDocuments(filter);
+  const docs = await PasswordResetRequest.find(filter)
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit);
+
+  // Resolve the page's accounts in one query (same shape recentData uses) so a
+  // deleted account degrades to null name/generatorName instead of failing.
+  const userIds = [...new Set(docs.map((d) => String(d.user)))];
+  const accounts = await User.find({ _id: { $in: userIds } }, { name: 1, generatorName: 1 });
+  const byId = new Map(accounts.map((u) => [String(u._id), u]));
+
+  res.status(200).json({
+    items: docs.map((d) => serializeResetRequest(d, byId.get(String(d.user)))),
+    total,
+    page,
+    limit,
+  });
+});
+
+/**
+ * POST /api/admin/password-resets/:id/approve
+ *
+ * THIS is the moment the owner's password actually changes — never at request
+ * time. Only a still-pending, unexpired request may be applied, so a second
+ * approve is a 409 no-op (idempotent: the hash can never be written twice, and
+ * an already-decided request can never be re-applied over a newer password).
+ */
+const approvePasswordReset = asyncHandler(async (req, res) => {
+  const request = await PasswordResetRequest.findById(req.params.id);
+  if (!request) throw new HttpError(404, 'Reset request not found', 'RESET_NOT_FOUND');
+
+  if (request.status !== 'pending') {
+    throw new HttpError(409, `Request already ${request.status}`, 'RESET_NOT_PENDING');
+  }
+  // Nothing sweeps the collection, so a lapsed request is retired HERE: persist
+  // 'expired' (the app's status poll then reports it) and refuse — the owner
+  // must file a fresh request.
+  if (request.expiresAt && new Date(request.expiresAt).getTime() <= Date.now()) {
+    request.status = 'expired';
+    await request.save();
+    throw new HttpError(409, 'Reset request has expired', 'RESET_EXPIRED');
+  }
+  // Defensive: never blank an owner's passwordHash from a malformed request.
+  if (!request.newPasswordHash) {
+    throw new HttpError(409, 'Reset request carries no password', 'RESET_INVALID');
+  }
+
+  const user = await User.findById(request.user);
+  if (!user) throw new HttpError(404, 'User not found', 'USER_NOT_FOUND');
+
+  // The hash was computed at request time (the plaintext never reached the
+  // panel) and is written verbatim.
+  user.passwordHash = request.newPasswordHash;
+  // Invalidate all previously-issued JWTs (old tokens become TOKEN_STALE) — the
+  // same bump updateMyProfile does on a self password change. Whoever held the
+  // account before the reset is signed out everywhere.
+  user.tokenVersion = (user.tokenVersion || 0) + 1;
+  await user.save();
+
+  request.status = 'approved';
+  request.decidedAt = new Date();
+  request.decidedBy = req.user._id;
+  await request.save();
+
+  res.status(200).json({ ok: true, request: serializeResetRequest(request, user) });
+});
+
+/**
+ * POST /api/admin/password-resets/:id/reject  body { note }
+ *
+ * Declines the request and records why. The user's password and tokenVersion
+ * are NOT touched — a rejection changes nothing but this row.
+ */
+const rejectPasswordReset = asyncHandler(async (req, res) => {
+  const { note } = req.body || {};
+
+  const request = await PasswordResetRequest.findById(req.params.id);
+  if (!request) throw new HttpError(404, 'Reset request not found', 'RESET_NOT_FOUND');
+
+  if (request.status !== 'pending') {
+    throw new HttpError(409, `Request already ${request.status}`, 'RESET_NOT_PENDING');
+  }
+
+  request.status = 'rejected';
+  if (note !== undefined) request.note = note ? String(note).trim() : null;
+  request.decidedAt = new Date();
+  request.decidedBy = req.user._id;
+  await request.save();
+
+  const user = await User.findById(request.user);
+  res.status(200).json({ ok: true, request: serializeResetRequest(request, user) });
+});
+
 module.exports = {
   listUsers,
   createUser,
@@ -495,4 +685,7 @@ module.exports = {
   listPlans,
   upsertPlan,
   deletePlan,
+  listPasswordResets,
+  approvePasswordReset,
+  rejectPasswordReset,
 };

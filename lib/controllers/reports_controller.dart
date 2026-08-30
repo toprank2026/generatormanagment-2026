@@ -159,8 +159,13 @@ class ReportsController extends GetxController {
 
       // 1. Subscribers & Amps (branch-scoped) — SQL aggregates, NOT a full
       //    materialization of every subscriber row (audit: scale).
-      final int totalSubs = await _subRepo.countByBranch(branchId: branch);
-      final ampsByCat = await _subRepo.ampsByCategory(branchId: branch);
+      //    v42 items 2+5: scoped to the report's accounting month too, so a
+      //    subscriber added in month 9 never inflates month 8's subscriber
+      //    count, Σ amps or EXPECTED revenue.
+      final int totalSubs =
+          await _subRepo.countByBranch(branchId: branch, month: m);
+      final ampsByCat =
+          await _subRepo.ampsByCategory(branchId: branch, month: m);
       final double totalAmpsLocal =
           ampsByCat.values.fold(0.0, (sum, a) => sum + a);
 
@@ -177,7 +182,7 @@ class ReportsController extends GetxController {
       //    differently-priced branches). A single active branch keeps the old math.
       double expectedLocal = 0.0;
       if (branch == null) {
-        final ampsByBranchCat = await _subRepo.ampsByBranchCategory();
+        final ampsByBranchCat = await _subRepo.ampsByBranchCategory(month: m);
         final pricesByBranch = await _priceRepo.pricesForMonthByBranch(m);
         ampsByBranchCat.forEach((br, catMap) {
           final brPrices = pricesByBranch[br] ?? const <String, double>{};

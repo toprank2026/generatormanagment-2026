@@ -114,12 +114,13 @@ class BoardRepository {
       'boards',
       where: clauses.isEmpty ? null : clauses.join(' AND '),
       whereArgs: args.isEmpty ? null : args,
-      // v20: ALWAYS show boards in CREATION order (oldest→newest), stable for
-      // Arabic names. created_at (set on insert) is the primary key; rowid
-      // (insertion order) breaks ties + orders legacy rows whose created_at is
-      // still NULL. Replaces the old 'name ASC' which reordered with renames /
-      // non-ASCII collation.
-      orderBy: 'created_at ASC, rowid ASC',
+      // v20/v42: ALWAYS show boards in CREATION order (oldest→newest), stable
+      // for Arabic names. v42 item 6 replaced the old `created_at ASC, rowid
+      // ASC` with the canonical [DbHelper.creationOrder] — rowid is DEVICE-LOCAL
+      // and re-assigned in pull-arrival order, so legacy NULL-created_at boards
+      // reordered after every sync. The UUID tie-break is identical on every
+      // device, so the order is now fixed everywhere.
+      orderBy: DbHelper.creationOrder(),
       limit: limit < 0 ? null : limit,
       offset: limit < 0 ? null : offset,
     );
@@ -253,7 +254,7 @@ class CircuitRepository {
       // v20: circuits (الجوزات) ALWAYS in CREATION order (oldest→newest), stable
       // across languages — created_at (set on insert), rowid tiebreaker for
       // legacy NULL rows. Replaces the unstable 'name ASC'.
-      orderBy: 'created_at ASC, rowid ASC',
+      orderBy: DbHelper.creationOrder(),
       limit: limit < 0 ? null : limit,
       offset: limit < 0 ? null : offset,
     );
@@ -269,7 +270,7 @@ class CircuitRepository {
       'circuits',
       where: branchId == null ? null : 'branch_id = ?',
       whereArgs: branchId == null ? null : [branchId],
-      orderBy: 'created_at ASC, rowid ASC',
+      orderBy: DbHelper.creationOrder(),
     );
     return List.generate(maps.length, (i) => Circuit.fromMap(maps[i]));
   }
@@ -469,10 +470,10 @@ class SubscriberRepository {
       'subscribers',
       where: clauses.isEmpty ? null : clauses.join(' AND '),
       whereArgs: args.isEmpty ? null : args,
-      // v22 item 5: subscribers ALWAYS in CREATION order (oldest→newest),
-      // language-independent — created_at primary, rowid tiebreaker for legacy
-      // NULL rows. Replaces 'name ASC' (unstable Arabic collation).
-      orderBy: 'created_at ASC, rowid ASC',
+      // v22 item 5 / v42 item 6: subscribers ALWAYS in CREATION order
+      // (oldest→newest), language-independent and DEVICE-INDEPENDENT — see
+      // [DbHelper.creationOrder].
+      orderBy: DbHelper.creationOrder(),
       limit: limit,
       offset: offset,
     );
@@ -500,8 +501,8 @@ class SubscriberRepository {
     final List<Map<String, dynamic>> maps = await db.query('subscribers',
         where: clauses.join(' AND '),
         whereArgs: args,
-        // v22 item 5: creation order, language-independent.
-        orderBy: 'created_at ASC, rowid ASC');
+        // v22 item 5 / v42 item 6: canonical creation order.
+        orderBy: DbHelper.creationOrder());
     return List.generate(maps.length, (i) => Subscriber.fromMap(maps[i]));
   }
 
@@ -530,8 +531,8 @@ class SubscriberRepository {
     final List<Map<String, dynamic>> maps = await db.query('subscribers',
         where: clauses.join(' AND '),
         whereArgs: args,
-        // v22 item 5: creation order, language-independent.
-        orderBy: 'created_at ASC, rowid ASC',
+        // v22 item 5 / v42 item 6: canonical creation order.
+        orderBy: DbHelper.creationOrder(),
         // v23 item 7: paginate the board-scoped list (existing callers pass
         // neither → full result set as before).
         limit: limit,
@@ -551,7 +552,8 @@ class SubscriberRepository {
   /// `FROM subscribers s ...`. Arg order follows the `?` placeholders EXACTLY
   /// (v22/v23 — keep in sync when editing):
   ///   inner receipts: month [, branch] [, receiptAccountant]   mp join: month
-  ///   outer: [accountant] [branch] [category] [query ×2]
+  ///   outer: [accountant] [branch] [category] [query ×2] activationMonth
+  /// (v42 item 5 appends the always-present activation month LAST.)
   ({String sql, List<dynamic> args}) _paymentStatusFrom({
     required String month,
     required bool isPaid,
@@ -597,6 +599,27 @@ class SubscriberRepository {
       outerScopes.add('AND (s.name LIKE ? OR s.phone LIKE ?)');
       args.addAll(['%$query%', '%$query%']);
     }
+    // v42 item 5 — MONTH ONBOARDING. A subscriber is part of a month's billing
+    // ONLY from the month it was added onwards: five subscribers added in month
+    // 9 must NOT appear as unpaid in month 8 (which silently corrupted every
+    // historical unpaid list, count and remaining-fees total).
+    //
+    // Two deliberate fallbacks make this safe on LIVE data:
+    //  • COALESCE chain — a legacy row has no `billing_start_month`, so it falls
+    //    back to its `created_at` prefix, and a row with no timestamp at all
+    //    ('0000-00') is ALWAYS included. Nothing needed a backfill; no stored
+    //    value was rewritten.
+    //  • `OR r.subscriber_id IS NOT NULL` SAFETY VALVE — a subscriber that
+    //    actually holds a valid receipt in this month stays visible in this
+    //    month whatever its start stamp says, so no existing record can ever be
+    //    orphaned or hidden by this filter.
+    // Appended LAST so the positional-arg order above is unaffected.
+    outerScopes.add(
+      "AND (COALESCE(s.billing_start_month, "
+      "substr(REPLACE(s.created_at, 'T', ' '), 1, 7), '0000-00') <= ? "
+      "OR r.subscriber_id IS NOT NULL)",
+    );
+    args.add(month);
     final String sql =
         """
       FROM subscribers s
@@ -637,8 +660,8 @@ class SubscriberRepository {
       query: query,
     );
     final args = [...q.args];
-    // v22 item 5: creation order (was unordered — SQLite gave no guarantee).
-    String tail = ' ORDER BY s.created_at ASC, s.rowid ASC';
+    // v22 item 5 / v42 item 6: canonical creation order (was unordered).
+    String tail = ' ORDER BY ${DbHelper.creationOrder('s')}';
     if (limit != null) {
       tail += ' LIMIT ?';
       args.add(limit);
@@ -694,6 +717,114 @@ class SubscriberRepository {
     return map;
   }
 
+  /// v42 item 5: the ids of subscribers in scope that are NOT YET active in
+  /// [month] — i.e. added in a LATER accounting month. Lets a list row paint a
+  /// neutral dot instead of a false red "unpaid" for a subscriber that simply
+  /// does not belong to the viewed month's billing yet.
+  ///
+  /// Mirrors the safety valve of [_paymentStatusFrom]: a subscriber holding a
+  /// valid receipt in [month] is NEVER reported as inactive, so an existing
+  /// record can never be mislabelled.
+  Future<Set<String>> notYetActiveIds({
+    required String month,
+    String? branchId,
+  }) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>[
+      "COALESCE(billing_start_month, "
+          "substr(REPLACE(created_at, 'T', ' '), 1, 7), '0000-00') > ?",
+      // `subscriber_id IS NOT NULL` is not cosmetic: in SQL, `x NOT IN (…)` is
+      // NULL — i.e. matches NOTHING — as soon as the subquery yields a single
+      // NULL. The column is NOT NULL in our schema, but a row written by the
+      // raw sync-pull path bypasses the model, so this keeps one malformed
+      // mirror row from silently emptying the whole result.
+      "id NOT IN (SELECT subscriber_id FROM receipts "
+          "WHERE month = ? AND status = 'valid' AND subscriber_id IS NOT NULL)",
+    ];
+    final args = <dynamic>[month, month];
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
+    final rows = await db.rawQuery(
+      'SELECT id FROM subscribers WHERE ${clauses.join(' AND ')}',
+      args,
+    );
+    return rows.map((r) => r['id'] as String).toSet();
+  }
+
+  /// v42 item 3 — PREVIOUS OUTSTANDING MONTHS for one subscriber.
+  ///
+  /// Returns the months STRICTLY BEFORE [beforeMonth] in which this subscriber
+  /// was already active, a price exists for its category/branch, and coverage
+  /// (cash + waived discount on valid receipts) is still short of the due —
+  /// newest first.
+  ///
+  /// **This is a NOTIFICATION source only.** Nothing else in the app reads it:
+  /// no dashboard figure, no wallet, no settlement, no receipt and no
+  /// paid/unpaid derivation. The current month's accounting therefore stays
+  /// completely independent of previous months, exactly as required.
+  ///
+  /// Due uses the subscriber's CURRENT amps — the same rule
+  /// [BillingController.getDueAmount] already applies, so the notice can never
+  /// disagree with what that month's screen would show.
+  Future<List<({String month, double due, double coverage, double remaining})>>
+      previousUnpaidMonths(
+    String subscriberId, {
+    required String beforeMonth,
+    String? branchId,
+    int limit = 24,
+  }) async {
+    final db = await _dbHelper.database;
+    const main = DbHelper.kMainBranchId;
+    final String receiptBranch = branchId == null ? '' : 'AND branch_id = ?';
+    final args = <dynamic>[beforeMonth, subscriberId];
+    if (branchId != null) args.add(branchId);
+    args.addAll([subscriberId, limit]);
+    final rows = await db.rawQuery("""
+      SELECT mp.month AS month,
+             (s.amps * mp.price_per_amp) AS due,
+             COALESCE(r.cov, 0) AS coverage
+      FROM subscribers s
+      JOIN monthly_prices mp
+        ON mp.category = IFNULL(s.category, 'standard')
+       AND IFNULL(mp.branch_id, '$main') = IFNULL(s.branch_id, '$main')
+       AND mp.month < ?
+       AND mp.month >= COALESCE(s.billing_start_month,
+                                substr(REPLACE(s.created_at, 'T', ' '), 1, 7),
+                                '0000-00')
+      LEFT JOIN (
+        SELECT month, SUM(paid_amount) + SUM(IFNULL(discount_value, 0)) AS cov
+        FROM receipts
+        WHERE subscriber_id = ? AND status = 'valid' $receiptBranch
+        GROUP BY month
+      ) r ON r.month = mp.month
+      WHERE s.id = ?
+        AND (s.amps * mp.price_per_amp) - COALESCE(r.cov, 0) > 0
+        -- v42 review fix — NEVER accuse a paid-up subscriber. `SyncController`
+        -- pulls receipts MONTH-SCOPED (`receiptsMonth`), so a device that has
+        -- not held a past month's receipts locally sees zero coverage for it and
+        -- would report EVERY earlier month as outstanding. A month is only
+        -- claimed when this device actually holds receipt data for it; with no
+        -- local evidence the month is skipped. A false "you owe nothing" is a
+        -- far safer failure for a NOTICE than a false "you owe 12 months".
+        AND EXISTS (SELECT 1 FROM receipts ev
+                    WHERE ev.month = mp.month AND ev.status = 'valid')
+      ORDER BY mp.month DESC
+      LIMIT ?
+    """, args);
+    return rows.map((m) {
+      final double due = ((m['due'] as num?) ?? 0).toDouble();
+      final double cov = ((m['coverage'] as num?) ?? 0).toDouble();
+      return (
+        month: (m['month'] ?? '').toString(),
+        due: due,
+        coverage: cov,
+        remaining: due - cov,
+      );
+    }).toList();
+  }
+
   /// v22 item 10: paid/unpaid subscriber counts PER BOARD for [month] — one
   /// GROUP BY query for the whole boards grid (no per-board N+1). Same
   /// category-aware derived-status rule as [getByPaymentStatus]: paid = a price
@@ -710,8 +841,17 @@ class SubscriberRepository {
     final String innerScope = branchId == null ? '' : 'AND branch_id = ?';
     if (branchId != null) args.add(branchId);
     args.add(month); // monthly_prices join month
-    final String outerScope = branchId == null ? '' : 'WHERE s.branch_id = ?';
+    // v42 item 5: the board grid counts only subscribers already active in the
+    // month (same predicate + safety valve as _paymentStatusFrom).
+    final String activation =
+        "(COALESCE(s.billing_start_month, "
+        "substr(REPLACE(s.created_at, 'T', ' '), 1, 7), '0000-00') <= ? "
+        "OR r.subscriber_id IS NOT NULL)";
+    final String outerScope = branchId == null
+        ? 'WHERE $activation'
+        : 'WHERE s.branch_id = ? AND $activation';
     if (branchId != null) args.add(branchId);
+    args.add(month); // activation month (LAST — follows the ? order above)
     final rows = await db.rawQuery("""
       SELECT s.board_id AS bid,
              COUNT(*) AS total,
@@ -815,9 +955,35 @@ class SubscriberRepository {
     return map;
   }
 
+  /// v42 item 5: the "is this subscriber already active in [month]?" predicate
+  /// for the SIMPLE (no receipts join) aggregates — subscriber count, Σ amps,
+  /// per-branch amps.
+  ///
+  /// It carries the SAME two safeguards as [_paymentStatusFrom], so the two can
+  /// never disagree about who belongs to a month:
+  ///  • the COALESCE fallback chain (billing_start_month -> created_at prefix ->
+  ///    '0000-00' = always included), so legacy rows keep their meaning;
+  ///  • the receipts SAFETY VALVE, expressed here as an EXISTS sub-query because
+  ///    these queries have no join to hang it on. Without it a subscriber who
+  ///    PAID in the month would be counted by paid/unpaid (which has the valve)
+  ///    while being dropped from the subscriber count, Σ amps and EXPECTED — so
+  ///    `paid + unpaid` could exceed `totalSubscribers` on the same dashboard,
+  ///    and that subscriber's cash would sit in `collected` with no matching due.
+  ///
+  /// Takes the month TWICE (the `<= ?` and the EXISTS `month = ?`), in that
+  /// order — every caller must push it twice.
+  static const String _activeInMonthSql =
+      "(COALESCE(billing_start_month, "
+      "substr(REPLACE(created_at, 'T', ' '), 1, 7), '0000-00') <= ? "
+      "OR EXISTS (SELECT 1 FROM receipts rr WHERE rr.subscriber_id = subscribers.id "
+      "AND rr.month = ? AND rr.status = 'valid'))";
+
   /// COUNT of subscribers in scope (no row hydration) — for the dashboard.
   /// Scopes with plain `branch_id = ?` to match [getAll]/[getByPaymentStatus].
-  Future<int> countByBranch({String? accountantId, String? branchId}) async {
+  /// v42 item 5: passing [month] additionally counts only subscribers already
+  /// active in that accounting month (omitting it keeps the all-time count).
+  Future<int> countByBranch(
+      {String? accountantId, String? branchId, String? month}) async {
     final db = await _dbHelper.database;
     final clauses = <String>[];
     final args = <dynamic>[];
@@ -828,6 +994,12 @@ class SubscriberRepository {
     if (branchId != null) {
       clauses.add('branch_id = ?');
       args.add(branchId);
+    }
+    if (month != null && month.isNotEmpty) {
+      clauses.add(_activeInMonthSql);
+      args.add(month); // '<= ?'
+      args.add(month); // EXISTS receipts month
+
     }
     final where = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
     final r =
@@ -837,8 +1009,10 @@ class SubscriberRepository {
 
   /// Σ amps grouped by category (normalized) in scope — lets the dashboard
   /// compute expected = Σ ampsByCategory[c] × price[c] WITHOUT loading every row.
+  /// v42 item 5: [month] additionally restricts to subscribers already active
+  /// in that accounting month (omitted = all-time, exactly as before).
   Future<Map<String, double>> ampsByCategory(
-      {String? accountantId, String? branchId}) async {
+      {String? accountantId, String? branchId, String? month}) async {
     final db = await _dbHelper.database;
     final clauses = <String>[];
     final args = <dynamic>[];
@@ -849,6 +1023,12 @@ class SubscriberRepository {
     if (branchId != null) {
       clauses.add('branch_id = ?');
       args.add(branchId);
+    }
+    if (month != null && month.isNotEmpty) {
+      clauses.add(_activeInMonthSql);
+      args.add(month); // '<= ?'
+      args.add(month); // EXISTS receipts month
+
     }
     final where = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
     final rows = await db.rawQuery(
@@ -869,14 +1049,24 @@ class SubscriberRepository {
   /// (last-row-wins bug). Returned as `{ branchKey: { category: amps } }` where
   /// branchKey normalizes a NULL branch_id to [DbHelper.kMainBranchId], matching
   /// [pricesForMonthByBranch]. Additive — never modify [ampsByCategory].
+  /// v42 item 5: [month] additionally restricts to subscribers already active
+  /// in that accounting month (omitted = all-time, exactly as before) — so the
+  /// CONSOLIDATED report's "expected" for August never prices in a subscriber
+  /// that was only added in September.
   Future<Map<String, Map<String, double>>> ampsByBranchCategory(
-      {String? accountantId}) async {
+      {String? accountantId, String? month}) async {
     final db = await _dbHelper.database;
     final clauses = <String>[];
     final args = <dynamic>[];
     if (accountantId != null) {
       clauses.add('accountant_id = ?');
       args.add(accountantId);
+    }
+    if (month != null && month.isNotEmpty) {
+      clauses.add(_activeInMonthSql);
+      args.add(month); // '<= ?'
+      args.add(month); // EXISTS receipts month
+
     }
     final where = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
     final rows = await db.rawQuery(

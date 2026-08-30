@@ -132,6 +132,12 @@ class Subscriber {
   String? accountantId;
   String? branchId;
   String? createdAt;
+  // v42 item 5: the first accounting month this subscriber is billed in
+  // ('YYYY-MM'), stamped from the global TARIFF month when the subscriber is
+  // added. A subscriber added in month 9 is therefore NOT counted as unpaid in
+  // month 8 or any earlier month. NULL on legacy rows — the derived queries
+  // fall back to the `created_at` prefix, so nothing is rewritten.
+  String? billingStartMonth;
 
   Subscriber({
     required this.id,
@@ -145,6 +151,7 @@ class Subscriber {
     this.accountantId,
     this.branchId,
     this.createdAt,
+    this.billingStartMonth,
   });
 
   Map<String, dynamic> toMap() {
@@ -160,6 +167,7 @@ class Subscriber {
       'accountant_id': accountantId,
       'branch_id': branchId,
       'created_at': createdAt,
+      'billing_start_month': billingStartMonth, // v42 item 5
       'updated_at': DateTime.now().toUtc().toIso8601String(), // conflict resolution
     };
   }
@@ -177,6 +185,7 @@ class Subscriber {
       accountantId: map['accountant_id'],
       branchId: map['branch_id'],
       createdAt: map['created_at'],
+      billingStartMonth: map['billing_start_month'] as String?, // v42 item 5
     );
   }
 }

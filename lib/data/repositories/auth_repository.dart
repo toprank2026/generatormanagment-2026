@@ -79,6 +79,72 @@ class AuthRepository {
     return _parseAuth(res);
   }
 
+  /// v42 item 4: file a FORGOT-PASSWORD request for a locked-out owner/admin.
+  /// Public (no JWT — the owner cannot sign in) and online-only.
+  ///
+  /// The identity check is `username` + the account's registered `phone`; the
+  /// requested [newPassword] is hashed server-side and only PARKED on the
+  /// request. **Nothing changes until a super admin approves it in the control
+  /// panel** — the returned 6-digit `code` is the reference the owner quotes
+  /// there, and `requestId` + `code` are what [passwordResetStatus] polls with.
+  ///
+  /// Lets [ApiException] propagate so the screen can branch on it: 404
+  /// (`ACCOUNT_NOT_FOUND` — username/phone don't match), 429 (rate limit), or
+  /// `isNetworkError` (offline → "connect to the internet").
+  Future<({String requestId, String code, String status, String? expiresAt})>
+      requestPasswordReset({
+    required String username,
+    required String phone,
+    required String newPassword,
+  }) async {
+    final res = await _api.post(
+      ApiConfig.forgotPassword,
+      auth: false,
+      body: {
+        'username': username,
+        'phone': phone,
+        'newPassword': newPassword,
+      },
+    );
+    final map = _asMap(res);
+    return (
+      // Tolerant field lookup, like [_parseAuth]: accept the contract keys or
+      // the raw model's own names, and coerce instead of casting so a missing
+      // field can never throw on a screen the user reaches while locked out.
+      requestId: (map['requestId'] ?? map['id'] ?? '').toString(),
+      code: (map['code'] ?? map['verificationCode'] ?? '').toString(),
+      status: (map['status'] ?? 'pending').toString(),
+      expiresAt: map['expiresAt']?.toString(),
+    );
+  }
+
+  /// v42 item 4: poll a parked reset request. Public + online-only; the app
+  /// keeps `requestId`/`code` from [requestPasswordReset] so the owner can
+  /// close the app and come back to check.
+  ///
+  /// `status` is one of `pending` | `approved` | `rejected` | `expired`. The
+  /// password is written (and every old JWT killed) at the moment the super
+  /// admin approves, so `approved` means "sign in with the new password now".
+  /// An unreadable body degrades to `pending` — never to `approved`.
+  Future<({String status, String? decidedAt, String? expiresAt})>
+      passwordResetStatus({
+    required String requestId,
+    required String code,
+  }) async {
+    final res = await _api.get(
+      ApiConfig.forgotPasswordStatus,
+      auth: false,
+      // ApiClient percent-encodes these into the query string.
+      query: {'requestId': requestId, 'code': code},
+    );
+    final map = _asMap(res);
+    return (
+      status: (map['status'] ?? 'pending').toString(),
+      decidedAt: map['decidedAt']?.toString(),
+      expiresAt: map['expiresAt']?.toString(),
+    );
+  }
+
   /// Re-fetches the account (used for offline-first re-validation). A thrown
   /// [ApiException] with `isAuthError` is the only thing that ends the session.
   Future<Account> me() async {
@@ -221,6 +287,11 @@ class AuthRepository {
     if (token.isNotEmpty) await _store.writeToken(token);
     return AuthResult(token, Account.fromJson(_accountJson(map)));
   }
+
+  /// v42 item 4: non-throwing body reader for the public reset endpoints — a
+  /// null/empty/non-JSON 2xx body yields an empty map instead of a cast error.
+  Map<String, dynamic> _asMap(dynamic res) =>
+      res is Map ? res.cast<String, dynamic>() : <String, dynamic>{};
 
   Map<String, dynamic> _accountJson(dynamic res) {
     final map = (res as Map).cast<String, dynamic>();

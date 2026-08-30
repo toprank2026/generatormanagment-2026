@@ -31,7 +31,15 @@ function streamAdminEvents(req, res) {
     res.write(`data: ${JSON.stringify(payload)}\n\n`);
   };
 
+  // v42 item 4: an owner filed a password-reset request — the panel's queue
+  // badge/list refreshes live, exactly like a new registration.
+  const onPasswordResetRequested = (payload) => {
+    res.write('event: password_reset_requested\n');
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
   adminEvents.on('user_registered', onUserRegistered);
+  adminEvents.on('password_reset_requested', onPasswordResetRequested);
 
   // Heartbeat keeps the connection alive through idle periods.
   const heartbeat = setInterval(() => {
@@ -41,6 +49,7 @@ function streamAdminEvents(req, res) {
   req.on('close', () => {
     clearInterval(heartbeat);
     adminEvents.removeListener('user_registered', onUserRegistered);
+    adminEvents.removeListener('password_reset_requested', onPasswordResetRequested);
     res.end();
   });
 }

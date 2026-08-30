@@ -24,6 +24,12 @@ class ApiConfig {
   static const String me = '/api/auth/me';
   // v23 §4.2: move an account onto this device (evicts the LRU binding).
   static const String recoverDevice = '/api/auth/recover-device';
+  // v42 item 4: owner forgot-password. Both are PUBLIC (no JWT — the owner is
+  // locked out) and rate-limited server-side; the reset is only ever applied by
+  // a super admin in the control panel, so the app just files the request and
+  // polls its status.
+  static const String forgotPassword = '/api/auth/forgot-password';
+  static const String forgotPasswordStatus = '/api/auth/forgot-password/status';
 
   // --- Accountant sub-accounts (owner creates/manages; R8) ---
   static const String accountants = '/api/account/accountants';
