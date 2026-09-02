@@ -637,7 +637,7 @@ class SubscriberRepository {
         ON mp.month = ?
         AND mp.category = IFNULL(s.category, 'standard')
         AND IFNULL(mp.branch_id, '$main') = IFNULL(s.branch_id, '$main')
-      WHERE ${isPaid ? "mp.price_per_amp IS NOT NULL AND (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0)) >= (s.amps * mp.price_per_amp)" : "(mp.price_per_amp IS NULL OR (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0)) < (s.amps * mp.price_per_amp))"} ${outerScopes.join(' ')}
+      WHERE ${isPaid ? "mp.price_per_amp IS NOT NULL AND (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0)) >= (${DbHelper.effectiveAmps()} * mp.price_per_amp)" : "(mp.price_per_amp IS NULL OR (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0)) < (${DbHelper.effectiveAmps()} * mp.price_per_amp))"} ${outerScopes.join(' ')}
     """;
     return (sql: sql, args: args);
   }
@@ -785,7 +785,7 @@ class SubscriberRepository {
     args.addAll([subscriberId, limit]);
     final rows = await db.rawQuery("""
       SELECT mp.month AS month,
-             (s.amps * mp.price_per_amp) AS due,
+             (${DbHelper.effectiveAmps()} * mp.price_per_amp) AS due,
              COALESCE(r.cov, 0) AS coverage
       FROM subscribers s
       JOIN monthly_prices mp
@@ -802,7 +802,7 @@ class SubscriberRepository {
         GROUP BY month
       ) r ON r.month = mp.month
       WHERE s.id = ?
-        AND (s.amps * mp.price_per_amp) - COALESCE(r.cov, 0) > 0
+        AND (${DbHelper.effectiveAmps()} * mp.price_per_amp) - COALESCE(r.cov, 0) > 0
         -- v42 review fix — NEVER accuse a paid-up subscriber. `SyncController`
         -- pulls receipts MONTH-SCOPED (`receiptsMonth`), so a device that has
         -- not held a past month's receipts locally sees zero coverage for it and
@@ -859,7 +859,7 @@ class SubscriberRepository {
              COUNT(*) AS total,
              SUM(CASE WHEN mp.price_per_amp IS NOT NULL
                        AND (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0))
-                           >= (s.amps * mp.price_per_amp)
+                           >= (${DbHelper.effectiveAmps()} * mp.price_per_amp)
                  THEN 1 ELSE 0 END) AS paid
       FROM subscribers s
       LEFT JOIN (
@@ -925,7 +925,7 @@ class SubscriberRepository {
     final q =
         _paymentStatusFrom(month: month, isPaid: false, branchId: branchId);
     final r = await db.rawQuery(
-      'SELECT SUM(MAX(s.amps * mp.price_per_amp '
+      'SELECT SUM(MAX(' "${DbHelper.effectiveAmps()}" ' * mp.price_per_amp '
       '- COALESCE(r.total_paid, 0) - COALESCE(r.total_discount, 0), 0)) AS rem '
       '${q.sql}',
       q.args,
@@ -946,7 +946,8 @@ class SubscriberRepository {
     final q =
         _paymentStatusFrom(month: month, isPaid: isPaid, branchId: branchId);
     final rows = await db.rawQuery(
-      "SELECT IFNULL(s.category, 'standard') AS cat, SUM(s.amps) AS amps "
+      "SELECT IFNULL(s.category, 'standard') AS cat, "
+      "SUM(${DbHelper.effectiveAmps()}) AS amps "
       "${q.sql} GROUP BY IFNULL(s.category, 'standard')",
       q.args,
     );
@@ -1033,10 +1034,18 @@ class SubscriberRepository {
 
     }
     final where = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
+    // v43.1: month-scoped -> price the month on the amps that were in force
+    // THEN (see DbHelper.effectiveAmps). All-time keeps the live amps, which is
+    // the current reality and exactly the pre-v43 behaviour.
+    final String ampsExpr = month == null
+        ? 'SUM(amps)'
+        : 'SUM(${DbHelper.effectiveAmpsParam(sub: 'subscribers')})';
+    // The `?` sits in the SELECT list, so it must be bound FIRST.
+    final List<dynamic> ampsArgs = month == null ? args : <dynamic>[month, ...args];
     final rows = await db.rawQuery(
-      "SELECT IFNULL(category,'standard') as cat, SUM(amps) as amps "
+      "SELECT IFNULL(category,'standard') as cat, $ampsExpr as amps "
       "FROM subscribers $where GROUP BY IFNULL(category,'standard')",
-      args,
+      ampsArgs,
     );
     final map = <String, double>{};
     for (final row in rows) {
@@ -1071,13 +1080,18 @@ class SubscriberRepository {
 
     }
     final where = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
+    // v43.1 — same month-effective amps rule as ampsByCategory above.
+    final String ampsExpr = month == null
+        ? 'SUM(amps)'
+        : 'SUM(${DbHelper.effectiveAmpsParam(sub: 'subscribers')})';
+    final List<dynamic> ampsArgs = month == null ? args : <dynamic>[month, ...args];
     final rows = await db.rawQuery(
       "SELECT IFNULL(branch_id, '${DbHelper.kMainBranchId}') as br, "
-      "IFNULL(category,'standard') as cat, SUM(amps) as amps "
+      "IFNULL(category,'standard') as cat, $ampsExpr as amps "
       "FROM subscribers $where "
       "GROUP BY IFNULL(branch_id, '${DbHelper.kMainBranchId}'), "
       "IFNULL(category,'standard')",
-      args.isEmpty ? null : args,
+      ampsArgs.isEmpty ? null : ampsArgs,
     );
     final map = <String, Map<String, double>>{};
     for (final row in rows) {

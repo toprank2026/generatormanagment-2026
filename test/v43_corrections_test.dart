@@ -202,6 +202,17 @@ void main() {
         createdBy: owner,
       ));
     }
+    // v43.1 - mirrors CorrectionController.approve: the corrected amps are
+    // written onto the SUBSCRIBER so future months bill the new value.
+    final double? applied = fresh.newAmps;
+    final String? tid = fresh.subscriberId;
+    if (applied != null && applied > 0 && tid != null && tid.isNotEmpty) {
+      final target = await subs.getById(tid);
+      if (target != null && target.amps != applied) {
+        target.amps = applied;
+        await subs.update(target);
+      }
+    }
     return true;
   }
 
@@ -352,11 +363,21 @@ void main() {
     expect((await receipts.getByMonth(aug, branchId: main)).length, 1,
         reason: 'no phantom invoice in the printed history');
 
-    // ---- originals: byte-identical -----------------------------------------
+    // ---- the ORIGINAL INVOICE is byte-identical ----------------------------
+    // The receipt is the historical document and is never rewritten.
     expect(await rawRow('receipts', 'uuid', 'rA'), receiptBefore);
-    expect(await rawRow('subscribers', 'id', 'A'), subBefore);
-    expect((await subs.getById('A'))!.amps, 10,
-        reason: 'the correction records the true amps; it never rewrites them');
+
+    // ---- but the SUBSCRIBER is updated (v43.1) -----------------------------
+    // Previously the approval moved money while leaving the subscriber on the
+    // old amps, so every FUTURE month kept billing the wrong value. The record
+    // must reflect reality; history is protected by DbHelper.effectiveAmps,
+    // which prices August on this correction's `old_amps`.
+    expect((await subs.getById('A'))!.amps, 12,
+        reason: 'the corrected amps are applied to the subscriber');
+    expect(subBefore['amps'], 10, reason: 'and it really was 10 before');
+    expect(await remaining(aug), 0,
+        reason: 'August is still priced on the 10A it was invoiced at');
+    expect(await paidCount(aug), 1, reason: 'so it stays fully paid');
 
     // ---- the corrected month now settles at the CORRECTED figure -----------
     expect(await requestableCash(aug), 12000);
@@ -705,10 +726,19 @@ void main() {
     expect(sepWalletAfter.cashBalance, sepWalletBefore.cashBalance);
     expect(sepWalletAfter.cardCollected, sepWalletBefore.cardCollected);
     expect(sepWalletAfter.cardBalance, sepWalletBefore.cardBalance);
+    // The MONEY of the correction never leaves August — that is the isolation
+    // this test exists to protect.
     expect(await collected(sep), sepCollectedBefore);
     expect(await settles.monthUnsettled(acct, sep), sepUnsettledBefore);
     expect(await paidCount(sep), sepPaidBefore);
-    expect(await remaining(sep), sepRemainingBefore);
+    // v43.1 — September's DUE is the one thing that legitimately moves: the
+    // approval applied the corrected amps to the subscriber, and September is
+    // AFTER the corrected month, so it now bills the true value. That is the
+    // whole point of applying the amps; it is a re-pricing of an open month,
+    // not a money leak (no adjustment, receipt, wallet or settlement moved).
+    expect(await corr.adjustmentsFor(month: sep), isEmpty,
+        reason: 'no adjustment ever lands in another month');
+    expect(await remaining(sep), greaterThanOrEqualTo(0));
     expect(await rawRow('receipts', 'uuid', 'rS'), sepReceiptBefore);
 
     // The corrections themselves are month-scoped in the queue, too.
@@ -773,17 +803,11 @@ void main() {
     expect(await approve(first), true);
     expect(await corr.adjustmentTotal(month: aug, accountantId: acct), 5000);
 
-    // Approving deliberately leaves the SUBSCRIBER ROW untouched (the original
-    // is never edited), so a naive second request would recompute its old due
-    // from `subscriber.amps` = 10 again and re-book the first 5,000.
-    expect(await corr.netDueDeltaFor(subscriberId: 'A', month: aug), 5000,
-        reason: 'the booked net is what the next correction measures against');
-
-    // 15A → 20A must be +5,000, NOT +10,000.
+    // v43.1: approval APPLIES the corrected amps, so the subscriber itself is
+    // now the effective basis and the next correction is naturally incremental.
     final sub = (await subs.getById('A'))!;
-    final booked =
-        await corr.netDueDeltaFor(subscriberId: sub.id, month: aug);
-    final double oldDue = sub.amps * 1000 + booked;
+    expect(sub.amps, 15, reason: 'the approval moved the subscriber to 15A');
+    final double oldDue = sub.amps * 1000;
     final double newDue = 20 * 1000;
     expect(oldDue, 15000, reason: 'the effective basis, not the original');
     expect(newDue - oldDue, 5000, reason: 'strictly the incremental delta');
@@ -795,7 +819,8 @@ void main() {
     // Two corrections, 10A → 20A: the month may have moved by exactly 10,000.
     expect(await corr.adjustmentTotal(month: aug, accountantId: acct), 10000,
         reason: 'unbounded double-credit across repeated corrections');
-    expect(await corr.netDueDeltaFor(subscriberId: 'A', month: aug), 10000);
+    expect((await subs.getById('A'))!.amps, 20,
+        reason: 'and the subscriber ended on the final corrected value');
     expect((await settles.walletForMonth(acct, aug)).cashBalance, 20000,
         reason: '10,000 collected + 10,000 of corrections');
   });
@@ -816,5 +841,83 @@ void main() {
     expect(w.cashBalance, 10000,
         reason: 'a decrease contributes ZERO to the wallet');
     expect(w.cashBalance, greaterThanOrEqualTo(0));
+  });
+
+  test(
+      'v43.1: approval CHANGES the subscriber amps, future months bill the new '
+      'value, and the corrected month stays frozen on what it was invoiced at',
+      () async {
+    await price(aug, 1000);
+    await price(sep, 1000);
+    await addSub('A', 10);
+
+    // August invoiced and fully paid at 10A = 10,000.
+    await pay('rA', 'A',
+        cash: 10000, amps: 10, remaining: 0, issuedAt: '2026-08-05 10:00:00');
+    expect(await remaining(aug), 0, reason: 'August is settled at 10A');
+    expect(await paidCount(aug), 1);
+    expect(await remaining(sep), 10000, reason: '10A x 1000 before the fix');
+
+    // Meter re-read: really 15A. Correct August and approve.
+    final c = await request('cor-amps', 'A',
+        oldAmps: 10, newAmps: 15, receiptUuid: 'rA');
+    expect(await approve(c), true);
+
+    // 1. THE BUG THIS FIXES: the subscriber's amps actually change.
+    expect((await subs.getById('A'))!.amps, 15,
+        reason: 'the correction must update the subscriber, not just the money');
+
+    // 2. FUTURE months bill the corrected value.
+    expect(await remaining(sep), 15000,
+        reason: 'September must now price 15A x 1000');
+
+    // 3. THE CORRECTED MONTH IS FROZEN. August was invoiced at 10A and the
+    // +5,000 rides in the adjustment ledger; if the live amps leaked backwards
+    // August would re-open as unpaid - silent corruption of closed books.
+    expect(await remaining(aug), 0,
+        reason: 'August must NOT be re-priced on the corrected amps');
+    expect(await paidCount(aug), 1, reason: 'August stays fully paid');
+    expect(await unpaidCount(aug), 0);
+
+    // 4. the original receipt is still untouched.
+    final r = await rawRow('receipts', 'uuid', 'rA');
+    expect(r['paid_amount'], 10000);
+    expect(r['status'], 'valid');
+  });
+
+  test('v43.1: a CHAIN of corrections gives every month its own basis',
+      () async {
+    await price('2026-07', 1000);
+    await price(aug, 1000);
+    await price(sep, 1000);
+    await price('2026-10', 1000);
+    await addSub('A', 10, from: '2026-07');
+
+    await pay('r7', 'A',
+        cash: 10000, amps: 10, remaining: 0, month: '2026-07',
+        issuedAt: '2026-07-05 10:00:00');
+    await pay('r8', 'A',
+        cash: 10000, amps: 10, remaining: 0, month: aug,
+        issuedAt: '2026-08-05 10:00:00');
+
+    // 10 -> 15 corrected in August.
+    final c1 = await request('chain-1', 'A',
+        oldAmps: 10, newAmps: 15, month: aug, receiptUuid: 'r8');
+    expect(await approve(c1), true);
+
+    // 15 -> 20 corrected in September.
+    await pay('r9', 'A',
+        cash: 15000, amps: 15, remaining: 0, month: sep,
+        issuedAt: '2026-09-05 10:00:00');
+    final c2 = await request('chain-2', 'A',
+        oldAmps: 15, newAmps: 20, month: sep, receiptUuid: 'r9');
+    expect(await approve(c2), true);
+
+    expect((await subs.getById('A'))!.amps, 20, reason: 'latest value wins');
+    expect(await remaining('2026-07'), 0, reason: 'July frozen at 10A');
+    expect(await remaining(aug), 0, reason: 'August frozen at 10A');
+    expect(await remaining(sep), 0, reason: 'September frozen at 15A');
+    expect(await remaining('2026-10'), 20000,
+        reason: 'October is the first month past every correction -> 20A');
   });
 }

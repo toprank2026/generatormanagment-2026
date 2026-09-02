@@ -267,30 +267,30 @@ class CorrectionRepository {
     return ((r.first['s'] as num?) ?? 0).toDouble();
   }
 
-  /// v43 review fix — the SIGNED net change already booked against one
-  /// subscriber-month: increases count +amount, decreases count -amount.
+  /// v43.1 — the amps that were in force for [subscriberId] in [month].
   ///
-  /// This is the DUE basis, not a wallet figure, and it is what a SECOND
-  /// correction for the same subscriber-month must measure against. Approving a
-  /// correction deliberately leaves the subscriber row untouched (the original
-  /// is never edited), so a later request that recomputed `oldDue` from
-  /// `subscriber.amps` would measure from the ORIGINAL basis again and re-book
-  /// the delta that was already booked — an unbounded double credit across
-  /// repeated corrections. Adding this net to `oldDue` makes every correction
-  /// after the first strictly incremental.
-  Future<double> netDueDeltaFor({
+  /// The Dart twin of `DbHelper.effectiveAmps`, so `BillingController
+  /// .getDueAmount` (the subscriber-detail figure) and the list/report SQL can
+  /// never disagree about a month's due. Returns null when no decided
+  /// correction covers the month, meaning "use the subscriber's live amps".
+  ///
+  ///   month  > every correction  -> null (the corrected, current value)
+  ///   month <= a correction      -> that correction's old_amps (as invoiced)
+  Future<double?> effectiveAmpsFor({
     required String subscriberId,
     required String month,
   }) async {
-    if (subscriberId.isEmpty || month.isEmpty) return 0;
+    if (subscriberId.isEmpty || month.isEmpty) return null;
     final db = await _dbHelper.database;
     final r = await db.rawQuery(
-      'SELECT COALESCE(SUM(CASE WHEN kind = ? THEN -COALESCE(amount, 0) '
-      'ELSE COALESCE(amount, 0) END), 0) s '
-      'FROM financial_adjustments WHERE subscriber_id = ? AND month = ?',
-      [AdjustmentKind.decrease, subscriberId, month],
+      'SELECT old_amps FROM corrections '
+      'WHERE subscriber_id = ? AND month >= ? AND old_amps IS NOT NULL '
+      "AND status IN ('approved', 'refund_due', 'completed') "
+      'ORDER BY month ASC, id ASC LIMIT 1',
+      [subscriberId, month],
     );
-    return ((r.first['s'] as num?) ?? 0).toDouble();
+    if (r.isEmpty) return null;
+    return (r.first['old_amps'] as num?)?.toDouble();
   }
 
   /// The adjustment rows of one accounting [month] (optionally one subscriber /

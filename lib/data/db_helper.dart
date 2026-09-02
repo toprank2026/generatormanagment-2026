@@ -451,6 +451,46 @@ class DbHelper {
   /// `REPLACE(...,'T',' ')` normalises the two formats into one comparable key,
   /// and the `id` (UUID) tie-break is IDENTICAL on every device — so the order
   /// is now stable across devices, pulls, branch switches and views.
+  /// v43.1 — the amps that were in force for a given accounting MONTH.
+  ///
+  /// Approving a correction now WRITES the new amps onto the subscriber (so the
+  /// record reflects reality and every FUTURE month bills the corrected value).
+  /// But `subscribers.amps` is read LIVE by every money query, for every month,
+  /// so writing it alone would retroactively re-price the whole history and
+  /// re-open closed, fully-paid months. This expression freezes the past: for a
+  /// month at or before a correction, it returns that correction's `old_amps` —
+  /// the value the invoice was actually raised on.
+  ///
+  ///   month  > every correction  -> subscribers.amps      (the corrected value)
+  ///   month <= a correction      -> that correction's old_amps (as invoiced)
+  ///
+  /// It picks the EARLIEST correction whose month is >= the month being priced,
+  /// so a chain of corrections yields the right basis for every month between
+  /// them. Only DECIDED corrections count ('pending'/'rejected' move nothing).
+  ///
+  /// Takes NO bind parameter — it reads the month from the already-joined
+  /// `monthly_prices` alias — so it can be dropped into the existing raw SQL
+  /// without disturbing the positional-argument order those queries rely on.
+  static String effectiveAmps({String sub = 's', String price = 'mp'}) =>
+      "COALESCE((SELECT c.old_amps FROM corrections c "
+      "WHERE c.subscriber_id = $sub.id "
+      "AND c.status IN ('approved', 'refund_due', 'completed') "
+      "AND c.old_amps IS NOT NULL "
+      "AND c.month >= $price.month "
+      "ORDER BY c.month ASC, c.id ASC LIMIT 1), $sub.amps)";
+
+  /// The same rule for a query that has NO `monthly_prices` join: the month is
+  /// a BIND PARAMETER, so the caller must supply it (and, because the `?` sits
+  /// in the SELECT list, bind it FIRST — the convention the raw-SQL helpers in
+  /// this codebase already follow).
+  static String effectiveAmpsParam({String sub = 's'}) =>
+      "COALESCE((SELECT c.old_amps FROM corrections c "
+      "WHERE c.subscriber_id = $sub.id "
+      "AND c.status IN ('approved', 'refund_due', 'completed') "
+      "AND c.old_amps IS NOT NULL "
+      "AND c.month >= ? "
+      "ORDER BY c.month ASC, c.id ASC LIMIT 1), $sub.amps)";
+
   /// Display-only: no stored value is read differently and nothing is rewritten.
   static String creationOrder([String alias = '']) {
     final String a = alias.isEmpty ? '' : '$alias.';

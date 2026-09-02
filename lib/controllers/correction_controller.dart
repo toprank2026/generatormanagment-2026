@@ -357,16 +357,18 @@ class CorrectionController extends GetxController {
         lastError.value = 'correction_no_price';
         return null;
       }
-      // v43 review fix: approving a correction leaves the subscriber row
-      // untouched on purpose, so `s.amps` is still the ORIGINAL basis even
-      // after an earlier correction was approved for this month. Fold the
-      // net already-booked delta into the old due, otherwise a SECOND
-      // correction re-books the first one's difference (double credit).
-      final double booked = await _repo.netDueDeltaFor(
-        subscriberId: s.id,
-        month: month,
-      );
-      final double oldDue = s.amps * oldPrice.pricePerAmp + booked;
+      // v43.1 — `s.amps` is ALREADY the corrected basis: approving a correction
+      // now writes the new amps onto the subscriber (so future months bill it).
+      // So the current due is simply amps x price, and a SECOND correction is
+      // automatically incremental.
+      //
+      // NOTE: v43's review added a `netDueDeltaFor` compensation here, because
+      // back then approval left the subscriber untouched and `s.amps` was still
+      // the ORIGINAL value, so a second correction re-booked the first delta.
+      // Applying the amps fixes that at the source; keeping the compensation as
+      // well would DOUBLE-compensate (a 10->15->20 chain would price the second
+      // step off 20,000 instead of 15,000).
+      final double oldDue = s.amps * oldPrice.pricePerAmp;
       final double newDue = newAmps * newPrice.pricePerAmp;
       final double difference = newDue - oldDue;
       if (difference == 0) {
@@ -510,6 +512,27 @@ class CorrectionController extends GetxController {
           method: await _methodFor(fresh),
           createdBy: _actingUserId,
         ));
+      }
+      // v43.1 — APPLY THE CORRECTED AMPS TO THE SUBSCRIBER.
+      //
+      // Without this the approval moved money but the subscriber kept billing
+      // the OLD amps forever, so every future month was wrong (the defect this
+      // fixes). Writing it is only safe because `subscribers.amps` is read LIVE
+      // by every money query, for every month: `DbHelper.effectiveAmps` reads
+      // THIS correction's `old_amps` for any month at or before it, so the
+      // corrected month and all history keep exactly the basis they were
+      // invoiced on. The new value takes effect from the NEXT month onwards.
+      //
+      // Deliberately last: if it were to fail, the correction is still decided
+      // and the ledger still balances — and a later approval re-applies it.
+      final double? applied = fresh.newAmps;
+      final String? targetId = fresh.subscriberId;
+      if (applied != null && applied > 0 && targetId != null && targetId.isNotEmpty) {
+        final Subscriber? target = await _subRepo.getById(targetId);
+        if (target != null && target.amps != applied) {
+          target.amps = applied;
+          await _subRepo.update(target);
+        }
       }
       SyncController.poke();
       await load();

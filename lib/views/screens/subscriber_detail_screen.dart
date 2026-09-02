@@ -558,33 +558,29 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
     final bool hasOpen = latest != null && latest.isPending;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      // v43.1: COMPACT. This is a status notice, not the subject of the screen
+      // — it sat above the payment card and pushed it off-screen. Tighter
+      // padding, no drop shadow, no full-width button.
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         // Same amber notice palette as the arrears card above.
         color: const Color(0xFFFFF8E1),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFFFE082)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.orange.withValues(alpha: 0.08),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.lock_outline, color: Color(0xFFFF8F00)),
-              const SizedBox(width: 10),
+              const Icon(Icons.lock_outline, size: 16, color: Color(0xFFFF8F00)),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'month_locked_title'.tr,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
-                    fontSize: 15,
+                    fontSize: 13,
                     color: Color(0xFFE65100),
                   ),
                 ),
@@ -597,10 +593,13 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
+          // One line: the full explanation is long and repeats every visit.
           Text(
-            'month_locked_body'.tr,
-            style: TextStyle(fontSize: 12.5, color: Colors.grey[800]),
+            'month_locked_short'.tr,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11.5, color: Colors.grey[800]),
           ),
           if (_settlementLocked)
             Padding(
@@ -626,7 +625,7 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
           // The correction already filed for this subscriber-month, if any
           // (pending first, then newest — the repository's order).
           if (latest != null) ...[
-            const Divider(height: 20, color: Color(0xFFFFE082)),
+            const Divider(height: 14, color: Color(0xFFFFE082)),
             Row(
               children: [
                 _statusChip(latest.status),
@@ -651,27 +650,32 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
               ],
             ),
           ],
-          const SizedBox(height: 12),
           // Filing is the ACCOUNTANT's path (the owner/admin DECIDES instead).
           // A second pending request for the same subscriber-month is refused by
           // the controller; the button is hidden here so it is never offered.
+          // Compact + right-aligned: a full-width orange bar read as the primary
+          // action of the screen, which it is not.
           if (auth.isAccountant && !hasOpen)
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFEF6C00),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFFEF6C00),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
                 onPressed: _showCorrectionDialog,
-                icon: const Icon(Icons.edit_note, size: 18),
-                label: Text('correction_request'.tr),
+                icon: const Icon(Icons.edit_note, size: 16),
+                label: Text(
+                  'correction_request'.tr,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
-          const SizedBox(height: 6),
-          Text(
-            'correction_original_untouched'.tr,
-            style: TextStyle(fontSize: 11.5, color: Colors.grey[700]),
-          ),
         ],
       ),
     );

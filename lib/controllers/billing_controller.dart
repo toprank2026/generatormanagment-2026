@@ -4,6 +4,7 @@ import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart';
+import 'package:generatormanagment/data/repositories/correction_repository.dart';
 import 'package:generatormanagment/data/repositories/settlement_repository.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
@@ -18,6 +19,7 @@ enum ReverseResult { ok, notAllowed, alreadyReversed, blockedSettled, error }
 
 class BillingController extends GetxController {
   final MonthlyPriceRepository _priceRepo = MonthlyPriceRepository();
+  final CorrectionRepository _correctionRepo = CorrectionRepository();
   final ReceiptRepository _receiptRepo = ReceiptRepository();
   final SettlementRepository _settleRepo = SettlementRepository();
   final BranchController _branch = Get.find();
@@ -210,7 +212,17 @@ class BillingController extends GetxController {
         branchId: branchId, category: sub.category);
     if (mp == null) return 0.0; // No price set for this category/month
 
-    double totalDue = sub.amps * mp.pricePerAmp;
+    // v43.1 — price the month on the amps that were IN FORCE for it. Approving
+    // a correction writes the new amps onto the subscriber, so without this a
+    // past, already-invoiced month would be silently re-priced on the corrected
+    // value. Mirrors DbHelper.effectiveAmps used by every list/report query, so
+    // this figure and the lists can never disagree. Null = no decided
+    // correction covers the month -> the live (current) amps, as before.
+    final double? frozenAmps = await _correctionRepo.effectiveAmpsFor(
+      subscriberId: sub.id,
+      month: month,
+    );
+    double totalDue = (frozenAmps ?? sub.amps) * mp.pricePerAmp;
 
     // 2. Subtract COVERAGE (this branch's receipts only). Coverage = cash paid
     //    PLUS any discount waived (P5), so a discounted FULL payment shows due 0.

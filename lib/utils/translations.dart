@@ -658,6 +658,8 @@ class Messages extends Translations {
       'month_locked_title': 'This month is locked',
       'month_locked_body':
           'An invoice has already been issued for this month, so the financial data is locked. Any change must go through a correction request.',
+      'month_locked_short':
+          'Invoiced — financial data is locked. Change it via a correction.',
       'correction_pending': 'Awaiting approval',
       'correction_approved': 'Approved',
       'correction_rejected': 'Rejected',
@@ -1341,6 +1343,8 @@ class Messages extends Translations {
       'month_locked_title': 'هذا الشهر مقفل',
       'month_locked_body':
           'صدر وصل لهذا الشهر، لذلك أصبحت بياناته المالية مقفلة. أي تغيير يجب أن يتم عبر طلب تعديل.',
+      'month_locked_short':
+          'صدر وصل — البيانات المالية مقفلة. التغيير يتم عبر طلب تعديل.',
       'correction_pending': 'بانتظار الموافقة',
       'correction_approved': 'تمت الموافقة',
       'correction_rejected': 'مرفوض',
