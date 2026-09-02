@@ -76,7 +76,7 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
   // (collected/expenses), applied in JS. monthly_prices is per-branch (its PK
   // is "<month>|<branchId>") so we match it by data.month + branch.
   const branchMatch = branchId ? { 'data.branch_id': branchId } : {};
-  const [priceRows, subscribers, receipts, expenses, lastUpload, boardsCount, circuitsCount] = await Promise.all([
+  const [priceRows, subscribers, receipts, expenses, lastUpload, boardsCount, circuitsCount, adjustmentRows] = await Promise.all([
     // Per-branch, per-category monthly prices (matched by data.month + branch;
     // legacy rows that predate per-branch pricing carry no branch_id and only
     // match consolidated). One row per category — we build a category→price map.
@@ -110,6 +110,14 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     // Boards/circuits counts (branch-scoped).
     SyncRecord.countDocuments({ user: userId, entity: 'boards', deleted: false, ...branchMatch }),
     SyncRecord.countDocuments({ user: userId, entity: 'circuits', deleted: false, ...branchMatch }),
+    // v43 review fix: the approved-correction ledger for this month/branch. The
+    // app folds these into its collected/revenue figures, so the dashboard must
+    // too — otherwise /api/account/stats and the owner panel report a different
+    // monthly revenue and net profit than the device for the SAME month.
+    SyncRecord.find(
+      { user: userId, entity: 'financial_adjustments', deleted: false, 'data.month': month, ...branchMatch },
+      { data: 1 }
+    ),
   ]);
 
   // Per-branch, per-category price map keyed by "<branchKey>|<category>" where
@@ -183,6 +191,24 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
       }
     }
   }
+
+  // v43 review fix — fold the approved-correction ledger into `collected`,
+  // using the SAME money rule as getWallet() and the app's local repositories:
+  //   correction_increase -> + amount   (the month owes more than it was invoiced)
+  //   refund_return       -> + amount   (already signed NEGATIVE by the writer)
+  //   correction_decrease -> 0          (a decrease may never drive money down;
+  //                                      it becomes a refund_due obligation, and
+  //                                      only the physical return moves cash)
+  // Scoped by the same accountant filter as the receipts above, so a
+  // per-accountant dashboard stays consistent with that accountant's wallet.
+  let adjustmentTotal = 0;
+  for (const row of adjustmentRows) {
+    const d = row.data || {};
+    if (d.kind !== 'correction_increase' && d.kind !== 'refund_return') continue;
+    if (!inScope(d)) continue;
+    adjustmentTotal += num(d.amount);
+  }
+  collected += adjustmentTotal;
 
   // v42 item 5: a subscriber belongs to a month's billing ONLY from the month it
   // was added onwards — the app's rule, mirrored here EXACTLY so the owner panel
@@ -387,6 +413,11 @@ const getMyRecent = asyncHandler(async (req, res) => {
  * substr(requested_at,1,7))`. The param is additive: a malformed value is
  * IGNORED (never an error) and an ABSENT one leaves the response byte-identical
  * to the all-time figures every not-yet-updated device still expects.
+ *
+ * v43 item F5: `collected(M)` additionally folds in the append-only
+ * `financial_adjustments` ledger (approved corrections) for the same scope —
+ * see the MONEY RULE comment in the body. The response SHAPE is unchanged, and
+ * an account with no adjustments returns byte-identical figures to v42.
  */
 const getWallet = asyncHandler(async (req, res) => {
   const ownerId = effectiveOwnerId(req.user);
@@ -412,6 +443,48 @@ const getWallet = asyncHandler(async (req, res) => {
     const d = r.data || {};
     const method = (d.payment_method || 'cash') === 'card' ? 'card' : 'cash';
     collected[method] += Number(d.paid_amount) || 0;
+  }
+
+  // v43 (F5): fold the append-only `financial_adjustments` ledger into the
+  // COLLECTED side of the wallet — the mirror of what the app's
+  // SettlementRepository does locally, so the panel figure and the device figure
+  // can never disagree. A correction NEVER edits the original receipt (an
+  // invoice is a historical document) and never consumes a receipt_no; the delta
+  // lives only in this ledger, bucketed by the SAME tariff month
+  // (`data.month`) the receipt and the settlement use, so a correction can never
+  // move money between accounting months.
+  //
+  // THE MONEY RULE — contribution by `kind`:
+  //   correction_increase -> the row's `amount`. The corrected month owes MORE
+  //     than it was invoiced for, so that month's wallet RISES and an additional
+  //     settlement for the month becomes possible.
+  //   refund_return       -> the row's `amount`. The PHYSICAL cash return that
+  //     closes a `refund_due` correction, added exactly as recorded (the row
+  //     carries its own sign — it is the signed cash movement, written once).
+  //   correction_decrease -> NOTHING (0). A decrease must NEVER reduce the
+  //     wallet: the wallet may not be driven negative by a historical
+  //     correction. The decrease becomes a `refund_due` OBLIGATION on the
+  //     correction instead, and only the separately-recorded physical return
+  //     above ever moves money. Approval and the cash return are two distinct,
+  //     separately-recorded operations.
+  // Any other/unknown kind is ignored rather than guessed at.
+  //
+  // Scope: the same accountant scoping as the receipts above (an accountant sees
+  // only their own; an owner sees the whole mirror) and the same `deleted:false`
+  // convention. With `?month=` only that month's adjustments count (they carry
+  // the tariff month directly, like receipts — no legacy fallback is needed, the
+  // table is new and always stamped); WITHOUT it every adjustment counts, or the
+  // lifetime figure would disagree with the app's `wallet()`.
+  const adjFilter = { user: ownerId, entity: 'financial_adjustments', deleted: false };
+  if (acctId) adjFilter['data.accountant_id'] = acctId;
+  if (month) adjFilter['data.month'] = month;
+  const adjustments = await SyncRecord.find(adjFilter).lean();
+  for (const a of adjustments) {
+    const d = a.data || {};
+    if (d.kind !== 'correction_increase' && d.kind !== 'refund_return') continue;
+    // Same wallet bucketing as receipts/settlements: cash unless explicitly card.
+    const method = (d.method || 'cash') === 'card' ? 'card' : 'cash';
+    collected[method] += Number(d.amount) || 0;
   }
 
   const setFilter = { user: ownerId, entity: 'settlements', deleted: false, 'data.status': 'approved' };

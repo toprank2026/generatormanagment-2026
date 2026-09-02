@@ -1,6 +1,8 @@
 'use strict';
 
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Plan = require('../models/Plan');
 const SyncRecord = require('../models/SyncRecord');
@@ -178,6 +180,11 @@ const SEARCH_FIELDS = {
   accountants: ['name', 'username'],
   branches: ['name', 'code'],
   settlements: ['status', 'accountant_id'],
+  // v43: the two correction tables. Both previously fell through to the
+  // localId-only fallback below (no entry = no searchable field), so adding
+  // them only widens a search that could not find anything useful before.
+  corrections: ['month', 'status', 'reason', 'subscriber_id'],
+  financial_adjustments: ['month', 'kind', 'subscriber_id'],
 };
 
 /** Escape regex metacharacters so q is treated as a literal substring. */
@@ -234,7 +241,17 @@ async function listUserData(userId, query = {}) {
   }
 
   // Optional relationship filter (drill-down). Whitelisted fields only.
-  const REL_FIELDS = ['subscriber_id', 'board_id', 'circuit_id', 'branch_id', 'accountant_id'];
+  // v43: `correction_id` lets the panel drill from one correction into the
+  // immutable ledger rows it produced
+  // (?entity=financial_adjustments&relField=correction_id&relValue=<uuid>).
+  const REL_FIELDS = [
+    'subscriber_id',
+    'board_id',
+    'circuit_id',
+    'branch_id',
+    'accountant_id',
+    'correction_id',
+  ];
   const relField = typeof query.relField === 'string' ? query.relField : '';
   const relValue = query.relValue;
   if (relField && REL_FIELDS.includes(relField) && typeof relValue === 'string' && relValue) {
@@ -349,6 +366,138 @@ const getUserData = asyncHandler(async (req, res) => {
   res.status(200).json(await listUserData(user._id, req.query));
 });
 
+/* ───────────────────────────────────────────────────────────────────────────
+ * v43 (F2) — the SETTLEMENT MONTH LOCK on the admin synced-data DELETE.
+ *
+ * Unlike `/api/sync/push` — where a 4xx fails the WHOLE batch, permanently
+ * wedges the device outbox and stops that device's synchronisation for good
+ * (which is why the push loop SKIPS a locked row and reports it in
+ * `rejected[]` instead of throwing) — this is an ordinary request/response
+ * endpoint with no offline semantics. A hard refusal here is therefore safe
+ * and correct: nothing retries it in a loop and no device is blocked by it.
+ *
+ * The lock is DERIVED, never stored (a lock COLUMN on `receipts`/`settlements`
+ * would be wiped account-wide by the next `SyncService.pull`, which writes
+ * INSERT OR REPLACE): a month is closed while a settlement with status
+ * pending|approved exists for it, bucketed by the v40 tariff rule
+ * COALESCE(data.month, substr(data.requested_at,1,7)) — byte-identical to the
+ * expression the app, `accountController.getWallet`, `listUserData` above and
+ * the push-loop guard already use.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/** A settlement in either of these states closes its accounting month. */
+const ACTIVE_SETTLEMENT_STATUSES = ['pending', 'approved'];
+
+/** 'YYYY-MM'. Also the guard that keeps a stored string out of a $regex. */
+const MONTH_RE = /^\d{4}-\d{2}$/;
+
+/** Trimmed string of an arbitrary value ('' for null/undefined/non-strings). */
+const str = (v) => (typeof v === 'string' ? v.trim() : '');
+
+/**
+ * Entities whose mirrored rows carry money for a closed month, with the code
+ * reported when the delete is refused. Every OTHER entity keeps today's
+ * behaviour exactly — subscribers/boards/circuits/expenses/... delete as before.
+ */
+const DELETE_LOCK_CODES = {
+  receipts: 'RECEIPT_MONTH_LOCKED',
+  settlements: 'SETTLEMENT_MONTH_LOCKED',
+};
+
+/**
+ * v43 review fix: entities that are APPEND-ONLY by construction and may never
+ * be deleted through the generic synced-data DELETE — not for a settled month,
+ * not for an open one. `financial_adjustments` IS the correction ledger the
+ * wallet is derived from, and `corrections` is its audit trail; a tombstone
+ * here does not just hide a panel row, it PROPAGATES to every device on the
+ * next pull and silently moves the accountant's wallet. The whole v43 design
+ * rests on "approval never edits or deletes an original", so the delete route
+ * must refuse outright rather than lock per-month.
+ */
+const DELETE_FORBIDDEN_CODES = {
+  financial_adjustments: 'ADJUSTMENT_IMMUTABLE',
+  corrections: 'CORRECTION_IMMUTABLE',
+};
+
+/**
+ * The accounting month a mirrored row belongs to, or '' when it carries none.
+ * A receipt stamps the billing month directly; a settlement uses the v40
+ * tariff month and falls back to the `requested_at` UTC prefix for legacy rows
+ * written before that stamp existed.
+ */
+function bucketMonthOf(entity, data) {
+  const d = data && typeof data === 'object' ? data : {};
+  const stamped = str(d.month);
+  if (MONTH_RE.test(stamped)) return stamped;
+  if (entity === 'settlements') {
+    const legacy = str(d.requested_at).slice(0, 7);
+    if (MONTH_RE.test(legacy)) return legacy;
+  }
+  return '';
+}
+
+/** True when a pending|approved settlement buckets into [month] for [userId]. */
+async function monthHasActiveSettlement(userId, month) {
+  if (!MONTH_RE.test(month)) return false;
+  const hit = await SyncRecord.findOne({
+    user: userId,
+    entity: 'settlements',
+    deleted: false,
+    'data.status': { $in: ACTIVE_SETTLEMENT_STATUSES },
+    // Composed under $and so the bucket $or can never clobber the clauses
+    // above. NOTE: {'data.month': null} matches an explicit null AND a missing
+    // key in MongoDB — exactly the legacy-row shape.
+    $and: [
+      {
+        $or: [
+          { 'data.month': month },
+          { 'data.month': null, 'data.requested_at': { $regex: '^' + month } },
+        ],
+      },
+    ],
+  })
+    .select('_id')
+    .lean();
+  return Boolean(hit);
+}
+
+/**
+ * Refuses (409) the delete of a receipt/settlement whose accounting month is
+ * closed by an active settlement. Deleting one would silently move money out
+ * of a month the owner has already settled — the exact class of change v43
+ * routes through a correction request instead.
+ *
+ * Two deliberate consequences, both safe:
+ *  - an ACTIVE settlement locks its own month, so a pending/approved
+ *    settlement row cannot be deleted. Reject it first (the owner decision
+ *    route) and it becomes deletable — a rejection is recorded, a silent
+ *    disappearance is not.
+ *  - a row with no parseable month is NOT locked, so legacy rows keep exactly
+ *    the delete behaviour they have today (when in doubt, do not lock).
+ */
+async function assertDeletableRow(userId, entity, data) {
+  const forbidden = DELETE_FORBIDDEN_CODES[entity];
+  if (forbidden) {
+    throw new HttpError(
+      409,
+      'This is an append-only accounting record and cannot be deleted. ' +
+        'Reject or reverse the correction instead.',
+      forbidden
+    );
+  }
+  const code = DELETE_LOCK_CODES[entity];
+  if (!code) return;
+  const month = bucketMonthOf(entity, data);
+  if (!month) return;
+  if (!(await monthHasActiveSettlement(userId, month))) return;
+  throw new HttpError(
+    409,
+    `The accounting month ${month} is settled — this row cannot be deleted. ` +
+      'File a correction instead.',
+    code
+  );
+}
+
 /**
  * DELETE /api/admin/users/:id/data/:entity/:localId
  *
@@ -368,6 +517,11 @@ const deleteUserData = asyncHandler(async (req, res) => {
 
   const rec = await SyncRecord.findOne({ user: user._id, entity, localId });
   if (!rec) throw new HttpError(404, 'Record not found', 'RECORD_NOT_FOUND');
+
+  // v43 (F2): a receipt/settlement of a month closed by an active settlement is
+  // refused outright (409) — see assertDeletableRow above. Every other entity,
+  // and every unsettled month, is unaffected.
+  await assertDeletableRow(user._id, entity, rec.data);
 
   const now = new Date();
   rec.deleted = true;
@@ -397,6 +551,12 @@ const labelFor = (entity, data) => {
     case 'accountants': return data.name || data.username || null;
     case 'branches': return data.name || data.code || null;
     case 'settlements': return data.amount != null ? String(data.amount) : null;
+    // v43: a correction reads as "the month it corrects — the delta"; an
+    // adjustment as "its kind — the signed amount". Both returned null before.
+    case 'corrections':
+      return [data.month, data.difference].filter((v) => v != null).join(' — ') || null;
+    case 'financial_adjustments':
+      return [data.kind, data.amount].filter((v) => v != null).join(' — ') || null;
     default: return null;
   }
 };
@@ -667,6 +827,654 @@ const rejectPasswordReset = asyncHandler(async (req, res) => {
   res.status(200).json({ ok: true, request: serializeResetRequest(request, user) });
 });
 
+/* ───────────────────────────────────────────────────────────────────────────
+ * Corrections after invoicing (v43) — the admin decision queue.
+ *
+ * A correction is how an ALREADY-INVOICED (or already-settled) month is fixed
+ * without rewriting a single existing row. The accountant files one on the
+ * device; it reaches the owner's mirror as a `corrections` SyncRecord. The
+ * super admin decides it HERE, and a decision writes at most one row: an
+ * immutable `financial_adjustments` record. THE ORIGINAL RECEIPT AND THE
+ * ORIGINAL SETTLEMENT ARE NEVER TOUCHED BY ANY HANDLER BELOW — an invoice is a
+ * historical document, and the adjustment is deliberately NOT a receipt (a
+ * receipt row would consume a real `receipt_no`, which is NOT NULL and
+ * allocated MAX+1 per branch, and would appear in printed history as a phantom
+ * invoice).
+ *
+ * THE MONEY RULE, identical to the app's CorrectionController so the panel and
+ * the device can never book a decision differently:
+ *   increase (difference > 0) -> `correction_increase` for +|Δ|  -> status `approved`
+ *                                that month's wallet RISES, so an additional
+ *                                settlement for the month becomes possible.
+ *   decrease (difference < 0) -> `correction_decrease` for +|Δ|  -> status `refund_due`
+ *                                recorded for the audit trail ONLY: the wallet
+ *                                is NOT reduced (it must never be driven
+ *                                negative by a historical correction).
+ *   cash returned             -> `refund_return` for −|Δ|        -> status `completed`
+ *                                the PHYSICAL return, with accountant_id NULL
+ *                                so no accountant's derived wallet drops.
+ * Approving a decrease and handing the money back are two separate,
+ * separately-recorded operations — approval alone never asserts cash moved.
+ *
+ * `financial_adjustments` is APPEND-ONLY: written once, never updated, never
+ * deleted, by anyone. There is deliberately no update/delete handler for it
+ * here, and none may be added — correcting a mistake means APPENDING another
+ * adjustment.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+const CORRECTION_ENTITY = 'corrections';
+const ADJUSTMENT_ENTITY = 'financial_adjustments';
+
+/** Correction lifecycle — mirrors CorrectionStatus (correction_models.dart). */
+const CORRECTION_STATUSES = new Set([
+  'pending',
+  'approved',
+  'rejected',
+  'refund_due',
+  'completed',
+]);
+
+/**
+ * The statuses that mean "already decided". A row whose status is any of these
+ * is out of the pending gate; ANYTHING ELSE — 'pending', an explicit null, a
+ * missing key, or an unrecognised value — counts as still pending, which is
+ * exactly how the app normalizes it (CorrectionStatus.normalize) and how
+ * settlementController treats an unstamped settlement. Expressed as a $nin so
+ * the guard and the normalizer can never disagree.
+ */
+const DECIDED_CORRECTION_STATUSES = ['approved', 'rejected', 'refund_due', 'completed'];
+
+/** AdjustmentKind (correction_models.dart) — the three ledger kinds. */
+const ADJ_INCREASE = 'correction_increase';
+const ADJ_DECREASE = 'correction_decrease';
+const ADJ_REFUND_RETURN = 'refund_return';
+
+/**
+ * Free-text search over corrections resolves matching SUBSCRIBER names first
+ * (a Mongo regex cannot reach `data.name` on another record through an id), the
+ * two-step listPasswordResets/listUserData already use. Capped so an admin
+ * typing a single common letter cannot pull an unbounded id list into memory.
+ */
+const SUBSCRIBER_MATCH_CAP = 500;
+
+/** RFC 4122 URL namespace — `Namespace.url` in the app's `uuid` package. */
+const UUID_URL_NAMESPACE = '6ba7b811-9dad-11d1-80b4-00c04fd430c8';
+
+/**
+ * RFC 4122 v5 (SHA-1, namespace + name) — byte-identical to the app's
+ * `const Uuid().v5(Namespace.url.value, name)`. Implemented here rather than
+ * pulled in as a dependency: it is fifteen lines of the spec and the backend
+ * has no uuid package.
+ */
+function uuidV5(name) {
+  const ns = Buffer.from(UUID_URL_NAMESPACE.replace(/-/g, ''), 'hex');
+  const hash = crypto
+    .createHash('sha1')
+    .update(ns)
+    .update(Buffer.from(String(name), 'utf8'))
+    .digest();
+  const bytes = Buffer.from(hash.subarray(0, 16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x50; // version 5
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+  const hex = bytes.toString('hex');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join('-');
+}
+
+/**
+ * The DETERMINISTIC id of the adjustment for one (correction, kind).
+ *
+ * This is the whole idempotency of the money path, and it is shared verbatim
+ * with `CorrectionController._adjustmentId` on the device: a retried approval,
+ * a double-clicked panel button, or the same decision recorded on a device and
+ * in the panel can only ever write THE SAME ledger row. With a random id each
+ * of those would DOUBLE-CREDIT the wallet — and, the table being append-only,
+ * the surplus row could never be deleted.
+ */
+function adjustmentIdFor(correctionId, kind) {
+  return uuidV5(`moldati/v43/adjustment/${correctionId}/${kind}`);
+}
+
+/** Normalized status of a correction's `data` (unknown/absent -> 'pending'). */
+function correctionStatusOf(data) {
+  const s = str((data || {}).status);
+  return CORRECTION_STATUSES.has(s) ? s : 'pending';
+}
+
+/** Finite number, or null — never NaN into a JSON money field. */
+function numOrNull(v) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Panel shape of one correction. camelCase like every other admin serializer;
+ * `id` is the mirror record's Mongo id (what the decision routes take) and
+ * `localId` the device UUID of the `corrections` row (what the app and the
+ * ledger's `correction_id` reference).
+ */
+function serializeCorrection(doc, owner, subscriberName) {
+  const d = doc.data && typeof doc.data === 'object' ? doc.data : {};
+  const acct = owner || null;
+  return {
+    id: String(doc._id),
+    localId: doc.localId,
+    userId: doc.user ? String(doc.user) : null,
+    ownerName: acct ? acct.name || null : null,
+    generatorName: acct ? acct.generatorName || null : null,
+    subscriberId: d.subscriber_id || null,
+    subscriberName: subscriberName || null,
+    month: d.month || null,
+    branchId: d.branch_id || null,
+    accountantId: d.accountant_id || null,
+    receiptUuid: d.receipt_uuid || null,
+    settlementId: d.settlement_id || null,
+    reason: d.reason || null,
+    oldAmps: numOrNull(d.old_amps),
+    newAmps: numOrNull(d.new_amps),
+    oldDue: numOrNull(d.old_due),
+    newDue: numOrNull(d.new_due),
+    difference: numOrNull(d.difference) || 0,
+    status: correctionStatusOf(d),
+    requestedBy: d.requested_by || null,
+    requestedAt: d.requested_at || null,
+    decidedBy: d.decided_by || null,
+    decidedAt: d.decided_at || null,
+    decisionNote: d.decision_note || null,
+    refundPaidAt: d.refund_paid_at || null,
+    refundPaidBy: d.refund_paid_by || null,
+    createdAt: d.created_at || null,
+    deleted: Boolean(doc.deleted),
+    updatedAt: toIso(doc.updatedAt),
+  };
+}
+
+/**
+ * GET /api/admin/corrections?q=&status=&month=&userId=&page=1&limit=25
+ *
+ * The correction queue across every owner's mirror — PENDING FIRST, then
+ * newest by `requested_at` (the ordering `CorrectionRepository.list` uses on
+ * the device, so the panel and the app read the same queue). Same search +
+ * server-side pagination + `{ items, total, page, limit }` envelope as the
+ * other admin lists.
+ *
+ * `q` matches the correction's own month/reason/subscriber id/localId plus two
+ * things a plain regex cannot reach through an id — the owner ACCOUNT's
+ * name/generatorName and the SUBSCRIBER's name — each resolved first and folded
+ * into the $or as an `$in` term. `status` and `month` are exact filters;
+ * `userId` optionally narrows to a single account (and scopes the subscriber
+ * name lookup to it).
+ */
+const listCorrections = asyncHandler(async (req, res) => {
+  const filter = { entity: CORRECTION_ENTITY, deleted: false };
+
+  const status = str(req.query.status);
+  if (status && CORRECTION_STATUSES.has(status)) filter['data.status'] = status;
+
+  const month = str(req.query.month);
+  if (month && MONTH_RE.test(month)) filter['data.month'] = month;
+
+  // Optional single-account scope. Cast EXPLICITLY: the listing runs through an
+  // aggregate (for the pending-first sort) and aggregation does NOT apply the
+  // schema's ObjectId casting the query layer gives you for free — a raw string
+  // here would silently match nothing.
+  const userId = str(req.query.userId);
+  if (userId && mongoose.isValidObjectId(userId)) {
+    filter.user = new mongoose.Types.ObjectId(userId);
+  }
+
+  const q = str(req.query.q);
+  if (q) {
+    const regex = { $regex: escapeRegex(q), $options: 'i' };
+    const namedAccounts = await User.find(
+      { $or: [{ name: regex }, { generatorName: regex }] },
+      { _id: 1 }
+    ).lean();
+    const subFilter = { entity: 'subscribers', deleted: false, 'data.name': regex };
+    if (filter.user) subFilter.user = filter.user;
+    const namedSubs = await SyncRecord.find(subFilter, { localId: 1 })
+      .limit(SUBSCRIBER_MATCH_CAP)
+      .lean();
+    // Under $and so it composes with the status/month/user filters above
+    // instead of replacing them. Empty $in matches nothing — the right answer
+    // when nothing matched, not "match everything".
+    filter.$and = (filter.$and || []).concat([
+      {
+        $or: [
+          { localId: regex },
+          { 'data.subscriber_id': regex },
+          { 'data.reason': regex },
+          { 'data.month': regex },
+          { user: { $in: namedAccounts.map((a) => a._id) } },
+          {
+            'data.subscriber_id': {
+              $in: namedSubs.map((s) => s.localId).filter((x) => x != null).map(String),
+            },
+          },
+        ],
+      },
+    ]);
+  }
+
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  let limit = parseInt(req.query.limit, 10);
+  if (!Number.isFinite(limit) || limit < 1) limit = 25;
+  limit = Math.min(200, Math.max(1, limit));
+
+  const total = await SyncRecord.countDocuments(filter);
+  // Pending first, then newest requested_at (an ISO string, so a plain
+  // descending sort is newest-first), tie-broken on the device UUID so paging
+  // is stable when several rows share a timestamp.
+  const docs = await SyncRecord.aggregate([
+    { $match: filter },
+    { $addFields: { pendingRank: { $cond: [{ $eq: ['$data.status', 'pending'] }, 0, 1] } } },
+    { $sort: { pendingRank: 1, 'data.requested_at': -1, localId: -1 } },
+    { $skip: (page - 1) * limit },
+    { $limit: limit },
+  ]);
+
+  // Resolve the page's owner accounts in one query (the recentData shape), so a
+  // deleted account degrades to null names instead of failing.
+  const userIds = [...new Set(docs.map((d) => String(d.user)))];
+  const accounts = await User.find({ _id: { $in: userIds } }, { name: 1, generatorName: 1 });
+  const byId = new Map(accounts.map((u) => [String(u._id), u]));
+
+  // Subscriber names for the page, one query. Built as an $or of
+  // (user, entity, localId) triples so every branch hits the unique compound
+  // index — an {entity, localId} match alone cannot use it (the index is
+  // prefixed by `user`).
+  const pairs = [];
+  const seenPairs = new Set();
+  for (const d of docs) {
+    const subId = str((d.data || {}).subscriber_id);
+    if (!subId) continue;
+    const key = `${String(d.user)}|${subId}`;
+    if (seenPairs.has(key)) continue;
+    seenPairs.add(key);
+    pairs.push({ user: d.user, entity: 'subscribers', localId: subId });
+  }
+  const nameByKey = new Map();
+  if (pairs.length) {
+    const subs = await SyncRecord.find({ $or: pairs }, { user: 1, localId: 1, 'data.name': 1 }).lean();
+    for (const s of subs) {
+      nameByKey.set(`${String(s.user)}|${s.localId}`, (s.data || {}).name || null);
+    }
+  }
+
+  // v43 review fix: resolve the RECEIPT NUMBER of the invoice each correction
+  // hangs off. The panel's receipt column already prefers a number and falls
+  // back to the uuid, but nothing ever supplied the number, so the branch was
+  // dead. Same batched {user, entity, localId} shape as the subscriber names
+  // above so it stays one query for the whole page.
+  const recPairs = [];
+  const seenRec = new Set();
+  for (const d of docs) {
+    const ru = str((d.data || {}).receipt_uuid);
+    if (!ru) continue;
+    const key = `${String(d.user)}|${ru}`;
+    if (seenRec.has(key)) continue;
+    seenRec.add(key);
+    recPairs.push({ user: d.user, entity: 'receipts', localId: ru });
+  }
+  const receiptNoByKey = new Map();
+  if (recPairs.length) {
+    const rcps = await SyncRecord.find(
+      { $or: recPairs },
+      { user: 1, localId: 1, 'data.receipt_no': 1 }
+    ).lean();
+    for (const r of rcps) {
+      receiptNoByKey.set(`${String(r.user)}|${r.localId}`, numOrNull((r.data || {}).receipt_no));
+    }
+  }
+
+  res.status(200).json({
+    items: docs.map((d) => {
+      const item = serializeCorrection(
+        d,
+        byId.get(String(d.user)),
+        nameByKey.get(`${String(d.user)}|${str((d.data || {}).subscriber_id)}`)
+      );
+      const ru = str((d.data || {}).receipt_uuid);
+      item.receiptNo = ru ? (receiptNoByKey.get(`${String(d.user)}|${ru}`) ?? null) : null;
+      return item;
+    }),
+    total,
+    page,
+    limit,
+  });
+});
+
+/**
+ * The correction mirror record addressed by `:id` — the SyncRecord Mongo id
+ * (what the list returns as `id`), falling back to the device UUID of the
+ * `corrections` row so a caller holding only the app's id can act too.
+ */
+async function findCorrectionRecord(idParam) {
+  const raw = str(idParam);
+  if (!raw) return null;
+  if (mongoose.isValidObjectId(raw)) {
+    const byId = await SyncRecord.findOne({ _id: raw, entity: CORRECTION_ENTITY });
+    if (byId) return byId;
+  }
+  return SyncRecord.findOne({ entity: CORRECTION_ENTITY, localId: raw });
+}
+
+/** Which wallet the delta belongs to: the corrected invoice's payment method. */
+async function adjustmentMethodFor(userId, correction) {
+  const uuid = str((correction || {}).receipt_uuid);
+  if (!uuid) return 'cash';
+  const receipt = await SyncRecord.findOne(
+    { user: userId, entity: 'receipts', localId: uuid },
+    { 'data.payment_method': 1 }
+  ).lean();
+  const method = receipt && receipt.data ? receipt.data.payment_method : null;
+  // Same COALESCE(payment_method,'cash') convention as every other money query.
+  return method === 'card' ? 'card' : 'cash';
+}
+
+/**
+ * Appends ONE immutable ledger row into the owner's mirror.
+ *
+ * `$setOnInsert` + the deterministic id IS the append-only rule expressed in
+ * MongoDB: if the row already exists (a retry, or the device recorded the same
+ * decision first) the STORED row is left byte-for-byte as it was — never
+ * re-amounted, never re-signed, never deleted. It is the exact server twin of
+ * `CorrectionRepository.insertAdjustment`'s ConflictAlgorithm.ignore.
+ */
+async function appendAdjustment(userId, { correctionId, correction, kind, amount, accountantId, createdBy }) {
+  const localId = adjustmentIdFor(correctionId, kind);
+  const nowIso = new Date().toISOString();
+  const data = {
+    id: localId,
+    correction_id: correctionId,
+    subscriber_id: (correction || {}).subscriber_id || null,
+    month: (correction || {}).month || null,
+    branch_id: (correction || {}).branch_id || null,
+    accountant_id: accountantId,
+    kind,
+    amount,
+    method: await adjustmentMethodFor(userId, correction),
+    created_at: nowIso,
+    created_by: createdBy,
+    // Per-row edit time for the sync conflict resolver. The row is append-only,
+    // so in practice this never changes after the insert.
+    updated_at: nowIso,
+  };
+  await SyncRecord.updateOne(
+    { user: userId, entity: ADJUSTMENT_ENTITY, localId },
+    { $setOnInsert: { data, deleted: false, updatedAt: new Date() } },
+    { upsert: true }
+  );
+  const stored = await SyncRecord.findOne(
+    { user: userId, entity: ADJUSTMENT_ENTITY, localId },
+    { data: 1 }
+  ).lean();
+  return stored ? stored.data : data;
+}
+
+/** The decision fields a correction carries, restored verbatim by a revert. */
+const DECISION_FIELDS = [
+  'status',
+  'decided_at',
+  'decided_by',
+  'decision_note',
+  'refund_paid_at',
+  'refund_paid_by',
+  'updated_at',
+];
+
+/**
+ * Compensating action: puts a correction back EXACTLY as it was before a
+ * decision was stamped, restoring each decision field to its previous value
+ * (or $unset when it had none) plus the envelope `updatedAt`.
+ *
+ * Used only when the LEDGER WRITE that must accompany a decision fails. The
+ * alternative orderings are both worse: writing the adjustment first can credit
+ * the wallet for a correction someone else rejected in the same instant, and
+ * flipping without a revert can leave a correction `approved` with no money row
+ * and no way to re-approve it (only a pending correction may be approved). The
+ * ledger is append-only, so a surplus row could never be removed — but a
+ * decision on our own `corrections` row can always be rolled back.
+ */
+async function revertCorrectionDecision(recordId, previousData, previousUpdatedAt) {
+  const prev = previousData && typeof previousData === 'object' ? previousData : {};
+  const set = {};
+  const unset = {};
+  for (const f of DECISION_FIELDS) {
+    if (prev[f] === undefined) unset[`data.${f}`] = '';
+    else set[`data.${f}`] = prev[f];
+  }
+  if (previousUpdatedAt) set.updatedAt = previousUpdatedAt;
+  const update = {};
+  if (Object.keys(set).length) update.$set = set;
+  if (Object.keys(unset).length) update.$unset = unset;
+  if (!Object.keys(update).length) return;
+  await SyncRecord.updateOne({ _id: recordId }, update);
+}
+
+/**
+ * Applies a decision to a correction under an ATOMIC status guard and returns
+ * the updated record — or throws the right 4xx. `guard` is the `data.status`
+ * condition that must still hold (see DECIDED_CORRECTION_STATUSES), so a stale
+ * panel tab, a double-click or a second admin can never decide the same
+ * correction twice.
+ */
+async function applyCorrectionDecision(rec, guard, set, notPending) {
+  const updated = await SyncRecord.findOneAndUpdate(
+    { _id: rec._id, deleted: false, ...guard },
+    { $set: set },
+    { new: true }
+  );
+  if (updated) return updated;
+  const existing = await SyncRecord.findById(rec._id, { data: 1, deleted: 1 }).lean();
+  if (!existing) throw new HttpError(404, 'Correction not found', 'CORRECTION_NOT_FOUND');
+  if (existing.deleted) {
+    throw new HttpError(409, 'Correction was deleted', 'CORRECTION_DELETED');
+  }
+  throw new HttpError(
+    409,
+    `${notPending.message} (it is ${correctionStatusOf(existing.data)})`,
+    notPending.code
+  );
+}
+
+/** The correction record for `:id`, or the right 404/409 — shared preamble. */
+async function loadDecidableCorrection(idParam) {
+  const rec = await findCorrectionRecord(idParam);
+  if (!rec) throw new HttpError(404, 'Correction not found', 'CORRECTION_NOT_FOUND');
+  if (rec.deleted) throw new HttpError(409, 'Correction was deleted', 'CORRECTION_DELETED');
+  return rec;
+}
+
+/** The decided correction + its owner, as the decision routes return it. */
+async function decisionResponse(updated) {
+  const owner = await User.findById(updated.user, { name: 1, generatorName: 1 });
+  return serializeCorrection(updated, owner, null);
+}
+
+/**
+ * POST /api/admin/corrections/:id/approve   body { note? }
+ *
+ * Books the correction. ONLY a still-pending correction may be approved (a
+ * second call is a 409 no-op), because approving twice would credit the wallet
+ * twice. An INCREASE lands `approved`; a DECREASE lands `refund_due` — the cash
+ * has NOT been returned yet, and the wallet is deliberately not reduced.
+ * Neither branch edits the receipt or the settlement.
+ */
+const approveCorrection = asyncHandler(async (req, res) => {
+  const { note } = req.body || {};
+  const rec = await loadDecidableCorrection(req.params.id);
+
+  const data = rec.data && typeof rec.data === 'object' ? rec.data : {};
+  const current = correctionStatusOf(data);
+  if (current !== 'pending') {
+    throw new HttpError(409, `Correction already ${current}`, 'CORRECTION_NOT_PENDING');
+  }
+
+  const parsed = numOrNull(data.difference);
+  const delta = parsed == null ? 0 : parsed;
+  // A zero-difference row (nothing the request path can create, but a legacy or
+  // hand-crafted one could) books NO adjustment and is simply approved — never
+  // `refund_due`, which would ask the admin to hand back nothing.
+  const kind = delta > 0 ? ADJ_INCREASE : delta < 0 ? ADJ_DECREASE : null;
+  const nextStatus = delta < 0 ? 'refund_due' : 'approved';
+
+  const nowIso = new Date().toISOString();
+  const set = {
+    'data.status': nextStatus,
+    'data.decided_at': nowIso,
+    'data.decided_by': String(req.user._id),
+    // Bump the per-row edit time so last-EDIT-wins applies this decision over
+    // the device's older pending copy on its next pull.
+    'data.updated_at': nowIso,
+    updatedAt: new Date(),
+  };
+  if (note !== undefined) set['data.decision_note'] = note ? String(note).trim() : null;
+
+  const updated = await applyCorrectionDecision(
+    rec,
+    { 'data.status': { $nin: DECIDED_CORRECTION_STATUSES } },
+    set,
+    { message: 'Correction is no longer pending', code: 'CORRECTION_NOT_PENDING' }
+  );
+
+  let adjustment = null;
+  if (kind) {
+    try {
+      adjustment = await appendAdjustment(rec.user, {
+        correctionId: str(data.id) || rec.localId,
+        correction: data,
+        kind,
+        // Stored POSITIVE for both kinds; the SIGN is not what makes a decrease
+        // harmless — `correction_decrease` contributes exactly 0 to every
+        // wallet figure (see accountController.getWallet and the app's
+        // CorrectionRepository.adjustmentTotal). The wallet must never be
+        // driven negative by a historical correction.
+        amount: Math.abs(delta),
+        accountantId: data.accountant_id || null,
+        createdBy: String(req.user._id),
+      });
+    } catch (err) {
+      await revertCorrectionDecision(rec._id, data, rec.updatedAt);
+      throw err;
+    }
+  }
+
+  res.status(200).json({ ok: true, correction: await decisionResponse(updated), adjustment });
+});
+
+/**
+ * POST /api/admin/corrections/:id/reject   body { note }
+ *
+ * Declines the request and records why. NO adjustment is written and no money
+ * moves — the month keeps exactly the figures it already has. Only a pending
+ * correction may be rejected.
+ */
+const rejectCorrection = asyncHandler(async (req, res) => {
+  const { note } = req.body || {};
+  const rec = await loadDecidableCorrection(req.params.id);
+
+  const current = correctionStatusOf(rec.data);
+  if (current !== 'pending') {
+    throw new HttpError(409, `Correction already ${current}`, 'CORRECTION_NOT_PENDING');
+  }
+
+  const nowIso = new Date().toISOString();
+  const set = {
+    'data.status': 'rejected',
+    'data.decided_at': nowIso,
+    'data.decided_by': String(req.user._id),
+    'data.updated_at': nowIso,
+    updatedAt: new Date(),
+  };
+  if (note !== undefined) set['data.decision_note'] = note ? String(note).trim() : null;
+
+  const updated = await applyCorrectionDecision(
+    rec,
+    { 'data.status': { $nin: DECIDED_CORRECTION_STATUSES } },
+    set,
+    { message: 'Correction is no longer pending', code: 'CORRECTION_NOT_PENDING' }
+  );
+
+  res.status(200).json({ ok: true, correction: await decisionResponse(updated) });
+});
+
+/**
+ * POST /api/admin/corrections/:id/refund-paid
+ *
+ * Records the PHYSICAL cash return that closes a decrease correction:
+ * `refund_due -> completed`, plus one `refund_return` ledger row. Allowed ONLY
+ * from `refund_due` — approving a decrease never asserted that money moved,
+ * which is why this is a separate operation with its own record, and why a
+ * second call is a 409 rather than a second refund.
+ *
+ * The ledger row is stamped so the return has the RIGHT financial effect and no
+ * other: `amount` is NEGATIVE (cash physically left the business, so the
+ * month's collected figure falls by it) and `accountant_id` is deliberately
+ * NULL — the OWNER/ADMIN returns the cash, not the accountant, and every wallet
+ * query filters by `accountant_id`, so no accountant's derived wallet can be
+ * driven negative by it. The audit link is unaffected: the row still carries
+ * correction_id / subscriber_id / month / branch_id.
+ */
+const markCorrectionRefundPaid = asyncHandler(async (req, res) => {
+  const rec = await loadDecidableCorrection(req.params.id);
+
+  const data = rec.data && typeof rec.data === 'object' ? rec.data : {};
+  const current = correctionStatusOf(data);
+  if (current !== 'refund_due') {
+    throw new HttpError(
+      409,
+      `Correction is ${current}, not awaiting a cash return`,
+      'CORRECTION_NOT_REFUND_DUE'
+    );
+  }
+
+  const parsed = numOrNull(data.difference);
+  const delta = parsed == null ? 0 : parsed;
+
+  const nowIso = new Date().toISOString();
+  const set = {
+    'data.status': 'completed',
+    'data.refund_paid_at': nowIso,
+    'data.refund_paid_by': String(req.user._id),
+    'data.updated_at': nowIso,
+    updatedAt: new Date(),
+  };
+
+  const updated = await applyCorrectionDecision(
+    rec,
+    { 'data.status': 'refund_due' },
+    set,
+    {
+      message: 'Correction is no longer awaiting a cash return',
+      code: 'CORRECTION_NOT_REFUND_DUE',
+    }
+  );
+
+  let adjustment = null;
+  try {
+    adjustment = await appendAdjustment(rec.user, {
+      correctionId: str(data.id) || rec.localId,
+      correction: data,
+      kind: ADJ_REFUND_RETURN,
+      amount: -Math.abs(delta),
+      accountantId: null, // see the doc comment — never an accountant wallet
+      createdBy: String(req.user._id),
+    });
+  } catch (err) {
+    await revertCorrectionDecision(rec._id, data, rec.updatedAt);
+    throw err;
+  }
+
+  res.status(200).json({ ok: true, correction: await decisionResponse(updated), adjustment });
+});
+
 module.exports = {
   listUsers,
   createUser,
@@ -688,4 +1496,9 @@ module.exports = {
   listPasswordResets,
   approvePasswordReset,
   rejectPasswordReset,
+  // v43 — corrections after invoicing.
+  listCorrections,
+  approveCorrection,
+  rejectCorrection,
+  markCorrectionRefundPaid,
 };

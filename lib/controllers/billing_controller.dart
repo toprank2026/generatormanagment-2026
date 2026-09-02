@@ -81,7 +81,10 @@ class BillingController extends GetxController {
       branchId: _branch.writeBranchId,
       category: category,
     );
-    await _priceRepo.insert(mp); // Insert or replace
+    // v43: guarded write — refuses a re-price of an already-invoiced month
+    // (throws ValidationException('price_locked_invoiced')). Creating a price,
+    // or re-writing the identical value, is unaffected.
+    await _priceRepo.insertGuarded(mp);
     SyncController.poke(); // item 9
     await loadMonthPrice(selectedMonth.value);
     // R10: pricing changed → recompute the dashboard's Collected/Remaining now.
@@ -102,14 +105,23 @@ class BillingController extends GetxController {
       {String? startDate}) async {
     // v13: pricing is OWNER/admin-only — accountants cannot change prices.
     if (Get.find<AuthController>().isAccountant) return;
-    for (final entry in pricesByCategory.entries) {
-      await _priceRepo.insert(MonthlyPrice(
-        month: selectedMonth.value,
-        pricePerAmp: entry.value,
-        branchId: _branch.writeBranchId,
-        category: entry.key,
-        startDate: startDate, // Flash item 5 (metadata)
-      ));
+    final rows = [
+      for (final entry in pricesByCategory.entries)
+        MonthlyPrice(
+          month: selectedMonth.value,
+          pricePerAmp: entry.value,
+          branchId: _branch.writeBranchId,
+          category: entry.key,
+          startDate: startDate, // Flash item 5 (metadata)
+        )
+    ];
+    // v43: validate EVERY category first, so a refusal on the 2nd row can never
+    // leave the 1st already re-priced (this save is meant to be atomic).
+    for (final r in rows) {
+      await _priceRepo.assertPriceChangeAllowed(r);
+    }
+    for (final r in rows) {
+      await _priceRepo.insert(r);
     }
     SyncController.poke(); // item 9
     await loadMonthPrice(selectedMonth.value);

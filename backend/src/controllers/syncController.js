@@ -21,13 +21,22 @@ const SYNCED_ENTITIES = new Set([
   'branches',
   'accountants',
   'settlements',
+  // v43 (corrections after invoicing): the two new append-beside tables. An
+  // UNKNOWN entity throws 400 for the WHOLE batch (see push below), so the
+  // device outbox would never drain and — because pull() pushes first — that
+  // device's synchronisation would stop permanently. THIS REGISTRATION MUST BE
+  // DEPLOYED BEFORE A SINGLE v43 APK IS INSTALLED, not simultaneously. It is
+  // inert until an app actually pushes such a row, so shipping it early is safe.
+  'corrections',
+  'financial_adjustments',
 ]);
 
 /**
  * Maps an entity to the accountant permission required to write it.
  *  - `null`  => always allowed for an accountant (the cashier core job:
  *               recording payments / refunds).
- *  - `false` => owner-only; an accountant can NEVER write it (identity tables).
+ *  - `false` => owner-only; an accountant can NEVER write it (the identity
+ *               tables, and v43's money ledger `financial_adjustments`).
  *  - string  => the permission key the accountant.permissions must include.
  * Mirrors lib/core/permissions.dart (subscribers/boards/expenses/prices).
  */
@@ -46,6 +55,22 @@ const ENTITY_PERMISSION = {
   settlements: null,
   branches: false,
   accountants: false,
+  // v43: a correction is a REQUEST, not money. It is core accountant work like a
+  // settlement request (`null` = always allowed) and must NOT be gated on the
+  // 'subscribers' permission: the correction flow is precisely the escape hatch
+  // for an accountant who may NOT edit a locked/invoiced subscriber, so gating
+  // it there would silently skip (accept-and-drop) the request of the only
+  // accountant who needs it — the row would live on the device and never reach
+  // the owner for approval. authorizeRecord still server-stamps branch_id +
+  // accountant_id below, so a correction cannot be forged for another
+  // branch/accountant.
+  corrections: null,
+  // v43: OWNER/ADMIN ONLY. `financial_adjustments` is the signed, append-only
+  // money delta that is folded into the wallet — an accountant able to push one
+  // could mint their own wallet credit. Only an owner/admin approval writes it.
+  // (`false` throws 403 in authorizeRecord, which the push loop catches and
+  // SKIPS+counts — the batch still succeeds, so this can never wedge a device.)
+  financial_adjustments: false,
 };
 
 /**
@@ -60,6 +85,12 @@ const ENTITY_PERMISSION = {
  *
  * @throws {HttpError} 403 when the accountant lacks the permission/branch.
  */
+/**
+ * Entities whose `accountant_id` is a WALLET TARGET chosen by the app, not the
+ * identity of the writer — so it must survive the push untouched.
+ */
+const ATTRIBUTION_PRESERVED = new Set(['corrections', 'financial_adjustments']);
+
 function authorizeRecord(user, rec) {
   if (!user || user.role !== 'accountant') return; // owners/admins unrestricted
 
@@ -87,9 +118,92 @@ function authorizeRecord(user, rec) {
     // The Mongo _id exists nowhere in the accountants identity table, so
     // stamping it would null out attribution after a pull. Fall back to _id only
     // for the (unexpected) localId-less accountant.
-    rec.data.accountant_id = user.localId || String(user._id);
+    //
+    // v43 review fix — EXCEPT for the correction entities. There,
+    // `accountant_id` does not mean "who wrote this row", it means "WHOSE
+    // WALLET this delta belongs to", and the app deliberately resolves it to
+    // the accountant who COLLECTED that month, which is often NOT the filer.
+    // Stamping it here silently re-attributed another accountant's wallet
+    // credit to whoever happened to file the request.
+    if (!ATTRIBUTION_PRESERVED.has(rec.entity)) {
+      rec.data.accountant_id = user.localId || String(user._id);
+    }
+  }
+
+  // v43 SECURITY FIX (pre-existing hole, found by the v43 mapping fleet).
+  // `ENTITY_PERMISSION.settlements` is null = "always allowed", and the stamping
+  // above only pins branch_id/accountant_id — it never inspects `data.status`.
+  // So a crafted push of {status:'approved', decided_by:…} let an ACCOUNTANT
+  // APPROVE THEIR OWN SETTLEMENT, bypassing the owner-only decision route
+  // entirely and making the owner's books show cash handed over that never
+  // arrived. An accountant may CREATE a settlement request; only the owner/admin
+  // may DECIDE one (via the app's decide() or POST /settlements/:id/decision).
+  //
+  // Throwing 403 here is correct and safe: the push loop converts a 403 into
+  // skip-and-count (the v25 pattern), so the forged row simply never enters the
+  // mirror while the device still drains its outbox. A legitimately PULLED
+  // approval is never re-pushed (pull clears the outbox rows it generates).
+  if (rec.entity === 'settlements' && rec.data && typeof rec.data === 'object') {
+    const status = String(rec.data.status || 'pending');
+    if (status !== 'pending') {
+      throw new HttpError(
+        403,
+        'accountants may request a settlement, not decide one',
+        'SETTLEMENT_DECISION_FORBIDDEN'
+      );
+    }
+    // Never let a client pre-seed the decision fields either.
+    rec.data.decided_by = null;
+    rec.data.decided_at = null;
   }
 }
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * v43 — WHY THERE IS NO BUSINESS-RULE LOCK ON THE PUSH LOOP.
+ *
+ * v43 originally re-evaluated the invoice/settlement lock here, against the
+ * owner mirror, so a hand-crafted `/api/sync/push` could not slip a
+ * locked-month change past the app. Adversarial review showed that gate is
+ * NET-DESTRUCTIVE on this architecture, and it was removed. The reasoning is
+ * recorded here so it is not reintroduced.
+ *
+ * The mirror is PUSH-ONLY and the DEVICE is the source of truth. `pull()` is a
+ * FULL RESTORE (INSERT OR REPLACE) used on a new device, after
+ * delete-local-data, and on every branch switch. Therefore any row the server
+ * REFUSES becomes a permanent divergence, and that divergence materialises as
+ * SILENT DATA LOSS the next time the account restores: the device's real value
+ * is overwritten by the stale mirror value.
+ *
+ * The server also cannot reproduce the app's rules faithfully:
+ *   - a `subscribers` row carries no month, so a server lock can only ask "was
+ *     this subscriber EVER invoiced" — strictly stricter than the app's
+ *     month-scoped rule, so it refused ordinary amps/category edits aimed at an
+ *     open month;
+ *   - the app's receipt-reversal rule is per-accountant, per-method and
+ *     issue-time-based, while the server could only see "does this month carry
+ *     any active settlement" — so it refused reversals the app itself permits.
+ * Both cases dropped a LEGITIMATE edit from the mirror and then reverted it on
+ * the device at the next full restore.
+ *
+ * Decisively: this is a LIVE system with a MIXED-VERSION fleet. A v42 device
+ * has no client-side v43 guard at all, so a new server-side refusal breaks a
+ * workflow that works today and costs that account real data. Accepting the
+ * row is never worse than yesterday's behaviour; refusing it is.
+ *
+ * So v43 enforces its rules where enforcement cannot diverge:
+ *   1. the app (repository + controller choke points), and
+ *   2. the direct admin REST surface (`assertDeletableRow`, the correction
+ *      decision routes) — which is where a "manual API request" actually
+ *      reaches, and where a refusal has no device counterpart to desync.
+ *
+ * The ONE refusal kept on the push path is `authorizeRecord`'s: a row NO app
+ * version can legitimately produce (an accountant pushing an already-decided
+ * settlement — forgery, not a workflow). It is skip-and-counted, never thrown,
+ * and is now reported in `rejected[]`.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/** 'YYYY-MM'. Also the guard that keeps a client string out of a $regex. */
+const MONTH_RE = /^\d{4}-\d{2}$/;
 
 /**
  * Per-row edit time used for conflict resolution. The client stamps each
@@ -113,7 +227,14 @@ function editTimeMs(data) {
  * Upserts each record into the per-account mirror keyed by (user, entity,
  * localId), setting data/deleted/updatedAt. Rejects unknown entities (400) and
  * enforces per-accountant entity/branch authorization (403). Returns
- * { ok, count, serverTime }.
+ * { ok, count, rejected, serverTime }.
+ *
+ * v43: `rejected` is an ADDITIVE array of { entity, localId, reason } listing
+ * the rows the server-side MONTH LOCK refused to mirror (a locked-month change
+ * pushed by a hand-crafted call or a tampered client). Those rows are still
+ * COUNTED in `count` and the response is still 200 — a lock violation must
+ * never fail the batch (see the lock comment block above). A client that
+ * ignores the field behaves exactly as it does today.
  *
  * Conflict resolution (last-EDIT-wins + sticky tombstones), per-row, server
  * side. BACKWARD-COMPATIBLE: when the per-row edit time (`data.updated_at`) is
@@ -131,6 +252,11 @@ const push = asyncHandler(async (req, res) => {
   // into their own.
   const userId = effectiveOwnerId(req.user);
   let count = 0;
+  // v43: rows the server declined to mirror. ADDITIVE field on the 200
+  // response — a client that ignores it is byte-for-byte unaffected (the batch
+  // still succeeds and `count` still covers every record, so the outbox
+  // drains). Only forged rows land here; see the design note above MONTH_RE.
+  const rejected = [];
 
   for (const rec of records) {
     if (!rec || typeof rec.entity !== 'string' || typeof rec.localId !== 'string') {
@@ -159,6 +285,12 @@ const push = asyncHandler(async (req, res) => {
           `[sync] skipped unauthorized ${rec.entity}/${rec.localId} from ` +
             `${req.user?.username || req.user?._id} (${err.code})`
         );
+        // Report it so the field is actionable rather than always-empty.
+        rejected.push({
+          entity: rec.entity,
+          localId: rec.localId,
+          reason: err.code || 'FORBIDDEN',
+        });
         count += 1; // accepted/no-op so the device clears its outbox
         continue;
       }
@@ -210,6 +342,10 @@ const push = asyncHandler(async (req, res) => {
       }
     }
 
+    // NOTE: v43 deliberately applies NO business-rule lock here. Refusing a row
+    // the device already committed diverges the mirror and silently reverts real
+    // data at the next full restore — see the design note above MONTH_RE.
+
     // eslint-disable-next-line no-await-in-loop
     await SyncRecord.findOneAndUpdate(
       { user: userId, entity: rec.entity, localId: rec.localId },
@@ -219,7 +355,7 @@ const push = asyncHandler(async (req, res) => {
     count += 1;
   }
 
-  res.status(200).json({ ok: true, count, serverTime: new Date().toISOString() });
+  res.status(200).json({ ok: true, count, rejected, serverTime: new Date().toISOString() });
 });
 
 /**

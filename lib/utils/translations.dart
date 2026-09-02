@@ -646,6 +646,53 @@ class Messages extends Translations {
       'perm_boards': 'Manage boards & circuits',
       'perm_expenses': 'Manage expenses',
       'perm_prices': 'Manage monthly prices',
+      // ---- v43: corrections after invoicing (month-locked accounting) ----
+      'correction_request': 'Request a correction',
+      'correction_requests': 'Correction requests',
+      'correction_requests_subtitle':
+          'Review and decide corrections for already-invoiced months',
+      'correction_reason': 'Reason for the correction',
+      'correction_new_amps': 'New amps',
+      'correction_submit': 'Send request',
+      'correction_sent': 'Correction request sent — awaiting approval',
+      'month_locked_title': 'This month is locked',
+      'month_locked_body':
+          'An invoice has already been issued for this month, so the financial data is locked. Any change must go through a correction request.',
+      'correction_pending': 'Awaiting approval',
+      'correction_approved': 'Approved',
+      'correction_rejected': 'Rejected',
+      'correction_refund_due': 'Awaiting cash return',
+      'correction_completed': 'Completed',
+      'correction_difference': 'Difference',
+      'correction_record_refund': 'Record cash returned',
+      'correction_refund_recorded': 'Cash return recorded',
+      'correction_approve': 'Approve correction',
+      'correction_reject': 'Reject correction',
+      'correction_original_untouched':
+          'Approving records a separate correction entry; the original invoice is not modified.',
+      'correction_none': 'No correction requests yet',
+      'edit_locked_invoiced':
+          'Cannot edit amps/type: an invoice has already been issued for this subscriber this month. Send a correction request instead.',
+      'price_locked_invoiced':
+          'Cannot change the price: invoices have already been issued for this month. Use a correction request.',
+      // v43 review: refusal/status keys reached from code but previously undefined
+      // in BOTH maps (parity passed while users saw raw snake_case tokens).
+      'correction_increase': 'Increase',
+      'correction_decrease': 'Decrease',
+      'correction_id': 'Request no.',
+      'correction_not_allowed': 'You are not allowed to decide this correction.',
+      'correction_not_pending': 'This correction has already been decided.',
+      'correction_not_refund_due': 'This correction is not awaiting a cash return.',
+      'correction_pending_exists':
+          'A correction request for this subscriber and month is already awaiting a decision.',
+      'correction_reason_required': 'Please give a reason for the correction.',
+      'correction_month_missing': 'Select an accounting month first.',
+      'correction_no_price': 'No price is set for this month, so the difference cannot be computed.',
+      'correction_no_change': 'That value matches the current one — nothing to correct.',
+      'refund_due': 'Refund due',
+      'refund_return': 'Return cash to the subscriber',
+      'refund_paid_by': 'Cash returned by',
+      'refund_paid_at': 'Cash returned on',
     },
     'ar_AR': {
       'app_name': 'فلاش',
@@ -1282,6 +1329,53 @@ class Messages extends Translations {
       'perm_boards': 'إدارة البوردات والجوزات',
       'perm_expenses': 'إدارة المصروفات',
       'perm_prices': 'إدارة أسعار الأشهر',
+      // ---- v43: طلبات التعديل بعد إصدار الوصل (قفل الشهر المحاسبي) ----
+      'correction_request': 'طلب تعديل',
+      'correction_requests': 'طلبات التعديل',
+      'correction_requests_subtitle':
+          'مراجعة والبت في تعديلات الأشهر المفوترة',
+      'correction_reason': 'سبب التعديل',
+      'correction_new_amps': 'الأمبير الجديد',
+      'correction_submit': 'إرسال الطلب',
+      'correction_sent': 'تم إرسال طلب التعديل — بانتظار الموافقة',
+      'month_locked_title': 'هذا الشهر مقفل',
+      'month_locked_body':
+          'صدر وصل لهذا الشهر، لذلك أصبحت بياناته المالية مقفلة. أي تغيير يجب أن يتم عبر طلب تعديل.',
+      'correction_pending': 'بانتظار الموافقة',
+      'correction_approved': 'تمت الموافقة',
+      'correction_rejected': 'مرفوض',
+      'correction_refund_due': 'بانتظار إرجاع المبلغ',
+      'correction_completed': 'مكتمل',
+      'correction_difference': 'الفرق',
+      'correction_record_refund': 'تسجيل إرجاع المبلغ',
+      'correction_refund_recorded': 'تم تسجيل إرجاع المبلغ',
+      'correction_approve': 'الموافقة على التعديل',
+      'correction_reject': 'رفض التعديل',
+      'correction_original_untouched':
+          'الموافقة تسجّل قيد تعديل منفصل، ولا تُغيّر الوصل الأصلي.',
+      'correction_none': 'لا توجد طلبات تعديل بعد',
+      'edit_locked_invoiced':
+          'لا يمكن تعديل الأمبير/الفئة: صدر وصل لهذا المشترك في هذا الشهر. أرسل طلب تعديل بدلاً من ذلك.',
+      'price_locked_invoiced':
+          'لا يمكن تعديل السعر: صدرت وصولات في هذا الشهر. استخدم طلب تعديل.',
+      // v43 review: refusal/status keys reached from code but previously undefined
+      // in BOTH maps (parity passed while users saw raw snake_case tokens).
+      'correction_increase': 'زيادة',
+      'correction_decrease': 'نقصان',
+      'correction_id': 'رقم الطلب',
+      'correction_not_allowed': 'لا تملك صلاحية البت في هذا التعديل.',
+      'correction_not_pending': 'تم البت في هذا التعديل مسبقاً.',
+      'correction_not_refund_due': 'هذا التعديل ليس بانتظار إرجاع مبلغ.',
+      'correction_pending_exists':
+          'يوجد طلب تعديل لهذا المشترك وهذا الشهر بانتظار البت فيه.',
+      'correction_reason_required': 'يرجى كتابة سبب التعديل.',
+      'correction_month_missing': 'اختر الشهر المحاسبي أولاً.',
+      'correction_no_price': 'لا يوجد سعر محدد لهذا الشهر، لذلك لا يمكن احتساب الفرق.',
+      'correction_no_change': 'القيمة مطابقة للقيمة الحالية — لا يوجد ما يُعدّل.',
+      'refund_due': 'مبلغ واجب الإرجاع',
+      'refund_return': 'إرجاع المبلغ إلى المشترك',
+      'refund_paid_by': 'أرجع المبلغ',
+      'refund_paid_at': 'تاريخ الإرجاع',
     },
   };
 }

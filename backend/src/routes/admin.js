@@ -101,6 +101,34 @@ router.post(
   ctrl.rejectPasswordReset
 );
 
+// ---- Corrections after invoicing (v43) ----
+// An accountant may no longer silently rewrite the billing basis of a month
+// that is already invoiced or settled: they file a CORRECTION, which reaches
+// the owner's mirror as a synced row and is decided here. A decision never
+// edits the original receipt or settlement — approving appends one immutable
+// `financial_adjustments` row (the money), and the physical cash return of a
+// decrease is a SEPARATE, separately-recorded step (`refund-paid`). Each
+// decision route is idempotent: only a pending correction can be
+// approved/rejected and only a `refund_due` one can be marked refund-paid;
+// anything else is a 409 that changes nothing. Protected by the router-level
+// requireAuth + requireAdmin, like every route above.
+router.get('/corrections', ctrl.listCorrections);
+router.post(
+  '/corrections/:id/approve',
+  // Optional free-text note kept on the correction so the panel can show why it
+  // was approved; the decision itself needs no payload.
+  [body('note').optional().isString()],
+  validate,
+  ctrl.approveCorrection
+);
+router.post(
+  '/corrections/:id/reject',
+  [body('note').optional().isString()],
+  validate,
+  ctrl.rejectCorrection
+);
+router.post('/corrections/:id/refund-paid', ctrl.markCorrectionRefundPaid);
+
 // ---- Plans ----
 router.get('/plans', ctrl.listPlans);
 router.put(

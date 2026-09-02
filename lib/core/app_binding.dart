@@ -4,6 +4,7 @@ import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/month_controller.dart';
 import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
+import 'package:generatormanagment/controllers/correction_controller.dart';
 import 'package:generatormanagment/controllers/dashboard_controller.dart';
 import 'package:generatormanagment/controllers/expense_controller.dart';
 import 'package:generatormanagment/controllers/reports_controller.dart';
@@ -38,5 +39,8 @@ class AppBinding extends Bindings {
     Get.lazyPut<SettingsController>(() => SettingsController(), fenix: true);
     Get.lazyPut<SubscriptionController>(() => SubscriptionController(), fenix: true);
     Get.lazyPut<SettlementController>(() => SettlementController(), fenix: true);
+    // v43: corrections after invoicing (request / approve / reject / record the
+    // physical cash return) — same lazy+fenix lifecycle as its neighbours.
+    Get.lazyPut<CorrectionController>(() => CorrectionController(), fenix: true);
   }
 }

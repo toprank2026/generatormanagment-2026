@@ -579,6 +579,39 @@ class CoreController extends GetxController {
     // Last resort for legacy rows that never carried a branch.
     sub.branchId ??= _branch.writeBranchId;
     await _validateSubscriber(sub, exceptId: sub.id, orig: orig);
+    // v43 — MONTH LOCK. This is the BUSINESS-LOGIC gate, not a UI gate: every
+    // subscriber write goes through this controller, so hiding a button in the
+    // edit form is not the control. Once the globally selected accounting month
+    // has been INVOICED for this subscriber (a valid receipt exists for
+    // subscriber+month), the fields that move the money — amps, category,
+    // branch — may no longer be rewritten in place: doing so silently re-prices
+    // a month whose receipt, wallet and settlement figures are already closed,
+    // which is exactly the bug this batch closes.
+    //
+    // The sanctioned route is a CORRECTION REQUEST (`corrections` → admin
+    // decision → an append-only `financial_adjustments` row), which leaves the
+    // original receipt untouched and keeps the delta inside the SAME month.
+    //
+    // Name / phone / board edits stay freely allowed, exactly as today, and a
+    // month with no receipt for this subscriber behaves byte-identically to
+    // before. A legacy row whose branch was never stamped is NOT treated as a
+    // branch move when the `??=` backfill above assigns it one.
+    if (orig != null) {
+      final String origBranch = orig.branchId ?? '';
+      final bool branchChanged =
+          origBranch.isNotEmpty && (sub.branchId ?? '') != origBranch;
+      final bool billingRelevantChanged = sub.amps != orig.amps ||
+          SubscriberCategory.normalize(sub.category) !=
+              SubscriberCategory.normalize(orig.category) ||
+          branchChanged;
+      if (billingRelevantChanged) {
+        final month = Get.find<MonthController>().selectedMonth.value;
+        final lock = await monthLockState(sub, month);
+        if (lock.invoiceLocked) {
+          throw ValidationException('edit_locked_invoiced');
+        }
+      }
+    }
     // v37 item 3: a BILLING-RELEVANT edit (amps / subscription type) is blocked
     // while the subscriber has a receipt of the CURRENT month inside an ACTIVE
     // settlement — changing the due after the money was settled would corrupt
@@ -631,6 +664,48 @@ class CoreController extends GetxController {
     } catch (_) {
       return false;
     }
+  }
+
+  /// v43 — the DERIVED month lock for [sub] in accounting month [month]
+  /// ('YYYY-MM', the TARIFF/billing month, i.e. the v40 accounting reference).
+  ///
+  ///  * `invoiceLocked`    — a VALID receipt exists for (subscriber, month):
+  ///    the month has been invoiced for this subscriber, so its billing basis
+  ///    (amps / category / branch) must not be rewritten in place.
+  ///  * `settlementLocked` — the month carries a pending|approved settlement,
+  ///    bucketed inside the repository by
+  ///    `COALESCE(month, substr(requested_at,1,7))` — byte-identical to the
+  ///    v40 expression the app, the backend and the panel already share, so
+  ///    legacy unstamped rows keep their exact previous meaning.
+  ///
+  /// Lock state is **derived, never stored**: `SyncService.pull` writes with
+  /// `ConflictAlgorithm.replace` (delete+insert), so a lock column would be
+  /// reset ACCOUNT-WIDE the moment an older device pushed a row without it. It
+  /// is recomputed from the receipts and settlements themselves, every time.
+  ///
+  /// Neither predicate is narrowed by branch or accountant on purpose: a legacy
+  /// receipt/settlement row with a NULL branch must still lock the month. A
+  /// missed lock silently rewrites settled money; an extra lock only routes the
+  /// edit through a correction request, which is recoverable.
+  ///
+  /// Fail-OPEN on a repository error, matching [_billingEditLocked]: an edit is
+  /// recoverable (and the backend independently re-evaluates the same lock when
+  /// the row is pushed), so a guard error must never brick all editing.
+  Future<({bool invoiceLocked, bool settlementLocked})> monthLockState(
+      Subscriber sub, String month) async {
+    bool invoiceLocked = false;
+    bool settlementLocked = false;
+    try {
+      invoiceLocked = await _guardReceiptRepo.hasValidReceipt(sub.id, month);
+    } catch (_) {
+      invoiceLocked = false;
+    }
+    try {
+      settlementLocked = await _guardSettleRepo.monthHasActiveSettlement(month);
+    } catch (_) {
+      settlementLocked = false;
+    }
+    return (invoiceLocked: invoiceLocked, settlementLocked: settlementLocked);
   }
 
   /// R8 (unique name, per branch) + R7 (one active subscriber per socket, per

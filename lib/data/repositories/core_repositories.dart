@@ -1,5 +1,7 @@
 import 'package:generatormanagment/data/db_helper.dart';
+import 'package:generatormanagment/data/models/billing_models.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
+import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:sqflite/sqflite.dart';
 
 /// Thrown by controllers when a subscriber create/edit breaks a business rule
@@ -1151,5 +1153,111 @@ class SubscriberRepository {
           ),
         ) ??
         0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Flash v43 (C5) — the TARIFF lock: an EXISTING price can no longer be changed
+// for a month that has already been invoiced.
+//
+// The bug being closed: `monthly_prices` is joined LIVE by every due/expected
+// query (`getByPaymentStatus`, `coverageBySubscriber`, `previousUnpaidMonths`,
+// the per-board counts, the reports). Editing the tariff of a month that already
+// carries receipts therefore silently RE-PRICES every subscriber already
+// invoiced in it: the receipt keeps its `price_snapshot`, while the derived due
+// moves under it — flipping settled rows to unpaid (or the reverse) in a closed
+// accounting month. Golden Rule: a month's money is fixed once it is invoiced.
+//
+// v43 §3.3 — the lock is DERIVED, never stored. A `locked`-style column on
+// `monthly_prices` would be reset account-wide on the next pull, which writes
+// `ConflictAlgorithm.replace` (delete + insert) from whatever an older device
+// pushed.
+//
+// Why an extension: `MonthlyPriceRepository` lives in `billing_repositories.dart`
+// (a different lane's file). An extension keeps the guard at the repository
+// choke point — below the UI, so hiding a button is never the control — without
+// editing that file. An instance member always wins over an extension member, so
+// folding this INTO the class later needs no change here.
+//
+// Deliberately narrow. Three writes stay byte-identical to today:
+//   * a month with NO valid receipt        -> unchanged (ordinary pricing),
+//   * creating a NEW price row             -> unchanged (a category priced later
+//     only ADDS a due; it never re-prices an invoice that was already issued),
+//   * re-writing the SAME value            -> unchanged, and load-bearing:
+//     `BillingController.setPrices` re-writes ALL THREE categories on every
+//     save, and a `start_date`-only edit is metadata, not money.
+// Only CHANGING an existing price in an invoiced month is refused.
+//
+// App layer only — exactly like every other [ValidationException] here. The sync
+// pull writes rows straight through `db.insert`, so a mirrored price row can
+// never be blocked (blocking it would wedge the pull for the whole account).
+extension MonthlyPriceInvoiceLock on MonthlyPriceRepository {
+  /// True when [month] already carries at least one VALID receipt — the
+  /// month-level half of the v43 invoice lock (the per-subscriber half is
+  /// `ReceiptRepository.hasValidReceipt`).
+  ///
+  /// `status = 'valid'` matches every other money query in this file, so a month
+  /// whose receipts were ALL reversed unlocks again — the reversal already
+  /// unwound that month's cash.
+  ///
+  /// [branchId] follows this file's convention: null = consolidated (any
+  /// branch); non-null matches that branch, with a legacy NULL `branch_id`
+  /// normalized to [DbHelper.kMainBranchId] so pre-multi-branch receipts still
+  /// lock the Main branch (`BranchController.writeBranchId` writes 'main').
+  Future<bool> monthHasAnyReceipt(String month, {String? branchId}) async {
+    final db = await DbHelper().database;
+    const main = DbHelper.kMainBranchId;
+    final clauses = <String>['month = ?', "status = 'valid'"];
+    final args = <dynamic>[month];
+    if (branchId != null) {
+      clauses.add("IFNULL(branch_id, '$main') = ?");
+      args.add(branchId);
+    }
+    final rows = await db.rawQuery(
+      'SELECT 1 FROM receipts WHERE ${clauses.join(' AND ')} LIMIT 1',
+      args,
+    );
+    return rows.isNotEmpty;
+  }
+
+  /// Throws `ValidationException('price_locked_invoiced')` when writing [item]
+  /// would CHANGE the tariff of an invoiced month. Silent no-op otherwise, so
+  /// every legitimate pricing write keeps working exactly as before.
+  ///
+  /// Compares against the row [item] would REPLACE — matched on the synthetic
+  /// `"<month>|<branchId>|<category>"` PK, which is precisely what
+  /// `ConflictAlgorithm.replace` overwrites — so per-category and per-branch
+  /// tariffs stay independent.
+  Future<void> assertPriceChangeAllowed(MonthlyPrice item) async {
+    final db = await DbHelper().database;
+    final existing = await db.query(
+      'monthly_prices',
+      columns: ['price_per_amp'],
+      where: 'id = ?',
+      whereArgs: [item.id],
+      limit: 1,
+    );
+    // No row yet for this (month, branch, category): creating a price is always
+    // allowed — it adds a due, it cannot rewrite an issued invoice.
+    if (existing.isEmpty) return;
+    final double current =
+        ((existing.first['price_per_amp'] as num?) ?? 0).toDouble();
+    // Identical re-write (incl. the all-categories save and start_date-only
+    // edits): not a price CHANGE, so nothing is locked.
+    if ((current - item.pricePerAmp).abs() < 0.000001) return;
+    if (await monthHasAnyReceipt(item.month, branchId: item.branchId)) {
+      throw ValidationException('price_locked_invoiced', arg: item.month);
+    }
+  }
+
+  /// Lock-aware drop-in for `MonthlyPriceRepository.insert`: same arguments,
+  /// same return (the sqflite row id), and identical behaviour whenever the
+  /// write is allowed. Call this from the pricing write paths
+  /// (`BillingController.setPrice` / `setPrices`); `insert` itself is left
+  /// unguarded on purpose so the sync-pull and restore paths keep writing the
+  /// server's rows unconditionally.
+  Future<int> insertGuarded(MonthlyPrice item) async {
+    await assertPriceChangeAllowed(item);
+    return insert(item);
   }
 }

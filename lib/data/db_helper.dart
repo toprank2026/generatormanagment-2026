@@ -34,7 +34,7 @@ class DbHelper {
     final String path = testPath ?? await _defaultPath();
     return await openDatabase(
       path,
-      version: 15,
+      version: 16,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -60,6 +60,13 @@ class DbHelper {
     'branches': 'id',
     // Settlements (v11) — accountant wallet settlement requests (synced).
     'settlements': 'id',
+    // Corrections (v16 / Flash v43) — the request + lifecycle document for a
+    // post-invoice change to a CLOSED billing month (audit trail).
+    'corrections': 'id',
+    // Financial adjustments (v16 / Flash v43) — the immutable signed delta a
+    // correction produces. APPEND-ONLY: written once, never updated, never
+    // deleted by ANY code path (there is deliberately no update/delete API).
+    'financial_adjustments': 'id',
   };
 
   /// Creates the change-capture outbox + AFTER INSERT/UPDATE/DELETE triggers so
@@ -331,6 +338,93 @@ class DbHelper {
       await _addColumn(db, 'subscribers', 'billing_start_month', 'TEXT');
       await _createV42Indexes(db);
     }
+    if (oldVersion < 16) {
+      // v16 (Flash v43): post-invoice CORRECTIONS + the append-only
+      // FINANCIAL_ADJUSTMENTS ledger.
+      //
+      // These are NEW TABLES, deliberately — NOT columns on `subscribers`,
+      // `receipts`, `monthly_prices` or `settlements`. `SyncService.pull`
+      // writes every mirrored row with `ConflictAlgorithm.replace`
+      // (= INSERT OR REPLACE = delete + insert), so a column that an OLDER
+      // device doesn't know about is absent from the row it pushes and would be
+      // RESET ACCOUNT-WIDE on every device's next pull — silently unlocking a
+      // closed month or erasing a correction. A whole entity, by contrast, is
+      // simply SKIPPED by a client that doesn't know it (`pk == null →
+      // continue`), so new tables are invisible to old devices instead of
+      // corrupting them. Lock state is likewise DERIVED (a valid receipt /
+      // an active settlement for the month), never stored.
+      //
+      // Both tables are nullable-everywhere and additive: no existing table is
+      // altered, no existing row is rewritten, and every figure the app shows
+      // today is byte-identical until an adjustment exists for that
+      // subscriber-month.
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS corrections (
+          id TEXT PRIMARY KEY,
+          subscriber_id TEXT,
+          month TEXT, -- the TARIFF/accounting month being corrected ('YYYY-MM')
+          branch_id TEXT,
+          accountant_id TEXT,
+          receipt_uuid TEXT, -- the invoice that locked the month (audit link)
+          settlement_id TEXT, -- the settlement that locked the month, if any
+          reason TEXT,
+          old_amps REAL,
+          new_amps REAL,
+          old_due REAL,
+          new_due REAL,
+          difference REAL, -- new_due - old_due (signed)
+          -- 'pending' | 'approved' | 'rejected' | 'refund_due' | 'completed'
+          status TEXT DEFAULT 'pending',
+          requested_by TEXT,
+          requested_at TEXT,
+          decided_by TEXT,
+          decided_at TEXT,
+          decision_note TEXT,
+          refund_paid_at TEXT, -- the PHYSICAL cash return: separate from the
+          refund_paid_by TEXT, -- approval, and separately recorded
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS financial_adjustments (
+          id TEXT PRIMARY KEY,
+          correction_id TEXT,
+          subscriber_id TEXT,
+          month TEXT, -- the month whose money this delta belongs to
+          branch_id TEXT,
+          accountant_id TEXT,
+          -- 'correction_increase' | 'correction_decrease' | 'refund_return'
+          kind TEXT,
+          amount REAL,
+          method TEXT DEFAULT 'cash',
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          created_by TEXT,
+          updated_at TEXT
+        )
+      ''');
+      // Create the v16 sync triggers (all other synced tables already have
+      // theirs → skipped). Same shape as the v11 settlements branch.
+      await _createSyncInfra(db);
+      await _createV43Indexes(db);
+    }
+  }
+
+  /// v43: indexes for the correction/adjustment lookups — the per
+  /// subscriber-month lock + correction list, the pending/refund_due queue, and
+  /// the per-month wallet fold (month + accountant). Idempotent
+  /// (`IF NOT EXISTS`), so it is safe to run from both `_onCreate` and
+  /// `_onUpgrade`.
+  Future<void> _createV43Indexes(Database db) async {
+    const stmts = [
+      'CREATE INDEX IF NOT EXISTS idx_corrections_sub_month ON corrections(subscriber_id, month)',
+      'CREATE INDEX IF NOT EXISTS idx_corrections_status ON corrections(status)',
+      'CREATE INDEX IF NOT EXISTS idx_adjustments_month_acct ON financial_adjustments(month, accountant_id)',
+      'CREATE INDEX IF NOT EXISTS idx_adjustments_sub_month ON financial_adjustments(subscriber_id, month)',
+    ];
+    for (final s in stmts) {
+      await db.execute(s);
+    }
   }
 
   /// v42: index for the subscriber activation filter (item 5). Idempotent, so
@@ -558,6 +652,73 @@ class DbHelper {
       )
     ''');
 
+    // 10. Corrections (v16 / Flash v43): a post-invoice change to a CLOSED
+    //     billing month, as a first-class audit document with its own
+    //     lifecycle (pending → approved|rejected; a decrease then goes
+    //     approved → refund_due → completed once the cash is physically
+    //     returned). Deliberately a NEW TABLE and not columns on subscribers/
+    //     receipts/monthly_prices/settlements: `SyncService.pull` writes with
+    //     `ConflictAlgorithm.replace` (INSERT OR REPLACE = delete + insert), so
+    //     a column an older device doesn't know about is missing from the row
+    //     it pushes and gets RESET ACCOUNT-WIDE on the next pull — whereas an
+    //     unknown ENTITY is simply skipped by that device. Lock state itself is
+    //     DERIVED (valid receipt / active settlement for the month), never
+    //     stored. Keep this DDL byte-identical to the v16 `_onUpgrade` branch,
+    //     or fresh installs diverge from upgraded ones.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS corrections (
+        id TEXT PRIMARY KEY,
+        subscriber_id TEXT,
+        month TEXT, -- the TARIFF/accounting month being corrected ('YYYY-MM')
+        branch_id TEXT,
+        accountant_id TEXT,
+        receipt_uuid TEXT, -- the invoice that locked the month (audit link)
+        settlement_id TEXT, -- the settlement that locked the month, if any
+        reason TEXT,
+        old_amps REAL,
+        new_amps REAL,
+        old_due REAL,
+        new_due REAL,
+        difference REAL, -- new_due - old_due (signed)
+        -- 'pending' | 'approved' | 'rejected' | 'refund_due' | 'completed'
+        status TEXT DEFAULT 'pending',
+        requested_by TEXT,
+        requested_at TEXT,
+        decided_by TEXT,
+        decided_at TEXT,
+        decision_note TEXT,
+        refund_paid_at TEXT, -- the PHYSICAL cash return: separate from the
+        refund_paid_by TEXT, -- approval, and separately recorded
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT
+      )
+    ''');
+
+    // 11. Financial adjustments (v16 / Flash v43): the immutable signed delta
+    //     an approved correction produces. APPEND-ONLY — written once, never
+    //     updated, never deleted by any code path — which is why the delta is
+    //     NOT a row in `receipts` (that would consume a real `receipt_no`, and
+    //     the status='valid' filter would either hide the delta from ~20 money
+    //     queries or print a phantom invoice). Folded into the wallet/revenue
+    //     aggregates only; never into paid/unpaid derivation or printing.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS financial_adjustments (
+        id TEXT PRIMARY KEY,
+        correction_id TEXT,
+        subscriber_id TEXT,
+        month TEXT, -- the month whose money this delta belongs to
+        branch_id TEXT,
+        accountant_id TEXT,
+        -- 'correction_increase' | 'correction_decrease' | 'refund_return'
+        kind TEXT,
+        amount REAL,
+        method TEXT DEFAULT 'cash',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        created_by TEXT,
+        updated_at TEXT
+      )
+    ''');
+
     // Indexes
     await db.execute('CREATE INDEX idx_subscribers_name ON subscribers(name)');
     await db.execute('CREATE INDEX idx_receipts_month ON receipts(month)');
@@ -571,6 +732,7 @@ class DbHelper {
 
     await _createV8Indexes(db);
     await _createV42Indexes(db);
+    await _createV43Indexes(db);
     await _addUpdatedAtColumns(db);
     // v10 (Flash item 5): pricing start-day metadata.
     await _addColumn(db, 'monthly_prices', 'start_date', 'TEXT');

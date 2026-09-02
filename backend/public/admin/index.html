@@ -668,6 +668,24 @@ var API={
   },
   approvePasswordReset:function(id){ return api("POST","/api/admin/password-resets/"+encodeURIComponent(id)+"/approve",{}); },
   rejectPasswordReset:function(id,note){ return api("POST","/api/admin/password-resets/"+encodeURIComponent(id)+"/reject",{note:note||""}); },
+  // v43: correction requests. An accountant asks to fix a month that is ALREADY
+  // invoiced (or already settled); nothing moves until a decision is taken here.
+  // Approving writes an APPEND-ONLY adjustment beside the books — it never edits
+  // the original invoice, never consumes a receipt number. A decrease does NOT
+  // reduce the wallet (it can never go negative): the correction parks in
+  // `refund_due` and the physical cash return is a SECOND, separate record.
+  corrections:function(opts){
+    opts=opts||{};
+    var q=[];
+    if(opts.q) q.push("q="+encodeURIComponent(opts.q));
+    if(opts.status) q.push("status="+encodeURIComponent(opts.status));
+    if(opts.page) q.push("page="+encodeURIComponent(opts.page));
+    if(opts.limit) q.push("limit="+encodeURIComponent(opts.limit));
+    return api("GET","/api/admin/corrections"+(q.length?("?"+q.join("&")):""));
+  },
+  approveCorrection:function(id){ return api("POST","/api/admin/corrections/"+encodeURIComponent(id)+"/approve",{}); },
+  rejectCorrection:function(id,note){ return api("POST","/api/admin/corrections/"+encodeURIComponent(id)+"/reject",{note:note||""}); },
+  correctionRefundPaid:function(id){ return api("POST","/api/admin/corrections/"+encodeURIComponent(id)+"/refund-paid",{}); },
   // Landing: advertisement banners (admin CRUD) + promo video (singleton).
   banners:function(){ return api("GET","/api/admin/banners"); },
   createBanner:function(form){ return api("POST","/api/admin/banners",form,true); },
@@ -991,6 +1009,7 @@ function shell(activeRoute,content){
     navLink("#/dashboard","لوحة التحكم",activeRoute),
     navLink("#/users","المستخدمون",activeRoute),
     navLink("#/password-resets","طلبات استعادة كلمة المرور",activeRoute),   // v42 item 4
+    navLink("#/corrections","طلبات التصحيح",activeRoute),                   // v43
     navLink("#/plans","الخطط",activeRoute),
     navLink("#/landing","اللافتات والفيديو",activeRoute)
   ]);
@@ -1132,6 +1151,7 @@ var routes=[
   {re:/^#\/users\/([^\/]+)\/sub\/([^\/]+)$/, view:viewUserStatement},
   {re:/^#\/users\/([^\/]+)$/, view:viewUserDetail},
   {re:/^#\/password-resets$/, view:viewPasswordResets},   // v42 item 4 (super admin only)
+  {re:/^#\/corrections$/, view:viewCorrections},          // v43 (super admin only)
   {re:/^#\/plans$/, view:viewPlans},
   {re:/^#\/landing$/, view:viewLanding}
 ];
@@ -1728,7 +1748,15 @@ var SYNC_COLUMNS={
     }},
     {label:"المدفوع",get:function(d){ return d.paid_amount!=null?fmtPrice(d.paid_amount):"—"; }},
     {label:"الخصم",get:function(d){ return discountText(d); }},
-    {label:"الحالة",get:function(d){ return receiptStatusBadge(d.status); }}
+    {label:"الحالة",get:function(d){ return receiptStatusBadge(d.status); }},
+    // v43: the invoice lock, DERIVED exactly as the app and the backend derive
+    // it — a VALID receipt is what locks (subscriber, month); a reversed one
+    // does not. Display only: nothing is stored and no other column changes.
+    {label:"قفل الشهر",get:function(d){
+      return d.status==="valid"
+        ? el("span",{class:"badge gray",title:"شهر مفوتر — تعديل الأمبير أو الفئة لهذا المشترك في هذا الشهر يتطلب طلب تصحيح",text:"مقفل"})
+        : "—";
+    }}
   ],
   expenses:[
     {label:"الفئة",get:function(d){ return expenseCategoryLabel(d.category); }},
@@ -3620,6 +3648,317 @@ function viewPasswordResets(){
       onConfirm:function(){
         return API.rejectPasswordReset(r.id,note).then(function(){
           toast("تم رفض الطلب","ok");
+          load();
+        });
+      }
+    });
+  }
+
+  // debounced search / instant filter -> both reset to page 1
+  var debTimer=null;
+  searchIn.addEventListener("input",function(){
+    if(debTimer) clearTimeout(debTimer);
+    debTimer=setTimeout(function(){ query=searchIn.value.trim(); page=1; load(); },300);
+  });
+  statusSel.addEventListener("change",function(){ status=statusSel.value; page=1; load(); });
+
+  buildShell();
+  load();
+}
+
+/* ============================================================
+   View: Correction requests (#/corrections)   — Flash v43
+   ------------------------------------------------------------
+   An accountant may no longer silently rewrite a month that is already
+   INVOICED (a valid receipt exists for that subscriber-month) or already
+   SETTLED. The edit is refused and turned into a correction REQUEST, which
+   lands here. Nothing moves until a decision is taken on this screen.
+
+   What a decision does — and, just as importantly, what it never does:
+     • موافقة  → writes an APPEND-ONLY entry in the adjustment ledger for that
+                exact subscriber + month. The original invoice, its receipt
+                number and the printed paper are NEVER touched, and no other
+                month is affected.
+     • زيادة   → the delta is added to that month's wallet, so an additional
+                settlement for the same month becomes possible.
+     • نقصان   → the wallet is NOT reduced (it must never be driven negative):
+                the request parks in `refund_due` until the admin physically
+                hands the cash back and records it here — a SECOND, separately
+                stored operation. Approval alone never asserts money moved.
+     • رفض     → changes nothing at all.
+   Search + status filter + pagination are SERVER-side, like the synced grids.
+   ============================================================ */
+var CORRECTION_PAGE_LIMIT=25;
+var CORRECTION_STATUS_LABELS={
+  pending:"قيد الانتظار",
+  approved:"تمت الموافقة",
+  rejected:"مرفوض",
+  refund_due:"بانتظار إرجاع المبلغ",
+  completed:"مكتمل"
+};
+function correctionStatusBadge(status){
+  var s=status||"pending";
+  var cls=s==="approved"?"green":(s==="rejected"?"red":(s==="refund_due"?"blue":(s==="completed"?"gray":"orange")));
+  return el("span",{class:"badge "+cls},[el("span",{class:"dot"}),CORRECTION_STATUS_LABELS[s]||syncText(s)]);
+}
+/* Reads one correction field tolerantly: the endpoint may hand us camelCase,
+   the raw snake_case SQLite column, or the mirrored row nested under `data`.
+   A field we cannot find renders "—" — it must never break the row. */
+function corrField(r,camel,snake){
+  if(!r) return null;
+  if(r[camel]!=null&&r[camel]!=="") return r[camel];
+  if(r[snake]!=null&&r[snake]!=="") return r[snake];
+  var d=r.data||{};
+  if(d[snake]!=null&&d[snake]!=="") return d[snake];
+  if(d[camel]!=null&&d[camel]!=="") return d[camel];
+  return null;
+}
+function corrNum(v){
+  if(v==null||v==="") return null;
+  var n=Number(v);
+  return isNaN(n)?null:n;
+}
+/* The id the decision endpoints address. The correction's own UUID is its
+   identity everywhere (device, mirror, panel), so `localId` is accepted as the
+   same thing when the list is served straight off the mirror row. */
+function corrId(r){ return corrField(r,"id","id")||corrField(r,"localId","local_id"); }
+/* The signed money delta: the explicit `difference` when the server sends one,
+   otherwise derived from the two due snapshots. */
+function corrDifference(r){
+  var d=corrNum(corrField(r,"difference","difference"));
+  if(d!=null) return d;
+  var oldDue=corrNum(corrField(r,"oldDue","old_due"));
+  var newDue=corrNum(corrField(r,"newDue","new_due"));
+  if(oldDue==null||newDue==null) return null;
+  return newDue-oldDue;
+}
+/* Signed, colour-coded delta: increase green (money owed to the books rises),
+   decrease red (money must be returned). Positive gets an explicit "+" — the
+   formatter only ever prints the minus itself. */
+function corrDiffText(diff){
+  if(diff==null) return "—";
+  return (diff>0?"+":"")+fmtPrice(diff);
+}
+function corrDiffColor(diff){
+  if(diff==null||diff===0) return "var(--muted)";
+  return diff>0?"var(--success)":"var(--danger)";
+}
+function viewCorrections(){
+  // Screen-local state; it survives an in-screen reload, and any filter change
+  // resets to page 1 (the server owns the paging — we never fetch everything).
+  var query="";
+  var status="";
+  var page=1;
+
+  var searchIn=el("input",{class:"input",type:"text",placeholder:"ابحث باسم المشترك أو الشهر أو صاحب الحساب…"});
+  var statusSel=el("select",{class:"input",style:"max-width:200px"},[
+    optEl("","كل الحالات"),optEl("pending","قيد الانتظار"),optEl("approved","تمت الموافقة"),
+    optEl("rejected","مرفوض"),optEl("refund_due","بانتظار إرجاع المبلغ"),optEl("completed","مكتمل")
+  ]);
+  var countEl=el("span",{class:"muted",text:""});
+  // Stable regions repainted per load, so typing in the search box never loses
+  // focus/caret to a full-screen rebuild.
+  var tableWrap=el("div");
+  var pagerWrap=el("div");
+
+  function buildShell(){
+    var content=el("div");
+    content.appendChild(pageHead("طلبات التصحيح"));
+    content.appendChild(el("div",{class:"toolbar"},[
+      el("div",{class:"search"},[el("span",{class:"ic"},[mi("search")]),searchIn]),
+      statusSel,
+      el("div",{class:"grow"}),
+      countEl,
+      el("button",{class:"btn ghost",onclick:function(){ load(); }},["تحديث"])
+    ]));
+    content.appendChild(tableWrap);
+    content.appendChild(pagerWrap);
+    shell("#/corrections",content);
+  }
+
+  function paintPager(total){
+    clear(pagerWrap);
+    var pages=Math.max(1,Math.ceil((total||0)/CORRECTION_PAGE_LIMIT));
+    if(!total) return;
+    pagerWrap.appendChild(el("div",{class:"toolbar",style:"justify-content:center;margin-top:6px"},[
+      el("button",{class:"btn neutral sm",disabled:page<=1?"":false,onclick:function(){ if(page>1){ page--; load(); } }},["السابق ›"]),
+      el("span",{class:"muted",style:"min-width:120px;text-align:center",text:"صفحة "+page+" / "+pages}),
+      el("button",{class:"btn neutral sm",disabled:page>=pages?"":false,onclick:function(){ if(page<pages){ page++; load(); } }},["‹ التالي"])
+    ]));
+  }
+
+  // "الوصل": the invoice the correction hangs off — its number when the server
+  // resolved one, else the short receipt uuid (full value in the tooltip).
+  function receiptCell(r){
+    var no=corrField(r,"receiptNo","receipt_no");
+    var uuid=corrField(r,"receiptUuid","receipt_uuid");
+    if(no==null&&uuid==null) return el("td",{class:"muted",text:"—"});
+    var kids=[];
+    if(no!=null) kids.push(el("div",{style:"font-weight:700",text:"#"+String(no)}));
+    if(uuid!=null){
+      var full=String(uuid);
+      kids.push(el("div",{class:"mono muted",style:"font-size:12px",title:full,
+        text:(full.length>10?(full.slice(0,8)+"…"):full)}));
+    }
+    return el("td",{class:"nowrap"},kids);
+  }
+
+  function renderTable(items){
+    var card=el("div",{class:"card"});
+    var b=el("div",{class:"card-b flush"});
+    var tw=el("div",{class:"tbl-wrap"});
+    var tbl=el("table");
+    tbl.appendChild(el("thead",[el("tr",[
+      th("المشترك"),th("الشهر"),th("الوصل"),th("الفرق"),
+      th("الحالة"),th("وقت الطلب"),th("")
+    ])]));
+    var tb=el("tbody");
+    if(!items.length){
+      tb.appendChild(el("tr",[el("td",{colspan:"7"},[el("div",{class:"empty"},[
+        el("div",{class:"big"},[mi("edit_note")]),"لا توجد طلبات تصحيح تطابق عوامل التصفية."
+      ])])]));
+    }
+    items.forEach(function(r){
+      var st=corrField(r,"status","status")||"pending";
+      var diff=corrDifference(r);
+      var subName=corrField(r,"subscriberName","subscriber_name");
+      var ownerName=corrField(r,"ownerName","owner_name")||corrField(r,"name","name");
+      var ownerId=corrField(r,"userId","user_id");
+      var oldAmps=corrNum(corrField(r,"oldAmps","old_amps"));
+      var newAmps=corrNum(corrField(r,"newAmps","new_amps"));
+      var reason=corrField(r,"reason","reason");
+      var note=corrField(r,"decisionNote","decision_note");
+      var requestedAt=corrField(r,"requestedAt","requested_at")||corrField(r,"createdAt","created_at");
+      var decidedAt=corrField(r,"decidedAt","decided_at");
+      var refundPaidAt=corrField(r,"refundPaidAt","refund_paid_at");
+      // Actions exist ONLY on the status that legally allows them: a decided
+      // request is history, and a refund can only be recorded once the money is
+      // actually due. Nothing here can ever re-decide a closed request.
+      var actions=el("div",{class:"pill-actions",style:"justify-content:flex-end"});
+      if(st==="pending"){
+        actions.appendChild(el("button",{class:"btn sm success",onclick:function(){ approve(r); }},["موافقة"]));
+        actions.appendChild(el("button",{class:"btn sm danger ghost",onclick:function(){ reject(r); }},["رفض"]));
+      } else if(st==="refund_due"){
+        actions.appendChild(el("button",{class:"btn sm",onclick:function(){ refundPaid(r); }},["تسجيل إرجاع المبلغ"]));
+      }
+      var hasActions=(st==="pending"||st==="refund_due");
+      tb.appendChild(el("tr",[
+        el("td",[
+          el("div",{style:"font-weight:700",text:syncText(subName)}),
+          ownerName!=null
+            ? (ownerId!=null
+                ? el("a",{class:"muted",href:"#/users/"+encodeURIComponent(String(ownerId)),text:String(ownerName)})
+                : el("div",{class:"muted",text:String(ownerName)}))
+            : null,
+          reason!=null?el("div",{class:"muted",style:"font-size:12px",text:String(reason)}):null
+        ]),
+        el("td",{class:"mono nowrap",text:syncText(corrField(r,"month","month"))}),
+        receiptCell(r),
+        el("td",{class:"nowrap"},[
+          el("div",{style:"font-weight:800;color:"+corrDiffColor(diff),text:corrDiffText(diff)}),
+          (oldAmps!=null&&newAmps!=null)
+            ? el("div",{class:"muted",style:"font-size:12px",text:oldAmps+" ← "+newAmps+" أمبير"})
+            : null
+        ]),
+        el("td",[
+          correctionStatusBadge(st),
+          note!=null?el("div",{class:"muted",style:"margin-top:4px",text:String(note)}):null
+        ]),
+        el("td",{class:"muted nowrap",text:fmtDate(requestedAt)}),
+        // A closed request shows WHEN it closed in place of the buttons.
+        el("td",{class:"right"},[hasActions
+          ? actions
+          : el("span",{class:"muted nowrap",text:fmtDate(refundPaidAt||decidedAt)})])
+      ]));
+    });
+    tbl.appendChild(tb); tw.appendChild(tbl); b.appendChild(tw); card.appendChild(b);
+    return card;
+  }
+
+  function load(){
+    clear(tableWrap); tableWrap.appendChild(loadingBlock("جارٍ التحميل…"));
+    clear(pagerWrap);
+    API.corrections({q:query,status:status,page:page,limit:CORRECTION_PAGE_LIMIT}).then(function(res){
+      var items=normalizeList(res,"items");
+      var total=(res&&typeof res.total==="number")?res.total:items.length;
+      if(res&&res.page) page=res.page;
+      // Defensive (same as the synced grids): never leave the admin staring at
+      // an empty page past the end — step back and refetch.
+      if(!items.length && total>0 && page>1){ page--; load(); return; }
+      countEl.textContent=total?(total+" طلبًا"):"";
+      paintPager(total);
+      clear(tableWrap);
+      tableWrap.appendChild(renderTable(items));
+    }).catch(function(err){
+      if(err.status===401) return;
+      countEl.textContent="";
+      clear(tableWrap); tableWrap.appendChild(errorBlock(err,load));
+    });
+  }
+
+  // One-line "who/what" summary, escaped for the confirm-modal HTML body.
+  function who(r){
+    var sub=corrField(r,"subscriberName","subscriber_name");
+    var month=corrField(r,"month","month");
+    return esc(sub||"المشترك")+" — "+esc(month||"—");
+  }
+
+  function approve(r){
+    var diff=corrDifference(r);
+    // The two outcomes are financially different, so the modal states the one
+    // that will actually happen instead of a generic "are you sure".
+    var effect=(diff!=null&&diff<0)
+      ? "الفرق سالب: <b>لن يُخصم أي مبلغ من محفظة المحاسب</b> (المحفظة لا تصبح سالبة أبدًا)."
+        +" ينتقل الطلب إلى «بانتظار إرجاع المبلغ» حتى تُسلّم النقد وتُسجّله هنا كعملية منفصلة."
+      : "الفرق موجب: يُضاف إلى محفظة الشهر نفسه، ويصبح بالإمكان إجراء تسوية إضافية لهذا الشهر.";
+    confirmModal({
+      title:"الموافقة على طلب التصحيح",
+      confirmText:"موافقة",
+      alert:"الموافقة تُسجّل قيد تصحيح مستقلًّا لهذا الشهر فقط، ولا تُعدّل الوصل الأصلي ولا رقمه ولا أي شهر آخر.",
+      alertType:"info",
+      message:"الموافقة على تصحيح <b>"+who(r)+"</b> بفرق <b>"+esc(corrDiffText(diff))+"</b>؟"
+        +"<div class=\"muted\" style=\"margin-top:8px\">"+effect+"</div>",
+      onConfirm:function(){
+        return API.approveCorrection(corrId(r)).then(function(){
+          toast("تمت الموافقة على طلب التصحيح","ok");
+          load();
+        });
+      }
+    });
+  }
+
+  function reject(r){
+    // Optional note first (window.prompt, as with the password-reset rejection),
+    // then the usual confirm modal — the note is echoed there before sending.
+    var raw=window.prompt("سبب الرفض (اختياري):","");
+    if(raw===null) return;   // cancelled the prompt -> nothing is sent
+    var note=String(raw).trim();
+    confirmModal({
+      title:"رفض طلب التصحيح", danger:true, confirmText:"رفض",
+      message:"رفض طلب تصحيح <b>"+who(r)+"</b>؟ لن يتغيّر أي رقم ولن يُسجَّل أي قيد."
+        +(note?("<div class=\"muted\" style=\"margin-top:8px\">الملاحظة: "+esc(note)+"</div>"):""),
+      onConfirm:function(){
+        return API.rejectCorrection(corrId(r),note).then(function(){
+          toast("تم رفض طلب التصحيح","ok");
+          load();
+        });
+      }
+    });
+  }
+
+  function refundPaid(r){
+    var diff=corrDifference(r);
+    var amount=(diff!=null)?fmtPrice(Math.abs(diff)):"—";
+    confirmModal({
+      title:"تسجيل إرجاع المبلغ",
+      confirmText:"تسجيل الإرجاع",
+      alert:"هذا تسجيل بأن النقد سُلّم فعليًا إلى المحاسب — عملية منفصلة عن الموافقة، وتُحفظ كقيد مستقل لا يمكن التراجع عنه.",
+      alertType:"info",
+      message:"تأكيد أنك سلّمت <b>"+esc(amount)+"</b> نقدًا للمحاسب عن تصحيح <b>"+who(r)+"</b>؟"
+        +"<div class=\"muted\" style=\"margin-top:8px\">يُغلق الطلب بحالة «مكتمل». الوصل الأصلي يبقى كما هو.</div>",
+      onConfirm:function(){
+        return API.correctionRefundPaid(corrId(r)).then(function(){
+          toast("تم تسجيل إرجاع المبلغ","ok");
           load();
         });
       }

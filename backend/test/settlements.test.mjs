@@ -531,8 +531,15 @@ test('v39: GET /api/account/data?entity=settlements&month= filters by requested_
     { localId: 'm-aug-appr', status: 'approved', requested_at: '2026-08-10T09:00:00.000Z', amount: 4000 },
     { localId: 'm-aug-pend', status: 'pending', requested_at: '2026-08-20T09:00:00.000Z', amount: 1000 },
   ];
+  // v43: these fixtures seed ALREADY-APPROVED settlements, so they are pushed as
+  // the OWNER. An accountant may request a settlement but may never decide one —
+  // authorizeRecord now refuses an accountant-pushed non-pending status (it was
+  // possible to self-approve, making the owner books show cash never handed
+  // over). Seeding as the owner is also the faithful shape: only an owner
+  // approves. data.accountant_id is set explicitly below, and the owner push
+  // path leaves it untouched.
   const push = await api('POST', '/api/sync/push', {
-    token: acct.token,
+    token: owner.token,
     body: {
       records: rows.map((r) => ({
         entity: 'settlements',
@@ -588,8 +595,15 @@ test('v40: settlements month filter buckets by data.month with requested_at fall
   const owner = await registerOwner();
   const acct = await makeAccountant(owner);
 
+  // v43: these fixtures seed ALREADY-APPROVED settlements, so they are pushed as
+  // the OWNER. An accountant may request a settlement but may never decide one —
+  // authorizeRecord now refuses an accountant-pushed non-pending status (it was
+  // possible to self-approve, making the owner books show cash never handed
+  // over). Seeding as the owner is also the faithful shape: only an owner
+  // approves. data.accountant_id is set explicitly below, and the owner push
+  // path leaves it untouched.
   const push = await api('POST', '/api/sync/push', {
-    token: acct.token,
+    token: owner.token,
     body: {
       records: [
         {
@@ -672,4 +686,62 @@ test('v40: settlements month filter buckets by data.month with requested_at fall
   assert.equal(noMatch.status, 200);
   assert.deepEqual(noMatch.data.records, [],
     'a non-matching q returns empty even with a matching month — $or preserved');
+});
+
+// ---------------------------------------------------------------------------
+// v43 SECURITY — an accountant may REQUEST a settlement, never DECIDE one.
+//
+// Pre-existing hole (found by the v43 mapping fleet): ENTITY_PERMISSION.settlements
+// is null = "always allowed", and authorizeRecord only pinned branch_id/accountant_id
+// — it never inspected data.status. So a crafted push of {status:'approved'} let an
+// accountant APPROVE THEIR OWN SETTLEMENT, bypassing the owner-only decision route
+// and making the owner's books show cash handed over that never arrived.
+//
+// The refusal rides the v25 skip-and-count path, so the forged row never enters the
+// mirror while the batch still 200s and the device still drains its outbox.
+// ---------------------------------------------------------------------------
+test('v43: an accountant cannot push an APPROVED settlement (self-approval blocked)', async () => {
+  const owner = await registerOwner();
+  const acct = await makeAccountant(owner);
+
+  const forge = (localId, status) => ({
+    entity: 'settlements',
+    localId,
+    deleted: false,
+    updatedAt: '2026-09-01T09:00:00.000Z',
+    data: {
+      id: localId,
+      accountant_id: acct.created.localId,
+      amount: 999999,
+      method: 'cash',
+      status,
+      month: '2026-09',
+      requested_at: '2026-09-01T09:00:00.000Z',
+      decided_by: 'self',
+      decided_at: '2026-09-01T09:00:00.000Z',
+    },
+  });
+
+  // A legal PENDING request and a forged APPROVED one, in ONE batch.
+  const push = await api('POST', '/api/sync/push', {
+    token: acct.token,
+    body: { records: [forge('ok-pending', 'pending'), forge('forged-approved', 'approved')] },
+  });
+  // The batch still succeeds — a refusal must never wedge the device's outbox.
+  assert.equal(push.status, 200, `push -> ${push.status} ${JSON.stringify(push.data)}`);
+
+  const list = await api('GET', '/api/account/data?entity=settlements', { token: owner.token });
+  assert.equal(list.status, 200);
+  const byId = new Map((list.data.records || []).map((r) => [r.localId, r]));
+
+  // The legal request IS mirrored — and with its decision fields cleared.
+  const ok = byId.get('ok-pending');
+  assert.ok(ok, 'the pending request must still be mirrored');
+  assert.equal(ok.data.status, 'pending');
+  assert.equal(ok.data.decided_by ?? null, null, 'a client may not pre-seed decided_by');
+  assert.equal(ok.data.decided_at ?? null, null, 'a client may not pre-seed decided_at');
+
+  // The forged approval is NOT mirrored at all.
+  assert.equal(byId.has('forged-approved'), false,
+    'an accountant-pushed approved settlement must never reach the mirror');
 });

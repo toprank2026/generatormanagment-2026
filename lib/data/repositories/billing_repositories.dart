@@ -1,6 +1,8 @@
 import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
+import 'package:generatormanagment/data/repositories/correction_repository.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 
 class MonthlyPriceRepository {
   final DbHelper _dbHelper = DbHelper();
@@ -80,6 +82,10 @@ class MonthlyPriceRepository {
 class ReceiptRepository {
   final DbHelper _dbHelper = DbHelper();
 
+  // v43: the append-only adjustment ledger, folded into [getCollectedSum] only
+  // (plan §5) — never into receipt_no allocation, printing, or paid/unpaid.
+  final CorrectionRepository _corrections = CorrectionRepository();
+
   Future<int> insert(Receipt item) async {
     final db = await _dbHelper.database;
     return await db.insert(
@@ -158,11 +164,47 @@ class ReceiptRepository {
   /// `updated_at` re-stamps (backend last-EDIT-wins accepts it over the older
   /// 'valid' row) and the AFTER-UPDATE sync trigger enqueues one clean upsert —
   /// NOT a delete (which would re-mint an already-printed receipt_no).
-  Future<void> markRefunded(Receipt r) async {
+  ///
+  /// v43 audit fix (spec §5): the flip itself is UNCHANGED — every derivation
+  /// depends on it — but it no longer happens without evidence. Until now a
+  /// reversal rewrote the receipt in place and wrote NOTHING to the `refunds`
+  /// table, which exists, is synced and has triggers, yet had no insert path in
+  /// any code: a reversal left no record that it ever happened. The row is
+  /// appended in the SAME transaction as the flip, so the two can never diverge
+  /// (evidence without a reversal, or a reversal without evidence), and the
+  /// AFTER-INSERT trigger mirrors it to the server like any other business row.
+  /// Purely additive: nothing reads `refunds` yet, so nothing can regress.
+  ///
+  /// [reason] is free text for the audit ('receipt_reversal' when the caller
+  /// gives none); [performedByUserId] is the actor, defaulting to the receipt's
+  /// collecting accountant — which is who reversed it, since
+  /// `BillingController.reverseReceipt` lets ONLY the collecting accountant
+  /// reverse their own receipt. Both are optional, so existing callers are
+  /// unaffected.
+  Future<void> markRefunded(
+    Receipt r, {
+    String? reason,
+    String? performedByUserId,
+  }) async {
     final db = await _dbHelper.database;
     r.status = 'refunded';
-    await db.update('receipts', r.toMap(),
-        where: 'uuid = ?', whereArgs: [r.uuid]);
+    final now = DateTime.now().toUtc().toIso8601String();
+    await db.transaction((txn) async {
+      await txn.update('receipts', r.toMap(),
+          where: 'uuid = ?', whereArgs: [r.uuid]);
+      await txn.insert('refunds', {
+        'uuid': const Uuid().v4(),
+        'receipt_uuid': r.uuid,
+        // The CASH that was handed back = what was actually collected. A waived
+        // discount was never cash, so it is not part of the refunded amount.
+        'amount': r.paidAmount,
+        'reason': reason ?? 'receipt_reversal',
+        'performed_by_user_id': performedByUserId ?? r.accountantId,
+        'branch_id': r.branchId,
+        'created_at': now,
+        'updated_at': now, // conflict resolution (last-EDIT-wins), like every model
+      });
+    });
   }
 
   // Receipt history for a subscriber. Subscribers are shared across accountants,
@@ -222,6 +264,40 @@ class ReceiptRepository {
     return List.generate(maps.length, (i) => Receipt.fromMap(maps[i]));
   }
 
+  /// v43 §3.3 — the INVOICE LOCK predicate, DERIVED and never stored: a
+  /// subscriber-month is invoice-locked exactly when a VALID receipt exists for
+  /// `(subscriber_id, month)`. Deliberately NOT a column on `subscribers` or
+  /// `receipts`: `SyncService.pull` writes with `ConflictAlgorithm.replace`
+  /// (INSERT OR REPLACE = delete + insert), so a lock column an older device
+  /// doesn't know about would be reset ACCOUNT-WIDE on every device's next pull.
+  ///
+  /// Same shape as [getBySubscriberAndMonth] (status = 'valid', so a REVERSED
+  /// receipt unlocks the month again, exactly as it restores the subscriber to
+  /// unpaid) and branch-scoped for the same reason: a shared subscriber id can
+  /// carry receipts under more than one branch. [branchId] null = all branches.
+  /// `LIMIT 1` on `idx_receipts_sub_month` — an existence check, not a sum.
+  Future<bool> hasValidReceipt(
+    String subscriberId,
+    String month, {
+    String? branchId,
+  }) async {
+    final db = await _dbHelper.database;
+    final clauses = <String>['subscriber_id = ?', 'month = ?', 'status = ?'];
+    final args = <dynamic>[subscriberId, month, 'valid'];
+    if (branchId != null) {
+      clauses.add('branch_id = ?');
+      args.add(branchId);
+    }
+    final maps = await db.query(
+      'receipts',
+      columns: ['uuid'],
+      where: clauses.join(' AND '),
+      whereArgs: args,
+      limit: 1,
+    );
+    return maps.isNotEmpty;
+  }
+
   // Get next receipt number. Numbering is INDEPENDENT per branch (D-3): the
   // sequence is MAX(receipt_no)+1 within the active branch, so each branch keeps
   // its own 1..N run. [branchId] null = global (consolidated/legacy).
@@ -269,6 +345,19 @@ class ReceiptRepository {
   // count, matching the paid/unpaid status query — so a refunded receipt never
   // inflates the collected total. Optionally scoped to one accountant and/or
   // one branch.
+  //
+  // v43 (plan §5): PLUS the month's approved CORRECTION adjustments. A
+  // correction delta is real collected money for that month — it just cannot
+  // live in `receipts` (a row there would consume a real `receipt_no` and the
+  // status='valid' filter would either hide the delta from ~20 money queries or
+  // print a phantom invoice, spec §3.2), so it is summed from the append-only
+  // `financial_adjustments` ledger and added on top of the receipts SQL, which
+  // is left byte-identical. A month with no adjustment therefore returns
+  // EXACTLY what it returns today. Same (month, accountant, branch) scope as
+  // the receipts side, so a per-accountant or per-branch figure never picks up
+  // another scope's delta. Deliberately NOT folded into the paid/unpaid
+  // derivation or coverageBySubscriber: a correction changes what is DUE, and
+  // mixing it into coverage would flip paid/unpaid on historical rows.
   Future<double> getCollectedSum(String month,
       {String? accountantId, String? branchId}) async {
     final db = await _dbHelper.database;
@@ -286,10 +375,16 @@ class ReceiptRepository {
       "SELECT SUM(paid_amount) as total FROM receipts WHERE month = ? AND status = 'valid' ${scopes.join(' ')}",
       args,
     );
+    double total = 0.0;
     if (result.isNotEmpty && result.first['total'] != null) {
-      return (result.first['total'] as num).toDouble();
+      total = (result.first['total'] as num).toDouble();
     }
-    return 0.0;
+    final adjustments = await _corrections.adjustmentTotal(
+      month: month,
+      accountantId: accountantId,
+      branchId: branchId,
+    );
+    return total + adjustments;
   }
 
   /// Σ of WAIVED discount (discount_value) for the month (same scope as

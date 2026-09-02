@@ -1,12 +1,21 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:generatormanagment/data/db_helper.dart';
 import 'package:generatormanagment/data/models/settlement_model.dart';
+import 'package:generatormanagment/data/repositories/correction_repository.dart';
 
 /// v11: accountant wallet. The balance is DERIVED from the local tables —
 /// Σ(cash collected by the accountant on valid receipts) − Σ(approved
 /// settlement amounts) — never a stored counter (consistent with paid/unpaid).
+///
+/// v43: plus Σ(the immutable `financial_adjustments` ledger) on the COLLECTED
+/// side. An approved correction never edits the original receipt or settlement
+/// — it appends a signed delta, and the wallet (still derived, still not a
+/// stored counter) picks it up here. Which adjustment kinds are
+/// wallet-affecting, and with which sign, is decided in ONE place —
+/// [CorrectionRepository.adjustmentTotal] — never duplicated per call site.
 class SettlementRepository {
   final DbHelper _dbHelper = DbHelper();
+  final CorrectionRepository _corrections = CorrectionRepository();
 
   Future<void> insert(Settlement s) async {
     final db = await _dbHelper.database;
@@ -18,6 +27,11 @@ class SettlementRepository {
   /// method: collected = Σ that-method valid receipts; settled = Σ approved
   /// settlements of that method; balance = collected − settled. (Local
   /// fallback; the My Wallet page prefers the server-authoritative endpoint.)
+  ///
+  /// v43: collected also carries the ALL-MONTH adjustment total per method.
+  /// This lifetime figure is what the v42 settlement cap is checked against, so
+  /// omitting the ledger here would UNDER-REPORT the wallet and wrongly block a
+  /// legitimate additional settlement for a month that was corrected upward.
   Future<
       ({
         double cashCollected,
@@ -52,14 +66,53 @@ class SettlementRepository {
     final cs = await settled('cash');
     final dc = await collected('card');
     final ds = await settled('card');
+    // v43 — the adjustment ledger, added as a SEPARATE term so both queries
+    // above stay exactly what they were. This wallet is deliberately all-time,
+    // so the ledger side is all-time too; `financial_adjustments` is
+    // append-only and never part of a receipt, so no other figure moves.
+    final double adjCash = await _lifetimeAdjustments(accountantId, 'cash');
+    final double adjCard = await _lifetimeAdjustments(accountantId, 'card');
+    final double cashCollected = cc + adjCash;
+    final double cardCollected = dc + adjCard;
     return (
-      cashCollected: cc,
+      cashCollected: cashCollected,
       cashSettled: cs,
-      cashBalance: cc - cs,
-      cardCollected: dc,
+      cashBalance: cashCollected - cs,
+      cardCollected: cardCollected,
       cardSettled: ds,
-      cardBalance: dc - ds,
+      cardBalance: cardCollected - ds,
     );
+  }
+
+  /// v43 — the ALL-MONTH `financial_adjustments` total for one wallet [method],
+  /// used only by the deliberately all-time [wallet].
+  ///
+  /// [CorrectionRepository.adjustmentTotal] is month-scoped by design (a
+  /// correction belongs to exactly ONE accounting month — invoice month =
+  /// accounting month = settlement month = correction month), so the lifetime
+  /// figure is the sum over the months that actually have ledger rows. Only the
+  /// month LIST is enumerated here; WHICH kinds count, and with which sign,
+  /// stays in `CorrectionRepository` — one place, so the wallet can never drift
+  /// from the ledger's own rule.
+  ///
+  /// Rows with no month are skipped, exactly as every month-scoped call already
+  /// skips them (`month = ?`), so a ledger row can never be counted here but
+  /// nowhere else — or counted twice.
+  Future<double> _lifetimeAdjustments(String accountantId, String method) async {
+    final db = await _dbHelper.database;
+    final rows = await db.rawQuery(
+      "SELECT DISTINCT month FROM financial_adjustments "
+      "WHERE accountant_id = ? AND month IS NOT NULL AND month <> ''",
+      [accountantId],
+    );
+    double total = 0;
+    for (final row in rows) {
+      final String m = (row['month'] ?? '').toString();
+      if (m.isEmpty) continue;
+      total += await _corrections.adjustmentTotal(
+          month: m, accountantId: accountantId, method: method);
+    }
+    return total;
   }
 
   /// v42 item 1 — the MONTH-ISOLATED wallet. Same shape as [wallet], but both
@@ -73,6 +126,13 @@ class SettlementRepository {
   ///    (`COALESCE(settlements.month, substr(requested_at,1,7))` — the v40 rule,
   ///    so LEGACY rows keep their exact previous requested_at behaviour and no
   ///    stored row is reinterpreted).
+  ///
+  /// v43 adds a THIRD term, on the collected side: the month's
+  /// `financial_adjustments` total for that method. An approved correction for
+  /// THIS month raises THIS month's wallet — so an additional settlement for it
+  /// becomes possible — and can never touch another month, because the ledger
+  /// row carries the same tariff-month bucket the receipt and the settlement
+  /// use. A month with no adjustment returns exactly what it returns today.
   ///
   /// [wallet] (all-time) is deliberately kept alongside this.
   Future<
@@ -110,13 +170,22 @@ class SettlementRepository {
     final cs = await settled('cash');
     final dc = await collected('card');
     final ds = await settled('card');
+    // v43 — the adjustment ledger for THIS month, added as a SEPARATE term so
+    // both queries above stay byte-identical. Scoped to [month], so a
+    // correction can never move money between months.
+    final double adjCash = await _corrections.adjustmentTotal(
+        month: month, accountantId: accountantId, method: 'cash');
+    final double adjCard = await _corrections.adjustmentTotal(
+        month: month, accountantId: accountantId, method: 'card');
+    final double cashCollected = cc + adjCash;
+    final double cardCollected = dc + adjCard;
     return (
-      cashCollected: cc,
+      cashCollected: cashCollected,
       cashSettled: cs,
-      cashBalance: cc - cs,
-      cardCollected: dc,
+      cashBalance: cashCollected - cs,
+      cardCollected: cardCollected,
       cardSettled: ds,
-      cardBalance: dc - ds,
+      cardBalance: cardCollected - ds,
     );
   }
 
@@ -161,6 +230,54 @@ class SettlementRepository {
       "AND status = 'pending' AND COALESCE(method,'cash') = ?"
       "${scoped ? " AND (month = ? OR month IS NULL)" : ""}",
       [accountantId, method, if (scoped) month],
+    );
+    return (Sqflite.firstIntValue(r) ?? 0) > 0;
+  }
+
+  /// v43 — the SETTLEMENT-LOCK predicate (spec §3.3). True when [month] already
+  /// has an ACTIVE settlement, i.e. a request whose status is `pending` or
+  /// `approved`: that month's collected cash is already claimed by (or handed
+  /// over on) a settlement, so a billing-relevant edit for it must go through a
+  /// correction request instead of silently re-writing the month's due.
+  ///
+  /// Lock state is DERIVED here and NEVER stored — no column is added to
+  /// `settlements` (or to any existing table): `SyncService.pull` writes with
+  /// `ConflictAlgorithm.replace`, so a column an older device does not know
+  /// about would be reset account-wide on the next pull.
+  ///
+  /// The month bucket is `COALESCE(month, substr(requested_at, 1, 7))` — the
+  /// EXACT expression the app, the backend and the panel already use (v40), so
+  /// a legacy row with no stamped tariff month keeps its previous meaning and
+  /// nothing stored is reinterpreted. `rejected` does NOT lock (the owner
+  /// declined — the money never left the wallet), matching
+  /// [lastActiveRequestAt]'s reversal rule.
+  ///
+  /// Both filters are optional and additive, so the default is the STRICTEST
+  /// reading — the month is locked when ANY accountant, in any branch, has an
+  /// active settlement for it. Pass [accountantId] / [branchId] to narrow.
+  Future<bool> monthHasActiveSettlement(
+    String month, {
+    String? accountantId,
+    String? branchId,
+  }) async {
+    if (month.isEmpty) return false;
+    final db = await _dbHelper.database;
+    final where = <String>[
+      "status IN ('pending','approved')",
+      "COALESCE(month, substr(requested_at, 1, 7)) = ?",
+    ];
+    final args = <dynamic>[month];
+    if (accountantId != null && accountantId.isNotEmpty) {
+      where.add('accountant_id = ?');
+      args.add(accountantId);
+    }
+    if (branchId != null && branchId.isNotEmpty) {
+      where.add('branch_id = ?');
+      args.add(branchId);
+    }
+    final r = await db.rawQuery(
+      "SELECT COUNT(*) c FROM settlements WHERE ${where.join(' AND ')}",
+      args,
     );
     return (Sqflite.firstIntValue(r) ?? 0) > 0;
   }
@@ -267,6 +384,10 @@ class SettlementRepository {
   /// month settled in a LATER month keeps this month's figure at 0 or above,
   /// never negative. Legacy 'salary' settlements are excluded (not collection
   /// money), matching [approvedSumForMonth].
+  ///
+  /// v43: the collected side also carries this month's `financial_adjustments`
+  /// total (all methods — matching the cash+card settled side), so an approved
+  /// correction shows up as unsettled money for the month it belongs to.
   Future<double> monthUnsettled(String accountantId, String month) async {
     final db = await _dbHelper.database;
     final c = await db.rawQuery(
@@ -281,7 +402,15 @@ class SettlementRepository {
       "AND COALESCE(month, substr(requested_at, 1, 7)) = ?",
       [accountantId, month],
     );
-    final double collected = ((c.first['s'] as num?) ?? 0).toDouble();
+    // v43 — the month's `financial_adjustments` total, added as a SEPARATE term
+    // on the COLLECTED side (both queries above stay byte-identical). No method
+    // filter: the settled side here spans cash+card, so the ledger side must
+    // too. Still clamped at 0 below — a correction can never drive the figure
+    // negative.
+    final double adjustments = await _corrections.adjustmentTotal(
+        month: month, accountantId: accountantId);
+    final double collected =
+        ((c.first['s'] as num?) ?? 0).toDouble() + adjustments;
     final double settled = ((s.first['s'] as num?) ?? 0).toDouble();
     final double diff = collected - settled;
     return diff > 0 ? diff : 0;

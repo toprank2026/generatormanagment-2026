@@ -5,6 +5,7 @@ import 'package:generatormanagment/controllers/settings_controller.dart';
 import 'package:generatormanagment/core/connectivity_service.dart';
 import 'package:generatormanagment/views/screens/subscription_screen.dart';
 import 'package:generatormanagment/views/screens/accountant_settlements_screen.dart';
+import 'package:generatormanagment/views/screens/corrections_screen.dart';
 import 'package:generatormanagment/views/screens/accountants_screen.dart';
 import 'package:generatormanagment/views/screens/edit_account_screen.dart';
 import 'package:generatormanagment/views/screens/print_receipt_settings_screen.dart';
@@ -279,6 +280,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () =>
                           Get.to(() => const AccountantSettlementsScreen()),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // v43: the correction queue. Without this tile CorrectionsScreen
+                  // had no route at all, so an owner/admin could never decide a
+                  // correction from the app — the only remedy for a month the
+                  // v43 invoice lock closes.
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: ListTile(
+                      leading: const Icon(Icons.rule_folder,
+                          color: Color(0xFF1565C0)),
+                      title: Text('correction_requests'.tr),
+                      subtitle: Text('correction_requests_subtitle'.tr),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Get.to(() => const CorrectionsScreen()),
                     ),
                   ),
                   const SizedBox(height: 24),

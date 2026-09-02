@@ -19,6 +19,8 @@ import 'package:generatormanagment/views/screens/add_subscriber_screen.dart';
 import 'package:generatormanagment/views/screens/payment_history_screen.dart';
 import 'package:generatormanagment/views/widgets/collect_payment_dialog.dart';
 import 'package:generatormanagment/controllers/core_controller.dart';
+import 'package:generatormanagment/controllers/correction_controller.dart';
+import 'package:generatormanagment/data/models/correction_models.dart';
 
 class SubscriberDetailScreen extends StatefulWidget {
   final Subscriber subscriber;
@@ -34,6 +36,13 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
   final CoreController coreController = Get.find<CoreController>();
   final ReceiptRepository receiptRepo = ReceiptRepository();
   final _amountCtrl = TextEditingController();
+  // v43 (E1): the correction-request dialog's fields. Owned by the SCREEN (like
+  // _amountCtrl) rather than created per dialog: a controller disposed the
+  // instant the dialog future completes can still be rebuilt by the route's
+  // exit animation (a keyboard/MediaQuery change), which throws "used after
+  // being disposed". They are disposed once, in dispose() below.
+  final _corrAmpsCtrl = TextEditingController();
+  final _corrReasonCtrl = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   // Re-binds this screen when the global month changes (R6/R9). Disposed below.
   Worker? _monthWorker;
@@ -54,6 +63,22 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
   // completely independent of previous months.
   List<({String month, double due, double coverage, double remaining})>
       _prevUnpaid = const [];
+  // v43 (E1): the DERIVED month lock for THIS subscriber in the SELECTED month.
+  // Never a stored column — `SyncService.pull` writes INSERT OR REPLACE, so a
+  // lock column an older device omitted would be reset account-wide on the next
+  // pull; the state is re-derived from receipts/settlements every _refresh.
+  //
+  // On this screen it is a NOTICE plus a "request a correction" affordance and
+  // NOTHING else: dueAmount, _hasPrice, the paid/unpaid badge, the collect
+  // button, the receipt history and every print path are untouched by it. The
+  // real enforcement lives in `CoreController.updateSubscriber` (below the UI),
+  // so a missing notice can never let a locked edit through.
+  bool _invoiceLocked = false;
+  bool _settlementLocked = false;
+  // Corrections already filed for this subscriber-month — fetched only when the
+  // month is locked, and read ONLY by the locked notice card. Ordered pending
+  // first, then newest (the repository's order), so `.first` is the one to show.
+  List<Correction> _monthCorrections = const [];
 
   // R4: maps a subscriber category to its translation key (translated at use).
   static const Map<String, String> _categoryLabels = {
@@ -83,6 +108,8 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _amountCtrl.dispose();
+    _corrAmpsCtrl.dispose();
+    _corrReasonCtrl.dispose();
     super.dispose();
   }
 
@@ -119,6 +146,30 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
       );
     } catch (_) {
       _prevUnpaid = const [];
+    }
+    // v43 (E1): the month-lock probe, and (only when locked) the corrections
+    // already filed for this subscriber-month. Swallowed on error and left
+    // UNLOCKED on purpose — exactly like the arrears notice above, a probe that
+    // only feeds a NOTICE must never be able to break this page or hold up the
+    // due/collect flow. Failing open is safe here because the lock is enforced
+    // in `CoreController.updateSubscriber`, not by this card.
+    try {
+      final lock = await coreController.monthLockState(
+        _sub,
+        controller.selectedMonth.value,
+      );
+      _invoiceLocked = lock.invoiceLocked;
+      _settlementLocked = lock.settlementLocked;
+      _monthCorrections = _invoiceLocked
+          ? await Get.find<CorrectionController>().forSubscriberMonth(
+              _sub.id,
+              controller.selectedMonth.value,
+            )
+          : const [];
+    } catch (_) {
+      _invoiceLocked = false;
+      _settlementLocked = false;
+      _monthCorrections = const [];
     }
     // Pre-fill amount with due
     _amountCtrl.text = dueAmount.toStringAsFixed(0);
@@ -270,6 +321,17 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
             // figure; no other widget/value below consults `_prevUnpaid`.
             if (_prevUnpaid.isNotEmpty) ...[
               _buildPrevUnpaidNotice(),
+              const SizedBox(height: 20),
+            ],
+
+            // 2c. v43 (E1): the LOCKED-MONTH notice — shown when this
+            // subscriber already has a valid receipt for the SELECTED month, so
+            // the billing basis of that month can no longer be rewritten in
+            // place. Like the arrears notice above it is informational: the due
+            // card, the badge and the collect flow below are unchanged, and the
+            // only action it offers is FILING a correction request.
+            if (_invoiceLocked) ...[
+              _buildMonthLockedNotice(),
               const SizedBox(height: 20),
             ],
 
@@ -477,6 +539,307 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// v43 (E1): the LOCKED-MONTH notice card. Same shape/palette as the arrears
+  /// notice above (this screen's established "notice" styling) so it reads as
+  /// information, never as part of the month's figure.
+  ///
+  /// It states that the month is closed by an invoice (and, when true, by an
+  /// active settlement as well), shows the correction already filed for this
+  /// subscriber-month if there is one, and — for the ACCOUNTANT, the only role
+  /// that may file one — offers the request dialog. Deliberately built OUTSIDE
+  /// any `Obx`: the role/lock reads here are plain, non-reactive reads, and an
+  /// `Obx` whose condition short-circuits before touching an observable throws
+  /// at build and greys the whole screen in release.
+  Widget _buildMonthLockedNotice() {
+    final Correction? latest =
+        _monthCorrections.isEmpty ? null : _monthCorrections.first;
+    final bool hasOpen = latest != null && latest.isPending;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        // Same amber notice palette as the arrears card above.
+        color: const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFE082)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withValues(alpha: 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.lock_outline, color: Color(0xFFFF8F00)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'month_locked_title'.tr,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: Color(0xFFE65100),
+                  ),
+                ),
+              ),
+              // The month the lock belongs to — the Golden Rule made visible:
+              // invoice month = accounting month = correction month.
+              Text(
+                controller.selectedMonth.value,
+                style: const TextStyle(fontSize: 12, color: Color(0xFFFF8F00)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'month_locked_body'.tr,
+            style: TextStyle(fontSize: 12.5, color: Colors.grey[800]),
+          ),
+          if (_settlementLocked)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  const Icon(Icons.account_balance_wallet,
+                      size: 14, color: Color(0xFFEF6C00)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'settlement'.tr,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFEF6C00),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          // The correction already filed for this subscriber-month, if any
+          // (pending first, then newest — the repository's order).
+          if (latest != null) ...[
+            const Divider(height: 20, color: Color(0xFFFFE082)),
+            Row(
+              children: [
+                _statusChip(latest.status),
+                const Spacer(),
+                // Flexible: a long amount must shrink, never overflow the card.
+                Flexible(
+                  child: Text(
+                    '${'correction_difference'.tr}: '
+                    '${_signedAmount(latest.difference)}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                      color: latest.isIncrease
+                          ? const Color(0xFF2E7D32)
+                          : const Color(0xFFC62828),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 12),
+          // Filing is the ACCOUNTANT's path (the owner/admin DECIDES instead).
+          // A second pending request for the same subscriber-month is refused by
+          // the controller; the button is hidden here so it is never offered.
+          if (auth.isAccountant && !hasOpen)
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFEF6C00),
+                ),
+                onPressed: _showCorrectionDialog,
+                icon: const Icon(Icons.edit_note, size: 18),
+                label: Text('correction_request'.tr),
+              ),
+            ),
+          const SizedBox(height: 6),
+          Text(
+            'correction_original_untouched'.tr,
+            style: TextStyle(fontSize: 11.5, color: Colors.grey[700]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Signed IQD amount, e.g. "+ IQD 12,500" / "- IQD 12,500". The sign is the
+  /// whole money story of a correction, so it is never dropped.
+  String _signedAmount(double value) =>
+      "${value < 0 ? '-' : '+'} ${'iqd'.tr} ${fmtAmount(value.abs())}";
+
+  /// A small status pill for a correction (same five statuses the corrections
+  /// screen renders).
+  Widget _statusChip(String status) {
+    final Color color = status == CorrectionStatus.approved
+        ? const Color(0xFF2E7D32)
+        : (status == CorrectionStatus.rejected
+            ? Colors.redAccent
+            : (status == CorrectionStatus.refundDue
+                ? const Color(0xFFEF6C00)
+                : (status == CorrectionStatus.completed
+                    ? const Color(0xFF00897B)
+                    : Colors.orange)));
+    final String label = status == CorrectionStatus.approved
+        ? 'correction_approved'
+        : (status == CorrectionStatus.rejected
+            ? 'correction_rejected'
+            : (status == CorrectionStatus.refundDue
+                ? 'correction_refund_due'
+                : (status == CorrectionStatus.completed
+                    ? 'correction_completed'
+                    : 'correction_pending')));
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label.tr,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.bold,
+          fontSize: 11,
+        ),
+      ),
+    );
+  }
+
+  /// v43 (E1): the correction REQUEST dialog — new amps + a reason. It changes
+  /// nothing by itself: `CorrectionController.requestCorrection` records what
+  /// the month IS billed at against what it SHOULD be, and the money only moves
+  /// if and when the owner/admin approves it. The subscriber row, the receipt,
+  /// the tariff and the settlement are never rewritten.
+  ///
+  /// The dialog is closed FIRST (through its own Navigator route) and the async
+  /// work + snackbars run after — the established close-first-then-act pattern,
+  /// since a snackbar raised while the dialog is open makes `Get.isDialogOpen`
+  /// read false and blocks the close.
+  Future<void> _showCorrectionDialog() async {
+    // Prefilled with the LIVE amps (the basis the month was invoiced on) and a
+    // blank reason on every open.
+    _corrAmpsCtrl.text = _sub.amps.toString();
+    _corrReasonCtrl.clear();
+    final String month = controller.selectedMonth.value;
+    final input = await Get.dialog<({double amps, String reason})>(
+      Builder(builder: (ctx) {
+        return AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text('correction_request'.tr),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // The month being corrected — read-only, and the same global
+                // accounting month the rest of the screen is bound to.
+                Text(
+                  '${'billing_month'.tr}: $month',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1565C0),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _corrAmpsCtrl,
+                  autofocus: true,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: 'correction_new_amps'.tr,
+                    suffixText: 'amps'.tr,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _corrReasonCtrl,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    labelText: 'correction_reason'.tr,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'correction_original_untouched'.tr,
+                  style: TextStyle(fontSize: 11.5, color: Colors.grey[700]),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('cancel'.tr),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF1565C0),
+              ),
+              onPressed: () {
+                final v = double.tryParse(_corrAmpsCtrl.text.trim());
+                // Same amps rule as every other write path: a positive
+                // number (0 would bill the month at nothing).
+                if (v == null || v.isNaN || v <= 0) {
+                  Get.snackbar('error'.tr, 'amps_invalid'.tr,
+                      snackPosition: SnackPosition.BOTTOM);
+                  return;
+                }
+                final r = _corrReasonCtrl.text.trim();
+                if (r.isEmpty) {
+                  Get.snackbar('error'.tr, 'correction_reason'.tr,
+                      snackPosition: SnackPosition.BOTTOM);
+                  return;
+                }
+                Navigator.of(ctx).pop((amps: v, reason: r));
+              },
+              child: Text('correction_submit'.tr),
+            ),
+          ],
+        );
+      }),
+    );
+    if (input == null) return; // cancelled — nothing written
+    try {
+      final CorrectionController corrections = Get.find<CorrectionController>();
+      final saved = await corrections.requestCorrection(
+        sub: _sub,
+        month: month,
+        newAmps: input.amps,
+        reason: input.reason,
+      );
+      if (saved == null) {
+        // The controller reports a translation KEY rather than raising its own
+        // snackbar (it is exercised by tests with no overlay).
+        Get.snackbar('error'.tr, (corrections.lastError.value ?? 'error').tr,
+            backgroundColor: Colors.redAccent, colorText: Colors.white);
+      } else {
+        Get.snackbar('success'.tr, 'correction_sent'.tr,
+            backgroundColor: Colors.green, colorText: Colors.white);
+      }
+    } catch (e) {
+      Get.snackbar('error'.tr, '$e',
+          backgroundColor: Colors.redAccent, colorText: Colors.white);
+    }
+    _refresh();
   }
 
   Widget _buildInfoItem(IconData icon, String value, String label) {

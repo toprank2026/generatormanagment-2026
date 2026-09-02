@@ -13,6 +13,18 @@
 - Error shape (every non-2xx): `{ "message": "human readable", "code": "OPTIONAL_CODE" }`.
 - Timestamps are ISO-8601 strings.
 
+> 🚨 **DEPLOY ORDER — Flash v43 (hard constraint, not advice).**
+> **The backend MUST be deployed BEFORE a single v43 APK is installed** — not the
+> other way round, and not simultaneously. v43 adds two synced entities
+> (`corrections`, `financial_adjustments`). `POST /api/sync/push` throws
+> `400 code=BAD_ENTITY` **for the whole batch** on an unknown entity, so a v43 app
+> pushing one of them at a backend that does not know them makes **every** push of
+> that device fail — forever, for every entity — and because `SyncService.pull()`
+> **pushes first**, that device's synchronisation stops completely (dashboard
+> zeros, "N pending" that never clears). The registration is inert until an app
+> actually pushes such a row, so shipping the backend early is safe; shipping it
+> late is unrecoverable without clearing app data.
+
 ---
 
 ## Auth — `/api/auth`
@@ -265,22 +277,32 @@ stays the source of truth; the per-account mirror is keyed by
 { "records": [ { "entity": "subscribers", "localId": "uuid", "deleted": false,
                  "updatedAt": "ISO", "data": { /* raw SQLite row */ } } ] }
 // 200 response
-{ "ok": true, "count": 2, "serverTime": "ISO" }
+{ "ok": true, "count": 2, "rejected": [], "serverTime": "ISO" }
 ```
 **Authorization (new in Phase-1 hardening):**
 - `entity` is whitelisted against the synced tables (`subscribers`, `boards`,
   `circuits`, `receipts`, `refunds`, `expenses`, `monthly_prices`, `branches`,
-  `accountants`, `settlements`); any other value → `400 code=BAD_ENTITY`.
+  `accountants`, `settlements`, and — **new in Flash v43** — `corrections`,
+  `financial_adjustments`); any other value → `400 code=BAD_ENTITY`. **This 400
+  fails the WHOLE batch**, which is why the two v43 entities must be registered
+  on the backend before any v43 APK ships (see the deploy-order callout at the
+  top of this document).
 - For an **accountant** caller the entity is permission-gated, mirroring the app
   (`lib/core/permissions.dart`): `subscribers→subscribers`, `boards`/`circuits→
   boards`, `monthly_prices→prices`, `expenses→expenses`; `receipts`/`refunds`/
-  `settlements` are **always allowed** (core accountant work); `branches`/
-  `accountants` are **owner-only**. A missing permission →
-  `403 code=PERMISSION_DENIED`; an owner-only entity → `403 code=ENTITY_FORBIDDEN`.
+  `settlements`/`corrections` are **always allowed** (core accountant work) —
+  except that an accountant may only push a `settlements` row with
+  `status:'pending'` (see `SETTLEMENT_DECISION_FORBIDDEN` below);
+  `branches`/`accountants`/`financial_adjustments` are **owner-only**. A missing
+  permission → `403 code=PERMISSION_DENIED`; an owner-only entity →
+  `403 code=ENTITY_FORBIDDEN`.
 - A **branch-confined** accountant (has a `branchId`) may only write rows in its
   own branch: a record whose `data.branch_id` is another branch →
   `403 code=BRANCH_FORBIDDEN`; otherwise the server **stamps** `data.branch_id =
-  accountant.branchId` and `data.accountant_id = accountant.localId` (the
+  accountant.branchId` and `data.accountant_id = accountant.localId` — **except
+  on `corrections`/`financial_adjustments`, where `accountant_id` is a WALLET
+  TARGET the app resolves to whoever collected that month (often not the
+  filer), so it is left exactly as sent** (the
   app-side accountant UUID used for on-device attribution — falls back to the
   Mongo `_id` only when no `localId` exists; client-supplied branch/accountant
   values are not trusted).
@@ -313,6 +335,76 @@ tombstones.** Each business row may carry its REAL modification time in
   `ensureMain` insert) permanently wedged an accountant device's sync (push
   always failed → pull never ran → only clearing app data recovered).
 
+**Flash v43 — why there is NO business-rule lock on this endpoint, and the
+additive `rejected[]`.** v43 first re-evaluated the app's invoice/settlement
+lock here, against the owner mirror, so a hand-crafted push could not slip a
+locked-month change past the app. **That gate was removed after adversarial
+review showed it is net-destructive on this architecture.** The reasoning is
+recorded here so it is not reintroduced:
+
+- The mirror is **push-only** and the **device is the source of truth**.
+  `pull()` is a **full restore** (`INSERT OR REPLACE`) run on a new device,
+  after delete-local-data, and on **every branch switch**. So any row the server
+  refuses becomes a permanent divergence, and that divergence materialises as
+  **silent data loss** at the next restore: the device's real value is
+  overwritten by the stale mirror value.
+- The server **cannot reproduce the app's rules**. A `subscribers` row carries
+  no month, so a server lock could only ask "was this subscriber *ever*
+  invoiced" — strictly stricter than the app's month-scoped rule, so it refused
+  ordinary amps/category edits aimed at an **open** month. Likewise the app's
+  receipt-reversal rule is per-accountant, per-method and issue-time-based,
+  while the server could only see "does this month carry any active settlement"
+  — so it refused reversals the app itself permits.
+- Decisively, this is a **live, mixed-version fleet**. A v42 device has no
+  client-side v43 guard at all, so a new server-side refusal breaks a workflow
+  that works today and costs that account real data. Accepting the row is never
+  worse than yesterday's behaviour; refusing it is.
+
+v43 therefore enforces its rules where enforcement **cannot diverge**:
+1. **the app** — `MonthlyPriceRepository.insertGuarded` (tariff),
+   `CoreController.updateSubscriber` (billing basis), and the correction flow;
+2. **the direct admin REST surface** — `DELETE /api/admin/users/:id/data/...`
+   refuses a settled receipt/settlement (`409`) and refuses an append-only
+   `corrections`/`financial_adjustments` row outright, and the correction
+   decision routes below are admin-authenticated. That is where a "manual API
+   request" actually reaches, and where a refusal has no device counterpart to
+   desynchronise.
+
+**The one refusal kept on this path** is forgery no app version can produce: an
+**accountant** pushing an already-decided `settlements` row (`status` other than
+`pending`) → skipped with reason `SETTLEMENT_DECISION_FORBIDDEN`. An accountant
+may *request* a settlement; only an owner/admin may *decide* one. The server
+also blanks `decided_by`/`decided_at` on any accountant-pushed settlement.
+
+**A refused row NEVER fails the batch.** It is logged, **counted in `count`**,
+skipped (it never enters the mirror), and reported in the additive `rejected[]`:
+```jsonc
+// 200 response — the batch still SUCCEEDED
+{
+  "ok": true,
+  "count": 3,          // includes the rejected row: the device DRAINS its outbox
+  "rejected": [
+    { "entity": "settlements", "localId": "uuid", "reason": "SETTLEMENT_DECISION_FORBIDDEN" }
+  ],
+  "serverTime": "ISO"
+}
+```
+`rejected[]` also carries the pre-existing accountant permission skips
+(`ENTITY_FORBIDDEN`, `PERMISSION_DENIED`, `BRANCH_FORBIDDEN`), which were
+previously logged but not reported.
+
+🚨 **Never a 4xx here.** A 4xx raised inside the push loop fails the WHOLE batch:
+every unrelated row behind the offending one is refused, the outbox never drains,
+and because `SyncService.pull()` **pushes first**, that device's synchronisation
+stops permanently. That is a real production incident on this system — it is why
+v25 downgraded the accountant `403` path to skip-and-count.
+
+**Older clients are unaffected.** `rejected` is purely additive — the response
+always carries it (an empty array when nothing was refused), alongside the
+unchanged `ok` / `count` / `serverTime`. A client that never reads the field
+still gets the same `200`, the same `count`, and drains its outbox exactly as
+before.
+
 Other errors: `400 code=BAD_RECORDS` (records not an array),
 `400 code=BAD_RECORD` (missing `entity`/`localId`), `403 code=FEATURE_DISABLED`
 (plan has no sync).
@@ -334,6 +426,97 @@ current month's receipts (the device passes its own selected month). `since`
 still applies to all entities; combine freely with the branch-confined filter.
 
 Errors: `400 code=BAD_SINCE` (invalid timestamp).
+
+### Synced entities `corrections` + `financial_adjustments`  (new in Flash v43)
+
+Two **new tables** (SQLite `version: 16`) that let an already-invoiced or
+already-settled month be corrected **without editing a single existing row**.
+They are deliberately new tables and never new columns on `subscribers`,
+`receipts`, `monthly_prices` or `settlements`: `SyncService.pull` writes with
+`ConflictAlgorithm.replace` (`INSERT OR REPLACE` = delete + insert), so a column
+an older device does not know about is reset **account-wide** on every device's
+next pull. They push and pull through `/api/sync` like any other business row —
+`data` is Mixed, so there is no backend schema change.
+
+**`corrections`** — the request and its lifecycle (an audit document):
+```jsonc
+{
+  "id": "uuid",                    // == the record's localId
+  "subscriber_id": "uuid",
+  "month": "2026-08",              // TARIFF/accounting month being corrected
+  "branch_id": "uuid",
+  "accountant_id": "uuid",         // whose wallet an approved delta lands in
+  "receipt_uuid": "uuid|null",     // the invoice that locked the month
+  "settlement_id": "uuid|null",    // the settlement that locked the month
+  "reason": "meter was misread",
+  "old_amps": 5, "new_amps": 6,    // what the month WAS billed on / should be
+  "old_due": 50000, "new_due": 60000,
+  "difference": 10000,             // new_due − old_due; >0 increase, <0 decrease
+  "status": "pending",             // pending|approved|rejected|refund_due|completed
+  "requested_by": "user id", "requested_at": "ISO",
+  "decided_by": "user id", "decided_at": "ISO", "decision_note": "...",
+  "refund_paid_at": "ISO", "refund_paid_by": "user id",
+  "created_at": "ISO", "updated_at": "ISO"
+}
+```
+Lifecycle: `pending → approved | rejected`, and for a **decrease**
+`pending → refund_due → completed` (the cash return is its own step).
+Golden rule: *invoice month = accounting month = settlement month = correction
+month* — a correction can never affect another month.
+
+**`financial_adjustments`** — the immutable signed money delta:
+```jsonc
+{
+  "id": "uuid",                    // UUIDv5 derived from (correction_id, kind)
+  "correction_id": "uuid",
+  "subscriber_id": "uuid",
+  "month": "2026-08",              // the same tariff bucket as receipts/settlements
+  "branch_id": "uuid",
+  "accountant_id": "uuid|null",    // null on refund_return — see the money rule
+  "kind": "correction_increase",   // correction_increase|correction_decrease|refund_return
+  "amount": 10000,
+  "method": "cash",                // 'cash'|'card' — which wallet, like settlements
+  "created_at": "ISO", "created_by": "user id", "updated_at": "ISO"
+}
+```
+- **APPEND-ONLY.** A row is written once — at approval, or when the physical
+  cash return is recorded — and is **never updated and never deleted**, by any
+  code path, repository method or admin action. Correcting a mistake means
+  appending another adjustment, never rewriting one.
+- The `id` is a **deterministic UUIDv5 of `(correction_id, kind)`** and the
+  insert is ignore-on-conflict, so a retried approval, a re-delivered command or
+  the same decision arriving from a second device can only ever re-write the row
+  that is already there — never a double credit to the wallet.
+- **Push permission.** `corrections` is *always allowed* for an accountant (like
+  `receipts`/`settlements`): the correction request is precisely the escape
+  hatch for an accountant who may **not** edit a locked month, so gating it on
+  the `subscribers` permission would silently drop the request of the only
+  accountant who needs it. `financial_adjustments` is **owner/admin-only** — an
+  accountant able to push one could mint their own wallet credit; an accountant's
+  push of it is refused (`ENTITY_FORBIDDEN`) and then skipped-and-counted by the
+  push loop, so it can never wedge a device. Branch-confined accountants get
+  their `branch_id`/`accountant_id` server-stamped on both entities, exactly as
+  on every other entity.
+- Both are browsable through `GET /api/admin/users/:id/data?entity=…` (and the
+  owner's `/api/account/data`); neither has per-field search, so `q` falls back
+  to matching `localId`.
+
+**The money rule.** An adjustment is folded into **exactly** these figures and
+nothing else: the accountant wallet (`GET /api/account/wallet`, both the
+`?month=` and the all-time branch; on the device `walletForMonth`, `wallet()`
+and `monthUnsettled`) and the collected/revenue sum. It is **never** folded into
+the paid/unpaid derivation or coverage (coverage is what the subscriber *paid*;
+a correction changes the *due*), never into a printed receipt or PDF (an invoice
+is a historical document), and it never consumes a `receipt_no`.
+
+| `kind` | written when | `amount` | wallet effect |
+| --- | --- | --- | --- |
+| `correction_increase` | an increase is approved | `+abs(difference)` | that month's wallet **rises** → an additional settlement for the month becomes possible |
+| `correction_decrease` | a decrease is approved | `+abs(difference)` (audit only) | **exactly 0** — a decrease must never reduce the wallet, which may never be driven negative by a historical correction |
+| `refund_return` | the physical cash return is recorded | `−abs(difference)` | the cash left the business, so the month's collected/revenue falls by it. `accountant_id` is deliberately **null**: every accountant-wallet query filters on `accountant_id`, so the return is invisible to them and can never push an accountant's wallet negative |
+
+Approving a decrease and handing the money back are **two separate,
+separately-recorded operations** — approval alone never asserts that cash moved.
 
 ---
 
@@ -568,8 +751,24 @@ on its next pull (the accountant pulls the decision; there is no separate push).
 // 200 response
 { "settlement": { /* the updated row data, incl. status, decided_at, decided_by */ } }
 ```
+**Flash v43 — the decision is IDEMPOTENT (pre-existing defect, fixed).** The
+update filter used to be `{user, entity, localId}` with **no status condition**,
+so an already-decided settlement could be re-approved, flipped
+`approved → rejected` or re-amounted at any time — by a stale panel tab, a
+double-click or two owners at once — silently moving the derived wallet
+(`balance = collected − Σ approved settlements`) with no record that it happened.
+Only an **undecided** request may be decided now; a second decision returns
+`409 code=SETTLEMENT_NOT_PENDING` (`"Settlement already approved"`) and **changes
+nothing**. This matches the device twin (`SettlementRepository.decide`), which
+re-reads the row and no-ops unless it is still pending.
+*Backward-compatible:* a row whose `data.status` is absent/null (never written by
+the app, but possible on a hand-crafted or legacy mirror row) still counts as
+undecided and stays decidable — only an explicit `approved`/`rejected` is
+refused, so no settlement that can be decided today loses that ability.
+
 Errors: `400 code=BAD_STATUS` (status not `approved`/`rejected`),
 `404 code=SETTLEMENT_NOT_FOUND` (no such settlement in the caller's mirror),
+`409 code=SETTLEMENT_NOT_PENDING` (already decided — see above),
 `403 code=FORBIDDEN` (caller is not an owner/admin).
 
 #### GET `/api/account/wallet[?month=YYYY-MM]`  (auth)
@@ -617,6 +816,23 @@ unchanged. With the param the response carries the same
 `{ cash, card, collected, settled, balance }` shape, scoped to the month. The
 device's local fallback (`SettlementRepository.walletForMonth`) buckets by the
 same rule, so the online and offline figures agree.
+
+**Flash v43 — approved corrections are included.** `collected(M)` additionally
+folds in the append-only **`financial_adjustments`** ledger over the same scope
+(the same accountant scoping as the receipts side, the same `deleted:false`
+convention, and the same `(method||'cash')` bucketing). With `?month=` only that
+month's adjustments count — they carry the tariff month directly, like receipts,
+so no legacy fallback is needed; **without** it every adjustment counts, or the
+lifetime figure would disagree with the app's `wallet()`. Contribution by
+`kind`: `correction_increase` and `refund_return` add their **stored amount**
+(the writer stamps the sign — a `refund_return` is stored negative, and carries
+`accountant_id: null` because the OWNER returns the cash, so it never reduces an
+accountant's wallet); `correction_decrease` contributes **exactly 0** — a
+decrease must never reduce the wallet, it becomes a `refund_due` obligation on
+the correction instead, discharged only by the separately-recorded physical
+return. Any other/unknown `kind` is ignored rather than guessed at.
+The **response shape is unchanged**, and an account with no adjustments returns
+figures byte-identical to v42.
 
 ### Branches — `/api/account/branches`  (auth; role **owner only**)
 
@@ -714,10 +930,24 @@ Errors: `400` missing `entity`, `404 code=BRANCH_NOT_FOUND`, `403 code=FORBIDDEN
 - `POST   /api/admin/users/:id/reject-plan`         reject pending request
 - `DELETE /api/admin/users/:id/devices/:deviceId`   unbind a device
 - `GET    /api/admin/users/:id/data`                 list an owner's synced mirror rows (search + paginate, see below)
-- `DELETE /api/admin/users/:id/data/:entity/:localId` hard-delete one mirrored record
+- `DELETE /api/admin/users/:id/data/:entity/:localId` tombstone one mirrored record
+  (v23: sets `deleted:true` + a fresh `data.updated_at` rather than hard-deleting,
+  so a pulling device removes its local row and a stale local edit loses under
+  last-edit-wins). **v43 refusals:**
+  `409 code=RECEIPT_MONTH_LOCKED` / `409 code=SETTLEMENT_MONTH_LOCKED` when the
+  row's accounting month is closed by a `pending|approved` settlement, and
+  `409 code=ADJUSTMENT_IMMUTABLE` / `409 code=CORRECTION_IMMUTABLE` for the
+  append-only correction ledger, which may **never** be deleted through this
+  route (a tombstone here propagates to every device and silently moves the
+  accountant's wallet). Every other entity, and every open month, deletes
+  exactly as before.
 - `GET    /api/admin/password-resets`                 list owner password-reset requests (search + paginate, see below)
 - `POST   /api/admin/password-resets/:id/approve`     approve — **this is what changes the password**
 - `POST   /api/admin/password-resets/:id/reject`      reject — body `{ "note": "..." }`; changes nothing
+- `GET    /api/admin/corrections`                     list correction requests from the mirrors (search + paginate, see below)
+- `POST   /api/admin/corrections/:id/approve`         approve — **this is what appends the money adjustment**
+- `POST   /api/admin/corrections/:id/reject`          reject — body `{ "note": "..." }`; moves no money
+- `POST   /api/admin/corrections/:id/refund-paid`     record the physical cash return that closes a decrease
 - `GET    /api/admin/plans`                          list all plans
 - `PUT    /api/admin/plans`                          upsert a plan (body = Plan)
 - `DELETE /api/admin/plans/:code`                    delete a plan
@@ -761,7 +991,9 @@ Lists the business rows an owner pushed for one entity. The mirror is **push-onl
 never create or edit.
 
 Query params:
-- `entity` (required): one of `subscribers · boards · circuits · receipts · expenses · monthly_prices · refunds`.
+- `entity` (required): one of `subscribers · boards · circuits · receipts · expenses · monthly_prices · refunds`
+  — plus, from Flash v43, `corrections · financial_adjustments` (no per-field
+  search fields, so `q` falls back to matching `localId`).
 - `q` (optional): case-insensitive substring filter over per-entity search fields,
   applied **before** pagination. Search fields:
   `subscribers→name,phone · boards→name,code · circuits→name,phase ·
@@ -866,6 +1098,127 @@ Errors:
 `tokenVersion` is untouched and every live session keeps working. Errors:
 `404 code=RESET_NOT_FOUND` and `409 code=RESET_NOT_PENDING` (only a `pending`
 request can be rejected).
+
+### Corrections — `/api/admin/corrections`  (admin) — new in Flash v43
+
+The super-admin side of the **correction after invoicing** flow. An accountant
+blocked from editing an invoiced/settled month files a `corrections` row on the
+device; it reaches the mirror through `/api/sync/push` like any other business
+row (see **Synced entities `corrections` + `financial_adjustments`** for the row
+shape and the money rule). These four endpoints are where it is decided.
+
+Two rules the endpoints are built around:
+- **Nothing existing is ever edited.** A decision never touches the original
+  receipt, settlement, subscriber or tariff row — it appends one immutable
+  `financial_adjustments` row and moves the correction's `status` on. No receipt
+  number is consumed and no printed document changes.
+- **Approval and the physical cash return are two separate operations**, each
+  separately recorded. Approving a decrease never asserts that money moved.
+
+`:id` is the **mirror record's Mongo `_id`** — globally unique across owners,
+which is why these routes are not nested under `/users/:id`. The device's own
+UUID comes back as `localId` and cross-references
+`GET /api/admin/users/:id/data?entity=corrections`.
+
+A decision **bumps `data.updated_at`** on the correction, so **last-EDIT-wins**
+carries it over the device's older pending row on that device's next pull (the
+admin decides in the mirror; there is no separate push). The same three
+transitions exist on the device (`CorrectionController.approve` / `reject` /
+`recordRefundPaid`) with identical guards, and both sides write into the same
+mirror, so a decision made in either place converges.
+
+#### GET `/api/admin/corrections`  (admin)
+Query params (all optional): `userId` — scope to one owner's mirror; `status` —
+one of `pending · approved · rejected · refund_due · completed` (`refund_due` is
+the panel's *Refund Due* filter); `month` — `YYYY-MM`; `q` — case-insensitive
+substring over the row's `subscriber_id`, `month`, `reason` and `localId`;
+`page` (1-based, default `1`); `limit` (default `25`, clamped to `1..200`).
+Filtering is applied **before** pagination; rows come back newest first.
+```jsonc
+// 200 response
+{
+  "items": [
+    {
+      "id": "mongoid",           // the mirror record id — what `:id` below takes
+      "localId": "uuid",         // corrections.id on the device
+      "userId": "mongoid",       // the owner whose mirror holds it
+      "ownerName": "Owner Name",
+      "ownerUsername": "owner1",
+      "data": { /* the corrections row — see the Sync section */ },
+      "updatedAt": "ISO"
+    }
+  ],
+  "total": 7,   // matching rows after the filters, before the page slice
+  "page": 1,
+  "limit": 25
+}
+```
+
+#### POST `/api/admin/corrections/:id/approve`  (admin)
+**The approval is the moment the money is booked.** It stamps `data.status`,
+`data.decided_at` (now, ISO), `data.decided_by` (`req.user._id`), the optional
+`data.decision_note`, bumps `data.updated_at`, and appends **one**
+`financial_adjustments` row to the same owner's mirror:
+
+| `difference` | new `status` | adjustment appended |
+| --- | --- | --- |
+| `> 0` (increase) | `approved` | `correction_increase` for `+abs(difference)` → that month's wallet rises → an additional settlement for the month becomes possible |
+| `< 0` (decrease) | `refund_due` | `correction_decrease` for `+abs(difference)` — **audit only, wallet effect 0**. The wallet is never reduced; the money becomes an obligation until the cash is physically returned |
+| `== 0` | `approved` | **none** — there is nothing to book |
+
+The adjustment's `localId` is the deterministic **UUIDv5 of
+`(correction_id, kind)`** and it is written only if absent, so a retried
+approval, a re-delivered request or the same decision arriving from a second
+device can never double-credit the wallet.
+```jsonc
+// request
+{ "note": "verified against the meter log" }   // optional
+// 200 response
+{
+  "ok": true,
+  "correction": { /* the updated row: status, decided_at, decided_by, decision_note */ },
+  "adjustment": { /* the appended financial_adjustments row, or null when difference == 0 */ }
+}
+```
+Errors:
+- `404 code=CORRECTION_NOT_FOUND` — no such correction in any mirror.
+- `409 code=CORRECTION_NOT_PENDING` (`"Correction already approved"`) — already
+  decided. **Approving twice is a no-op error, never a double credit.**
+
+#### POST `/api/admin/corrections/:id/reject`  (admin)
+```jsonc
+// request
+{ "note": "the meter reading was right" }   // optional
+// 200 response
+{ "ok": true, "correction": { /* status:"rejected", decision_note, decided_at */ } }
+```
+**A rejection moves no money at all** — no adjustment is written, no wallet,
+revenue or settlement figure changes, and the original receipt, subscriber and
+tariff rows are untouched. Only a `pending` correction can be rejected. Errors:
+`404 code=CORRECTION_NOT_FOUND`, `409 code=CORRECTION_NOT_PENDING`.
+
+#### POST `/api/admin/corrections/:id/refund-paid`  (admin)
+Records the **physical cash return** that closes a decrease: `refund_due →
+completed`, stamping `data.refund_paid_at` (now, ISO), `data.refund_paid_by`
+(`req.user._id`) and bumping `data.updated_at`. It appends one `refund_return`
+adjustment for **`−abs(difference)`** with `accountant_id: null` — the owner
+returns the cash, not the accountant, so no accountant's derived wallet may be
+reduced by it (every accountant-wallet query filters on `accountant_id`, which
+is what keeps a wallet from ever going negative); the audit link survives via
+`correction_id` / `subscriber_id` / `month` / `branch_id`.
+```jsonc
+// request  — no body (the correction already carries the amount and the note)
+{}
+// 200 response
+{ "ok": true,
+  "correction": { /* status:"completed", refund_paid_at, refund_paid_by */ },
+  "adjustment": { /* the appended refund_return row */ } }
+```
+Allowed **only** from `refund_due` — a correction that was never approved as a
+decrease, or one already `completed`, is refused, so a double-tap can never
+append a second return for the same obligation. Errors:
+`404 code=CORRECTION_NOT_FOUND`,
+`409 code=CORRECTION_NOT_REFUND_DUE` (`"Correction is completed"`).
 
 ### GET `/api/admin/events`  (admin, real-time SSE)
 
