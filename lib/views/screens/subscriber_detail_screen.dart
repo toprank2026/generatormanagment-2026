@@ -450,64 +450,28 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
   Widget _buildPrevUnpaidNotice() {
     final double totalRemaining =
         _prevUnpaid.fold<double>(0, (sum, m) => sum + m.remaining);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        // Same amber notice palette as the other in-app hints (branches screen).
-        color: const Color(0xFFFFF8E1),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFFE082)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.orange.withOpacity(0.08),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+    // v44: collapsible — the header carries the ONE figure that matters (the
+    // outstanding total); the per-month breakdown opens on tap.
+    return _NoticeShell(
+      key: const ValueKey('notice-arrears'),
+      icon: Icons.history_toggle_off,
+      title: 'prev_unpaid_title'.tr,
+      trailing: Text(
+        "${'iqd'.tr} ${fmtAmount(totalRemaining)}",
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 13,
+          color: Color(0xFFE65100),
+        ),
       ),
-      child: Column(
+      body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.history_toggle_off, color: Color(0xFFFF8F00)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'prev_unpaid_title'.tr,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: Color(0xFFE65100),
-                  ),
-                ),
-              ),
-              Text(
-                "${_prevUnpaid.length} ${'prev_unpaid_months_count'.tr}",
-                style: const TextStyle(fontSize: 12, color: Color(0xFFFF8F00)),
-              ),
-            ],
+          Text(
+            "${_prevUnpaid.length} ${'prev_unpaid_months_count'.tr}",
+            style: const TextStyle(fontSize: 11.5, color: Color(0xFFFF8F00)),
           ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'prev_unpaid_total'.tr,
-                style: const TextStyle(fontSize: 13, color: Colors.black87),
-              ),
-              Text(
-                "${'iqd'.tr} ${fmtAmount(totalRemaining)}",
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 17,
-                  color: Color(0xFFE65100),
-                ),
-              ),
-            ],
-          ),
-          const Divider(height: 20, color: Color(0xFFFFE082)),
+          const Divider(height: 14, color: Color(0xFFFFE082)),
           // Per-month breakdown, newest first (the repository's order).
           ..._prevUnpaid.map(
             (m) => Padding(
@@ -531,10 +495,10 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             'prev_unpaid_body'.tr,
-            style: TextStyle(fontSize: 11.5, color: Colors.grey[700]),
+            style: TextStyle(fontSize: 11, color: Colors.grey[700]),
           ),
         ],
       ),
@@ -556,44 +520,21 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
     final Correction? latest =
         _monthCorrections.isEmpty ? null : _monthCorrections.first;
     final bool hasOpen = latest != null && latest.isPending;
-    return Container(
-      width: double.infinity,
-      // v43.1: COMPACT. This is a status notice, not the subject of the screen
-      // — it sat above the payment card and pushed it off-screen. Tighter
-      // padding, no drop shadow, no full-width button.
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        // Same amber notice palette as the arrears card above.
-        color: const Color(0xFFFFF8E1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFFFE082)),
-      ),
-      child: Column(
+    // v44: collapsible — one header line (lock · title · month, or the filed
+    // correction's status chip when there is one); everything else on tap.
+    return _NoticeShell(
+      key: const ValueKey('notice-lock'),
+      icon: Icons.lock_outline,
+      title: 'month_locked_title'.tr,
+      trailing: latest != null
+          ? _statusChip(latest.status)
+          : Text(
+              controller.selectedMonth.value,
+              style: const TextStyle(fontSize: 12, color: Color(0xFFFF8F00)),
+            ),
+      body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.lock_outline, size: 16, color: Color(0xFFFF8F00)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'month_locked_title'.tr,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    color: Color(0xFFE65100),
-                  ),
-                ),
-              ),
-              // The month the lock belongs to — the Golden Rule made visible:
-              // invoice month = accounting month = correction month.
-              Text(
-                controller.selectedMonth.value,
-                style: const TextStyle(fontSize: 12, color: Color(0xFFFF8F00)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
           // One line: the full explanation is long and repeats every visit.
           Text(
             'month_locked_short'.tr,
@@ -695,7 +636,8 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
             ? Colors.redAccent
             : (status == CorrectionStatus.refundDue
                 ? const Color(0xFFEF6C00)
-                : (status == CorrectionStatus.completed
+                : (status == CorrectionStatus.completed ||
+                        status == CorrectionStatus.carriedForward
                     ? const Color(0xFF00897B)
                     : Colors.orange)));
     final String label = status == CorrectionStatus.approved
@@ -706,7 +648,9 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
                 ? 'correction_refund_due'
                 : (status == CorrectionStatus.completed
                     ? 'correction_completed'
-                    : 'correction_pending')));
+                    : (status == CorrectionStatus.carriedForward
+                        ? 'correction_carried_forward' // v44
+                        : 'correction_pending'))));
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
@@ -1012,3 +956,92 @@ class _SubscriberDetailScreenState extends State<SubscriberDetailScreen> {
     );
   }
 }
+
+/// v44 — the COLLAPSIBLE amber notice shell used by the arrears notice and the
+/// locked-month notice. Both were full cards that together pushed the payment
+/// card off screen; each is now a single header line (icon · title · the one
+/// figure that matters · chevron) that expands on tap. Collapsed by default,
+/// and the open/closed state lives HERE so a parent rebuild never resets it.
+class _NoticeShell extends StatefulWidget {
+  final IconData icon;
+  final String title;
+  final Widget trailing;
+  final Widget body;
+  const _NoticeShell({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.trailing,
+    required this.body,
+  });
+
+  @override
+  State<_NoticeShell> createState() => _NoticeShellState();
+}
+
+class _NoticeShellState extends State<_NoticeShell> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFFE082)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => setState(() => _open = !_open),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              child: Row(
+                children: [
+                  Icon(widget.icon, size: 16, color: const Color(0xFFFF8F00)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Color(0xFFE65100),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  widget.trailing,
+                  const SizedBox(width: 4),
+                  AnimatedRotation(
+                    turns: _open ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: const Icon(Icons.expand_more,
+                        size: 18, color: Color(0xFFFF8F00)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: _open
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                    child: widget.body,
+                  )
+                : const SizedBox(width: double.infinity, height: 0),
+          ),
+        ],
+      ),
+    );
+  }
+}
+

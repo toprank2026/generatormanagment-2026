@@ -156,6 +156,26 @@ function authorizeRecord(user, rec) {
     rec.data.decided_by = null;
     rec.data.decided_at = null;
   }
+
+  // v44 review fix — same forgery class for `corrections`: the app's request
+  // path ALWAYS writes status 'pending'; only an owner/admin decides. An
+  // accountant pushing a decided/closed correction (approved, refund_due,
+  // completed, carried_forward, rejected) would re-price every device on a
+  // forged old_amps. 403 -> skip-and-count in the push loop (never a batch 4xx).
+  if (rec.entity === 'corrections' && rec.data && typeof rec.data === 'object') {
+    const status = String(rec.data.status || 'pending');
+    if (status !== 'pending') {
+      throw new HttpError(
+        403,
+        'accountants may file a correction, not decide one',
+        'CORRECTION_DECISION_FORBIDDEN'
+      );
+    }
+    rec.data.decided_by = null;
+    rec.data.decided_at = null;
+    rec.data.refund_paid_by = null;
+    rec.data.refund_paid_at = null;
+  }
 }
 
 /* ───────────────────────────────────────────────────────────────────────────

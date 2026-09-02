@@ -56,6 +56,8 @@ class CoreController extends GetxController {
   // and the month's per-branch category prices — so every list row can show
   // the amount still to collect, with zero per-row queries.
   final Map<String, double> _rowCoverage = <String, double>{};
+  // v44 review fix: per-row DUE on the same derivation as the paid dot.
+  final Map<String, double> _rowDue = <String, double>{};
   final Map<String, Map<String, double>> _rowPricesByBranch =
       <String, Map<String, double>>{};
   // v27 item 1: total amps of the board whose subscriber list is showing.
@@ -73,6 +75,8 @@ class CoreController extends GetxController {
           await _circuitRepo.getAllInBranch(branchId: _branchScope);
       final allBoards = await _boardRepo.getAll(branchId: _branchScope);
       final coverage = await _subscriberRepo.coverageBySubscriber(
+          month: month, branchId: _branchScope);
+      final dues = await _subscriberRepo.dueBySubscriber(
           month: month, branchId: _branchScope);
       final prices = await MonthlyPriceRepository().pricesForMonthByBranch(month);
       // v42 item 5: everything in scope minus everything active this month.
@@ -93,6 +97,9 @@ class CoreController extends GetxController {
       _rowCoverage
         ..clear()
         ..addAll(coverage);
+      _rowDue
+        ..clear()
+        ..addAll(dues);
       _rowPricesByBranch
         ..clear()
         ..addAll(prices);
@@ -110,7 +117,11 @@ class CoreController extends GetxController {
     final price = _rowPricesByBranch[branchKey]?[
         SubscriberCategory.normalize(sub.category)];
     if (price == null) return null;
-    final due = sub.amps * price - (_rowCoverage[sub.id] ?? 0);
+    // v44 review fix: the SQL due (frozen amps + correction delta) when the
+    // list loaded one; the bare formula only as a fallback for a row that
+    // arrived after the load.
+    final double gross = _rowDue[sub.id] ?? (sub.amps * price);
+    final due = gross - (_rowCoverage[sub.id] ?? 0);
     return due < 0 ? 0 : due;
   }
 

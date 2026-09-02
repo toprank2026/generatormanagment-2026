@@ -695,6 +695,28 @@ class Messages extends Translations {
       'refund_return': 'Return cash to the subscriber',
       'refund_paid_by': 'Cash returned by',
       'refund_paid_at': 'Cash returned on',
+      // ---- v44: corrections settlement rules ----
+      'correction_carry_forward': 'Carry forward to next month',
+      'correction_carried_forward': 'Carried forward',
+      'correction_carry_forward_confirm':
+          'Apply this credit to the next month instead of returning cash? The due of the next month will be reduced by the credit.',
+      'correction_carry_forward_done': 'Credit carried forward to next month',
+      'correction_carry_forward_unpriced':
+          'The next month has no price for this subscriber, so there is nothing to apply the credit to. Record a cash refund instead.',
+      'correction_carry_forward_covered':
+          'The next month is already fully paid. Record a cash refund instead.',
+      'correction_carry_forward_too_large':
+          'The credit is larger than what the next month still owes. Record a cash refund instead.',
+      'corrections_tab': 'Corrections',
+      'corrections_tab_empty': 'No corrections in this month',
+      'settle_awaiting_approval': 'Awaiting approval',
+      'settle_unpaid_difference': 'Unpaid difference',
+      'settle_paid': 'Paid',
+      'settle_credit': 'Credit',
+      'settle_refunded': 'Refunded',
+      'settle_carried_forward': 'Carried forward',
+      'settle_rejected': 'Rejected',
+      'correction_old_new_amps': 'Amps',
     },
     'ar_AR': {
       'app_name': 'فلاش',
@@ -1380,6 +1402,28 @@ class Messages extends Translations {
       'refund_return': 'إرجاع المبلغ إلى المشترك',
       'refund_paid_by': 'أرجع المبلغ',
       'refund_paid_at': 'تاريخ الإرجاع',
+      // ---- v44: corrections settlement rules ----
+      'correction_carry_forward': 'ترحيل الفرق للشهر القادم',
+      'correction_carried_forward': 'تم الترحيل',
+      'correction_carry_forward_confirm':
+          'تطبيق هذا الرصيد على الشهر القادم بدلاً من إرجاع المبلغ نقداً؟ سيُخصم الرصيد من مستحقات الشهر القادم.',
+      'correction_carry_forward_done': 'تم ترحيل الرصيد للشهر القادم',
+      'correction_carry_forward_unpriced':
+          'لا يوجد سعر للشهر القادم لهذا المشترك، فلا يمكن تطبيق الرصيد عليه. سجّل إرجاع المبلغ نقداً بدلاً من ذلك.',
+      'correction_carry_forward_covered':
+          'الشهر القادم مسدد بالكامل. سجّل إرجاع المبلغ نقداً بدلاً من ذلك.',
+      'correction_carry_forward_too_large':
+          'الرصيد أكبر مما يستحقه الشهر القادم. سجّل إرجاع المبلغ نقداً بدلاً من ذلك.',
+      'corrections_tab': 'التعديلات',
+      'corrections_tab_empty': 'لا توجد تعديلات في هذا الشهر',
+      'settle_awaiting_approval': 'بانتظار الموافقة',
+      'settle_unpaid_difference': 'فرق غير مسدد',
+      'settle_paid': 'مسدد',
+      'settle_credit': 'رصيد للمشترك',
+      'settle_refunded': 'تم الإرجاع',
+      'settle_carried_forward': 'تم الترحيل',
+      'settle_rejected': 'مرفوض',
+      'correction_old_new_amps': 'الأمبير',
     },
   };
 }

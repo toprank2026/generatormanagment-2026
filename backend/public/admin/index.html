@@ -686,6 +686,7 @@ var API={
   approveCorrection:function(id){ return api("POST","/api/admin/corrections/"+encodeURIComponent(id)+"/approve",{}); },
   rejectCorrection:function(id,note){ return api("POST","/api/admin/corrections/"+encodeURIComponent(id)+"/reject",{note:note||""}); },
   correctionRefundPaid:function(id){ return api("POST","/api/admin/corrections/"+encodeURIComponent(id)+"/refund-paid",{}); },
+  correctionCarryForward:function(id){ return api("POST","/api/admin/corrections/"+encodeURIComponent(id)+"/carry-forward",{}); },
   // Landing: advertisement banners (admin CRUD) + promo video (singleton).
   banners:function(){ return api("GET","/api/admin/banners"); },
   createBanner:function(form){ return api("POST","/api/admin/banners",form,true); },
@@ -3694,11 +3695,27 @@ var CORRECTION_STATUS_LABELS={
   approved:"تمت الموافقة",
   rejected:"مرفوض",
   refund_due:"بانتظار إرجاع المبلغ",
-  completed:"مكتمل"
+  completed:"مكتمل",
+  carried_forward:"تم الترحيل للشهر القادم"
 };
+/* v44: how the correction's DIFFERENCE stands — derived, never stored. */
+var SETTLEMENT_LABELS={
+  awaiting_approval:"بانتظار الموافقة",
+  unpaid_difference:"فرق غير مسدد",
+  paid:"مسدد",
+  credit:"رصيد للمشترك",
+  refunded:"تم الإرجاع",
+  carried_forward:"تم الترحيل",
+  rejected:"مرفوض"
+};
+function settlementBadge(st){
+  if(st==null||st==="") return null;
+  var cls=(st==="paid"||st==="refunded"||st==="carried_forward")?"green":(st==="unpaid_difference"?"red":(st==="credit"?"blue":(st==="rejected"?"gray":"orange")));
+  return el("div",{style:"margin-top:4px"},[el("span",{class:"badge "+cls},[el("span",{class:"dot"}),SETTLEMENT_LABELS[st]||syncText(st)])]);
+}
 function correctionStatusBadge(status){
   var s=status||"pending";
-  var cls=s==="approved"?"green":(s==="rejected"?"red":(s==="refund_due"?"blue":(s==="completed"?"gray":"orange")));
+  var cls=s==="approved"?"green":(s==="rejected"?"red":(s==="refund_due"?"blue":((s==="completed"||s==="carried_forward")?"gray":"orange")));
   return el("span",{class:"badge "+cls},[el("span",{class:"dot"}),CORRECTION_STATUS_LABELS[s]||syncText(s)]);
 }
 /* Reads one correction field tolerantly: the endpoint may hand us camelCase,
@@ -3753,7 +3770,7 @@ function viewCorrections(){
   var searchIn=el("input",{class:"input",type:"text",placeholder:"ابحث باسم المشترك أو الشهر أو صاحب الحساب…"});
   var statusSel=el("select",{class:"input",style:"max-width:200px"},[
     optEl("","كل الحالات"),optEl("pending","قيد الانتظار"),optEl("approved","تمت الموافقة"),
-    optEl("rejected","مرفوض"),optEl("refund_due","بانتظار إرجاع المبلغ"),optEl("completed","مكتمل")
+    optEl("rejected","مرفوض"),optEl("refund_due","بانتظار إرجاع المبلغ"),optEl("completed","مكتمل"),optEl("carried_forward","تم الترحيل")
   ]);
   var countEl=el("span",{class:"muted",text:""});
   // Stable regions repainted per load, so typing in the search box never loses
@@ -3840,6 +3857,8 @@ function viewCorrections(){
         actions.appendChild(el("button",{class:"btn sm danger ghost",onclick:function(){ reject(r); }},["رفض"]));
       } else if(st==="refund_due"){
         actions.appendChild(el("button",{class:"btn sm",onclick:function(){ refundPaid(r); }},["تسجيل إرجاع المبلغ"]));
+        // v44: the other way to close a credit — apply it to the next month.
+        actions.appendChild(el("button",{class:"btn sm ghost",onclick:function(){ carryForward(r); }},["ترحيل للشهر القادم"]));
       }
       var hasActions=(st==="pending"||st==="refund_due");
       tb.appendChild(el("tr",[
@@ -3858,7 +3877,9 @@ function viewCorrections(){
           el("div",{style:"font-weight:800;color:"+corrDiffColor(diff),text:corrDiffText(diff)}),
           (oldAmps!=null&&newAmps!=null)
             ? el("div",{class:"muted",style:"font-size:12px",text:oldAmps+" ← "+newAmps+" أمبير"})
-            : null
+            : null,
+          // v44: settlement status of the DIFFERENCE (derived server-side).
+          settlementBadge(corrField(r,"settlementStatus","settlement_status"))
         ]),
         el("td",[
           correctionStatusBadge(st),
@@ -3940,6 +3961,26 @@ function viewCorrections(){
       onConfirm:function(){
         return API.rejectCorrection(corrId(r),note).then(function(){
           toast("تم رفض طلب التصحيح","ok");
+          load();
+        });
+      }
+    });
+  }
+
+  // v44: close a credit by applying it to the NEXT month instead of cash.
+  function carryForward(r){
+    var diff=corrDifference(r);
+    var amount=(diff!=null)?fmtPrice(Math.abs(diff)):"—";
+    confirmModal({
+      title:"ترحيل الرصيد للشهر القادم",
+      confirmText:"ترحيل",
+      alert:"لن يتحرك أي نقد. يُخصم هذا الرصيد من مستحقات المشترك في الشهر القادم، ويُحفظ كقيد مستقل لا يمكن التراجع عنه.",
+      alertType:"info",
+      message:"ترحيل رصيد <b>"+esc(amount)+"</b> للمشترك <b>"+who(r)+"</b> إلى الشهر القادم؟"
+        +"<div class=\"muted\" style=\"margin-top:8px\">يُغلق الطلب بحالة «تم الترحيل». الوصل الأصلي يبقى كما هو.</div>",
+      onConfirm:function(){
+        return API.correctionCarryForward(corrId(r)).then(function(){
+          toast("تم ترحيل الرصيد للشهر القادم","ok");
           load();
         });
       }

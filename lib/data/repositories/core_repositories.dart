@@ -637,7 +637,7 @@ class SubscriberRepository {
         ON mp.month = ?
         AND mp.category = IFNULL(s.category, 'standard')
         AND IFNULL(mp.branch_id, '$main') = IFNULL(s.branch_id, '$main')
-      WHERE ${isPaid ? "mp.price_per_amp IS NOT NULL AND (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0)) >= (${DbHelper.effectiveAmps()} * mp.price_per_amp)" : "(mp.price_per_amp IS NULL OR (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0)) < (${DbHelper.effectiveAmps()} * mp.price_per_amp))"} ${outerScopes.join(' ')}
+      WHERE ${isPaid ? "mp.price_per_amp IS NOT NULL AND (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0)) >= (${DbHelper.effectiveAmps()} * mp.price_per_amp + ${DbHelper.correctionDueDelta()})" : "(mp.price_per_amp IS NULL OR (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0)) < (${DbHelper.effectiveAmps()} * mp.price_per_amp + ${DbHelper.correctionDueDelta()}))"} ${outerScopes.join(' ')}
     """;
     return (sql: sql, args: args);
   }
@@ -694,6 +694,41 @@ class SubscriberRepository {
   /// in ONE grouped query — feeds the per-row "amount due" line in the
   /// subscriber lists without an N+1. Same coverage rule as
   /// [getByPaymentStatus] (valid receipts only, branch-scoped).
+  /// v44 review fix — per-subscriber DUE for [month] on the same derivation
+  /// every paid/unpaid query uses (frozen amps x price + the in-force
+  /// correction delta), so a list row's "amount due" can never contradict its
+  /// own paid/unpaid dot. Subscribers whose category is unpriced this month
+  /// are absent (the row hides the line, like today).
+  Future<Map<String, double>> dueBySubscriber({
+    required String month,
+    String? branchId,
+  }) async {
+    final db = await _dbHelper.database;
+    const String main = DbHelper.kMainBranchId;
+    final clauses = <String>['mp.price_per_amp IS NOT NULL'];
+    final args = <dynamic>[month];
+    if (branchId != null) {
+      clauses.add("IFNULL(s.branch_id, '$main') = ?");
+      args.add(branchId);
+    }
+    final rows = await db.rawQuery(
+      'SELECT s.id AS sid, '
+      '(${DbHelper.effectiveAmps()} * mp.price_per_amp '
+      '+ ${DbHelper.correctionDueDelta()}) AS due '
+      'FROM subscribers s '
+      'LEFT JOIN monthly_prices mp ON mp.month = ? '
+      "AND mp.category = IFNULL(s.category, 'standard') "
+      "AND IFNULL(mp.branch_id, '$main') = IFNULL(s.branch_id, '$main') "
+      'WHERE ${clauses.join(' AND ')}',
+      args,
+    );
+    final map = <String, double>{};
+    for (final r in rows) {
+      map[r['sid'] as String] = ((r['due'] as num?) ?? 0).toDouble();
+    }
+    return map;
+  }
+
   Future<Map<String, double>> coverageBySubscriber({
     required String month,
     String? branchId,
@@ -785,7 +820,7 @@ class SubscriberRepository {
     args.addAll([subscriberId, limit]);
     final rows = await db.rawQuery("""
       SELECT mp.month AS month,
-             (${DbHelper.effectiveAmps()} * mp.price_per_amp) AS due,
+             (${DbHelper.effectiveAmps()} * mp.price_per_amp + ${DbHelper.correctionDueDelta()}) AS due,
              COALESCE(r.cov, 0) AS coverage
       FROM subscribers s
       JOIN monthly_prices mp
@@ -802,7 +837,7 @@ class SubscriberRepository {
         GROUP BY month
       ) r ON r.month = mp.month
       WHERE s.id = ?
-        AND (${DbHelper.effectiveAmps()} * mp.price_per_amp) - COALESCE(r.cov, 0) > 0
+        AND (${DbHelper.effectiveAmps()} * mp.price_per_amp + ${DbHelper.correctionDueDelta()}) - COALESCE(r.cov, 0) > 0
         -- v42 review fix — NEVER accuse a paid-up subscriber. `SyncController`
         -- pulls receipts MONTH-SCOPED (`receiptsMonth`), so a device that has
         -- not held a past month's receipts locally sees zero coverage for it and
@@ -859,7 +894,7 @@ class SubscriberRepository {
              COUNT(*) AS total,
              SUM(CASE WHEN mp.price_per_amp IS NOT NULL
                        AND (COALESCE(r.total_paid, 0) + COALESCE(r.total_discount, 0))
-                           >= (${DbHelper.effectiveAmps()} * mp.price_per_amp)
+                           >= (${DbHelper.effectiveAmps()} * mp.price_per_amp + ${DbHelper.correctionDueDelta()})
                  THEN 1 ELSE 0 END) AS paid
       FROM subscribers s
       LEFT JOIN (
@@ -925,7 +960,7 @@ class SubscriberRepository {
     final q =
         _paymentStatusFrom(month: month, isPaid: false, branchId: branchId);
     final r = await db.rawQuery(
-      'SELECT SUM(MAX(' "${DbHelper.effectiveAmps()}" ' * mp.price_per_amp '
+      'SELECT SUM(MAX(' "${DbHelper.effectiveAmps()}" ' * mp.price_per_amp + ' "${DbHelper.correctionDueDelta()}" ' '
       '- COALESCE(r.total_paid, 0) - COALESCE(r.total_discount, 0), 0)) AS rem '
       '${q.sql}',
       q.args,

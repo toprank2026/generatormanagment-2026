@@ -177,6 +177,40 @@ class CorrectionRepository {
     return true;
   }
 
+  /// v44 — closes a decrease by CARRYING its credit FORWARD instead of
+  /// returning cash: `refund_due -> carried_forward`. The caller then appends
+  /// one `credit_applied` adjustment on the TARGET month, which reduces that
+  /// month's due by the credit. Same guarded shape as [markRefundPaid], so a
+  /// device that loses the race writes nothing.
+  Future<bool> carryForward(Correction c, {String? by, String? note}) async {
+    final db = await _dbHelper.database;
+    final fresh = await db.query('corrections',
+        columns: ['status'], where: 'id = ?', whereArgs: [c.id], limit: 1);
+    if (fresh.isEmpty ||
+        (fresh.first['status'] as String?) != CorrectionStatus.refundDue) {
+      return false; // not holding a credit — no-op
+    }
+    c.status = CorrectionStatus.carriedForward;
+    c.refundPaidAt = DateTime.now().toUtc().toIso8601String();
+    if (by != null) c.refundPaidBy = by;
+    if (note != null) c.decisionNote = note;
+    await db
+        .update('corrections', c.toMap(), where: 'id = ?', whereArgs: [c.id]);
+    return true;
+  }
+
+  /// v44 review fix — compensating write used ONLY when the ledger insert
+  /// that must follow a carry-forward fails: `carried_forward -> refund_due`,
+  /// so the credit is still held on the correction instead of vanishing.
+  Future<void> reopenRefundDue(Correction c) async {
+    final db = await _dbHelper.database;
+    c.status = CorrectionStatus.refundDue;
+    c.refundPaidAt = null;
+    c.refundPaidBy = null;
+    await db
+        .update('corrections', c.toMap(), where: 'id = ?', whereArgs: [c.id]);
+  }
+
   // ---------------------------------------------------------------------------
   // financial_adjustments — the APPEND-ONLY ledger
   //
@@ -255,16 +289,85 @@ class CorrectionRepository {
       where.add('subscriber_id = ?');
       args.add(subscriberId);
     }
-    // The zeroed kind is bound, not interpolated; its `?` sits in the SELECT
-    // list, so it must be the FIRST positional argument (the WHERE args follow
-    // in order — the raw-SQL convention this codebase already relies on).
+    // v44 MONEY RULE — only the PHYSICAL cash return moves collected money.
+    //   refund_return       -> its (negative) amount: cash actually left.
+    //   correction_increase -> 0. The customer OWES the difference; it reaches
+    //                          the wallet only through a real receipt (v43 had
+    //                          credited it here — phantom cash nobody handed
+    //                          over, flagged by the adversarial review).
+    //   correction_decrease -> 0. The customer stays paid; the credit lives on
+    //                          the correction until refunded or applied.
+    //   credit_applied      -> 0. A DUE reduction on its target month, not cash.
+    // The kind is bound, not interpolated; its `?` sits in the SELECT list, so
+    // it must be the FIRST positional argument (the raw-SQL convention here).
+    // STATUS-AWARE (v44 review fix): the cash return counts only while its
+    // correction is `completed` — see DbHelper.correctionDueDelta.
+    // Alias every clause to the ledger table `a` (the method clause is an
+    // expression, so its column is aliased inside the COALESCE).
+    final String scoped = where
+        .map((w) => w.startsWith('COALESCE(')
+            ? w.replaceFirst('COALESCE(method', 'COALESCE(a.method')
+            : 'a.$w')
+        .join(' AND ');
     final r = await db.rawQuery(
-      "SELECT COALESCE(SUM(CASE WHEN kind = ? "
-      "THEN 0 ELSE COALESCE(amount, 0) END), 0) s "
-      "FROM financial_adjustments WHERE ${where.join(' AND ')}",
-      [AdjustmentKind.decrease, ...args],
+      "SELECT COALESCE(SUM(CASE WHEN a.kind = ? AND c.status = 'completed' "
+      "THEN COALESCE(a.amount, 0) ELSE 0 END), 0) s "
+      "FROM financial_adjustments a "
+      "LEFT JOIN corrections c ON c.id = a.correction_id WHERE $scoped",
+      [AdjustmentKind.refundReturn, ...args],
     );
     return ((r.first['s'] as num?) ?? 0).toDouble();
+  }
+
+  /// v44 — the Dart twin of `DbHelper.correctionDueDelta`: the signed change
+  /// to [subscriberId]'s DUE in [month] from decided corrections
+  /// (+ increases, − credits applied). `BillingController.getDueAmount` uses
+  /// it so the detail screen and the list SQL can never disagree.
+  Future<double> dueDeltaFor({
+    required String subscriberId,
+    required String month,
+  }) async {
+    if (subscriberId.isEmpty || month.isEmpty) return 0;
+    final db = await _dbHelper.database;
+    // STATUS-AWARE — the Dart twin of DbHelper.correctionDueDelta.
+    final r = await db.rawQuery(
+      "SELECT COALESCE(SUM(CASE "
+      "WHEN a.kind = ? AND c.status = 'approved' THEN COALESCE(a.amount, 0) "
+      "WHEN a.kind = ? AND c.status = 'carried_forward' "
+      "THEN -COALESCE(a.amount, 0) ELSE 0 END), 0) s "
+      "FROM financial_adjustments a "
+      "LEFT JOIN corrections c ON c.id = a.correction_id "
+      "WHERE a.subscriber_id = ? AND a.month = ?",
+      [AdjustmentKind.increase, AdjustmentKind.creditApplied, subscriberId, month],
+    );
+    return ((r.first['s'] as num?) ?? 0).toDouble();
+  }
+
+  /// v44 — the corrections of one accounting [month] joined to their
+  /// subscriber (name / current amps), newest first, for the Subscribers
+  /// screen's Corrections tab. Paginated like every list here.
+  Future<List<Map<String, Object?>>> correctedInMonth({
+    required String month,
+    String? branchId,
+    required int limit,
+    required int offset,
+  }) async {
+    final db = await _dbHelper.database;
+    final where = <String>['c.month = ?'];
+    final args = <dynamic>[month];
+    if (branchId != null && branchId.isNotEmpty) {
+      where.add("IFNULL(c.branch_id, '${DbHelper.kMainBranchId}') = ?");
+      args.add(branchId);
+    }
+    args.addAll([limit, offset]);
+    return db.rawQuery(
+      'SELECT c.*, s.name AS subscriber_name, s.amps AS subscriber_amps, '
+      's.phone AS subscriber_phone '
+      'FROM corrections c LEFT JOIN subscribers s ON s.id = c.subscriber_id '
+      'WHERE ${where.join(' AND ')} '
+      'ORDER BY c.requested_at DESC, c.id DESC LIMIT ? OFFSET ?',
+      args,
+    );
   }
 
   /// v43.1 — the amps that were in force for [subscriberId] in [month].
@@ -285,12 +388,41 @@ class CorrectionRepository {
     final r = await db.rawQuery(
       'SELECT old_amps FROM corrections '
       'WHERE subscriber_id = ? AND month >= ? AND old_amps IS NOT NULL '
-      "AND status IN ('approved', 'refund_due', 'completed') "
-      'ORDER BY month ASC, id ASC LIMIT 1',
+      "AND status IN ('approved', 'refund_due', 'completed', 'carried_forward') "
+      "ORDER BY month ASC, COALESCE(requested_at, '') ASC, id ASC LIMIT 1",
       [subscriberId, month],
     );
     if (r.isEmpty) return null;
     return (r.first['old_amps'] as num?)?.toDouble();
+  }
+
+  /// v44 review fix — the month's TOTAL signed due delta (+ increases in
+  /// force − credits in force), optionally per branch, so the app's
+  /// "expected" figure folds it in exactly like `remaining` and the backend
+  /// `expected` already do. Status-aware like `dueDeltaFor`.
+  Future<double> dueDeltaTotal({
+    required String month,
+    String? branchId,
+  }) async {
+    final db = await _dbHelper.database;
+    final where = <String>['a.month = ?'];
+    final args = <dynamic>[month];
+    if (branchId != null && branchId.isNotEmpty) {
+      where.add("IFNULL(a.branch_id, '${DbHelper.kMainBranchId}') = ?");
+      args.add(branchId);
+    }
+    final r = await db.rawQuery(
+      "SELECT COALESCE(SUM(CASE "
+      "WHEN a.kind = 'correction_increase' AND c.status = 'approved' "
+      "THEN COALESCE(a.amount, 0) "
+      "WHEN a.kind = 'credit_applied' AND c.status = 'carried_forward' "
+      "THEN -COALESCE(a.amount, 0) ELSE 0 END), 0) s "
+      "FROM financial_adjustments a "
+      "LEFT JOIN corrections c ON c.id = a.correction_id "
+      "WHERE ${where.join(' AND ')}",
+      args,
+    );
+    return ((r.first['s'] as num?) ?? 0).toDouble();
   }
 
   /// The adjustment rows of one accounting [month] (optionally one subscriber /

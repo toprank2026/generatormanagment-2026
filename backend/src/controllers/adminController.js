@@ -862,6 +862,8 @@ const rejectPasswordReset = asyncHandler(async (req, res) => {
  * adjustment.
  * ─────────────────────────────────────────────────────────────────────────── */
 
+const { buildFrozenAmps } = require('../utils/frozenAmps');
+
 const CORRECTION_ENTITY = 'corrections';
 const ADJUSTMENT_ENTITY = 'financial_adjustments';
 
@@ -872,6 +874,7 @@ const CORRECTION_STATUSES = new Set([
   'rejected',
   'refund_due',
   'completed',
+  'carried_forward', // v44: decrease credit applied to the next month
 ]);
 
 /**
@@ -882,12 +885,22 @@ const CORRECTION_STATUSES = new Set([
  * settlementController treats an unstamped settlement. Expressed as a $nin so
  * the guard and the normalizer can never disagree.
  */
-const DECIDED_CORRECTION_STATUSES = ['approved', 'rejected', 'refund_due', 'completed'];
+const DECIDED_CORRECTION_STATUSES = ['approved', 'rejected', 'refund_due', 'completed', 'carried_forward'];
 
 /** AdjustmentKind (correction_models.dart) — the three ledger kinds. */
 const ADJ_INCREASE = 'correction_increase';
 const ADJ_DECREASE = 'correction_decrease';
 const ADJ_REFUND_RETURN = 'refund_return';
+/** v44: a decrease's credit applied to a LATER month (`month` = the target). */
+const ADJ_CREDIT_APPLIED = 'credit_applied';
+
+/** 'YYYY-MM' + 1 month, year-wrap safe. */
+function nextMonthOf(m) {
+  const mm = /^(\d{4})-(\d{2})$/.exec(String(m || ''));
+  if (!mm) return null;
+  const d = new Date(Date.UTC(Number(mm[1]), Number(mm[2]), 1)); // month index = mm[2] → next
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
 
 /**
  * Free-text search over corrections resolves matching SUBSCRIBER names first
@@ -1133,17 +1146,74 @@ const listCorrections = asyncHandler(async (req, res) => {
     }
   }
 
+  // v44: SETTLEMENT STATUS of each correction's difference, DERIVED (never
+  // stored) the same way the app's Corrections tab derives it. For an approved
+  // INCREASE it asks whether the customer's valid receipts for that month now
+  // cover the corrected due (`new_due`); every other status maps directly.
+  const covKeys = [];
+  const seenCov = new Set();
+  for (const d of docs) {
+    const data = d.data || {};
+    if (correctionStatusOf(data) !== 'approved') continue;
+    const sid = str(data.subscriber_id);
+    const m = str(data.month);
+    if (!sid || !m) continue;
+    const key = `${String(d.user)}|${sid}|${m}`;
+    if (seenCov.has(key)) continue;
+    seenCov.add(key);
+    covKeys.push({ user: d.user, entity: 'receipts', deleted: false, 'data.status': 'valid', 'data.subscriber_id': sid, 'data.month': m });
+  }
+  const coverageByKey = new Map();
+  if (covKeys.length) {
+    const rcps = await SyncRecord.find({ $or: covKeys }, { user: 1, 'data.subscriber_id': 1, 'data.month': 1, 'data.paid_amount': 1, 'data.discount_value': 1 }).lean();
+    for (const r of rcps) {
+      const rd = r.data || {};
+      const key = `${String(r.user)}|${str(rd.subscriber_id)}|${str(rd.month)}`;
+      coverageByKey.set(key, (coverageByKey.get(key) || 0) + (Number(rd.paid_amount) || 0) + (Number(rd.discount_value) || 0));
+    }
+  }
+  // v44 review fix: for an approved increase, `paid` is derived on the SAME
+  // formula as the app's Corrections tab (frozen amps x price + in-force
+  // delta − coverage), not the stored new_due snapshot — the two diverge as
+  // soon as a carried credit or a second correction lands on the month.
+  const remainingCache = new Map();
+  const remainingFor = async (d) => {
+    const data = d.data || {};
+    const key = `${String(d.user)}|${str(data.subscriber_id)}|${str(data.month)}`;
+    if (!remainingCache.has(key)) {
+      remainingCache.set(key, await remainingDueOnMirror(d.user, data.subscriber_id, str(data.month)));
+    }
+    return remainingCache.get(key);
+  };
+  const settlementStatusOf = async (d) => {
+    const data = d.data || {};
+    const st = correctionStatusOf(data);
+    if (st === 'pending') return 'awaiting_approval';
+    if (st === 'rejected') return 'rejected';
+    if (st === 'refund_due') return 'credit';
+    if (st === 'completed') return 'refunded';
+    if (st === 'carried_forward') return 'carried_forward';
+    // approved (an increase): is the extra amount covered by a receipt yet?
+    const remaining = await remainingFor(d);
+    if (remaining == null) return 'unpaid_difference'; // unpriced: nothing can cover it
+    return remaining <= 0 ? 'paid' : 'unpaid_difference';
+  };
+
+  const items = [];
+  for (const d of docs) {
+    const item = serializeCorrection(
+      d,
+      byId.get(String(d.user)),
+      nameByKey.get(`${String(d.user)}|${str((d.data || {}).subscriber_id)}`)
+    );
+    const ru = str((d.data || {}).receipt_uuid);
+    item.receiptNo = ru ? (receiptNoByKey.get(`${String(d.user)}|${ru}`) ?? null) : null;
+    // eslint-disable-next-line no-await-in-loop
+    item.settlementStatus = await settlementStatusOf(d);
+    items.push(item);
+  }
   res.status(200).json({
-    items: docs.map((d) => {
-      const item = serializeCorrection(
-        d,
-        byId.get(String(d.user)),
-        nameByKey.get(`${String(d.user)}|${str((d.data || {}).subscriber_id)}`)
-      );
-      const ru = str((d.data || {}).receipt_uuid);
-      item.receiptNo = ru ? (receiptNoByKey.get(`${String(d.user)}|${ru}`) ?? null) : null;
-      return item;
-    }),
+    items,
     total,
     page,
     limit,
@@ -1475,7 +1545,129 @@ const markCorrectionRefundPaid = asyncHandler(async (req, res) => {
   res.status(200).json({ ok: true, correction: await decisionResponse(updated), adjustment });
 });
 
+/**
+ * v44 review fix — the target month's REMAINING due for one subscriber, from
+ * the mirror, on the app's derivation: frozen amps x price + in-force delta
+ * − valid-receipt coverage. Returns null when the month is unpriced for the
+ * subscriber's branch/category (nothing to absorb a credit into).
+ */
+async function remainingDueOnMirror(userId, subscriberId, month) {
+  const sid = String(subscriberId);
+  const [sub, priceRows, corrRows, adjRows, rcpRows] = await Promise.all([
+    SyncRecord.findOne({ user: userId, entity: 'subscribers', localId: sid }, { data: 1 }).lean(),
+    SyncRecord.find({ user: userId, entity: 'monthly_prices', deleted: false, 'data.month': month }, { data: 1 }).lean(),
+    SyncRecord.find({ user: userId, entity: 'corrections', deleted: false }, { data: 1, localId: 1 }).lean(),
+    SyncRecord.find({ user: userId, entity: 'financial_adjustments', deleted: false, 'data.subscriber_id': sid, 'data.month': month }, { data: 1 }).lean(),
+    SyncRecord.find({ user: userId, entity: 'receipts', deleted: false, 'data.status': 'valid', 'data.subscriber_id': sid, 'data.month': month }, { data: 1 }).lean(),
+  ]);
+  const sd = (sub && sub.data) || {};
+  const bkey = sd.branch_id || 'main';
+  const cat = sd.category || 'standard';
+  const price = priceRows.find((p) => ((p.data || {}).branch_id || 'main') === bkey && ((p.data || {}).category || 'standard') === cat);
+  if (!price) return null;
+  const perAmp = numOrNull((price.data || {}).price_per_amp);
+  if (perAmp == null) return null;
+  const frozen = buildFrozenAmps(corrRows, month);
+  const amps = frozen.ampsFor(sid, Number(sd.amps) || 0);
+  let delta = 0;
+  for (const a of adjRows) {
+    const d = a.data || {};
+    const st = frozen.statusOf(d.correction_id);
+    if (d.kind === 'correction_increase' && st === 'approved') delta += Number(d.amount) || 0;
+    else if (d.kind === 'credit_applied' && st === 'carried_forward') delta -= Number(d.amount) || 0;
+  }
+  let coverage = 0;
+  for (const r of rcpRows) {
+    const d = r.data || {};
+    coverage += (Number(d.paid_amount) || 0) + (Number(d.discount_value) || 0);
+  }
+  return amps * perAmp + delta - coverage;
+}
+
+/**
+ * POST /api/admin/corrections/:id/carry-forward   (v44)
+ *
+ * Closes a DECREASE by applying its credit to the NEXT month instead of
+ * returning cash: `refund_due -> carried_forward`, plus ONE `credit_applied`
+ * adjustment whose `month` is the TARGET month. That row reduces the target
+ * month's due by the credit (app + dashboard both fold it) and moves NO cash —
+ * no wallet changes. Same guarded/reverting shape as refund-paid.
+ */
+const carryForwardCorrection = asyncHandler(async (req, res) => {
+  const rec = await loadDecidableCorrection(req.params.id);
+
+  const data = rec.data && typeof rec.data === 'object' ? rec.data : {};
+  const current = correctionStatusOf(data);
+  if (current !== 'refund_due') {
+    throw new HttpError(
+      409,
+      `Correction is ${current}, not holding a credit`,
+      'CORRECTION_NOT_REFUND_DUE'
+    );
+  }
+  const target = nextMonthOf(data.month);
+  if (!target) {
+    throw new HttpError(409, 'Correction has no valid month to carry forward from', 'CORRECTION_MONTH_MISSING');
+  }
+
+  const parsed = numOrNull(data.difference);
+  const delta = parsed == null ? 0 : parsed;
+  const credit = Math.abs(delta);
+
+  // v44 review fix — a credit is applied ONLY when the target month can absorb
+  // it in full. Otherwise the surplus would be silently destroyed (the app's
+  // due would go negative / read as paid with no receipt). Refuse and point
+  // to the cash-refund path instead; nothing is written.
+  const remaining = await remainingDueOnMirror(rec.user, data.subscriber_id, target);
+  if (remaining == null) {
+    throw new HttpError(409, `Month ${target} is not priced for this subscriber — nothing to apply the credit to. Record a cash refund instead.`, 'CORRECTION_CARRY_TARGET_UNPRICED');
+  }
+  if (remaining <= 0) {
+    throw new HttpError(409, `Month ${target} is already fully paid — nothing to apply the credit to. Record a cash refund instead.`, 'CORRECTION_CARRY_TARGET_COVERED');
+  }
+  if (credit > remaining + 0.000001) {
+    throw new HttpError(409, `The ${credit} credit exceeds the ${remaining} still owed for ${target}. Record a cash refund instead.`, 'CORRECTION_CARRY_TOO_LARGE');
+  }
+
+  const nowIso = new Date().toISOString();
+  const set = {
+    'data.status': 'carried_forward',
+    'data.refund_paid_at': nowIso,
+    'data.refund_paid_by': String(req.user._id),
+    'data.updated_at': nowIso,
+    updatedAt: new Date(),
+  };
+
+  const updated = await applyCorrectionDecision(
+    rec,
+    { 'data.status': 'refund_due' },
+    set,
+    {
+      message: 'Correction is no longer holding a credit',
+      code: 'CORRECTION_NOT_REFUND_DUE',
+    }
+  );
+
+  let adjustment = null;
+  try {
+    adjustment = await appendAdjustment(rec.user, {
+      correctionId: str(data.id) || rec.localId,
+      correction: Object.assign({}, data, { month: target }), // applied TO the target month
+      kind: ADJ_CREDIT_APPLIED,
+      amount: Math.abs(delta),
+      accountantId: null, // a due reduction, never a wallet movement
+      createdBy: String(req.user._id),
+    });
+  } catch (err) {
+    await revertCorrectionDecision(rec._id, data, rec.updatedAt);
+    throw err;
+  }
+
+  res.status(200).json({ ok: true, correction: await decisionResponse(updated), adjustment, targetMonth: target });
+});
+
 module.exports = {
+  carryForwardCorrection,
   listUsers,
   createUser,
   getUser,

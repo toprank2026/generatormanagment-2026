@@ -240,6 +240,35 @@ void main() {
     return true;
   }
 
+  /// v44 — closes a decrease by applying its credit to the NEXT month:
+  /// `refund_due -> carried_forward` + ONE `credit_applied` row whose month is
+  /// the TARGET month. No cash moves.
+  String nextMonthOf(String m) {
+    final p = m.split('-');
+    final d = DateTime(int.parse(p[0]), int.parse(p[1]) + 1);
+    return '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}';
+  }
+
+  Future<bool> carryForward(Correction c) async {
+    final fresh = await corr.getById(c.id);
+    if (fresh == null || !fresh.isRefundDue) return false;
+    final ok = await corr.carryForward(fresh, by: owner);
+    if (!ok) return false;
+    await corr.insertAdjustment(FinancialAdjustment(
+      id: adjustmentId(fresh.id, AdjustmentKind.creditApplied),
+      correctionId: fresh.id,
+      subscriberId: fresh.subscriberId,
+      month: nextMonthOf(fresh.month!),
+      branchId: fresh.branchId,
+      accountantId: null,
+      kind: AdjustmentKind.creditApplied,
+      amount: fresh.difference.abs(),
+      method: 'cash',
+      createdBy: owner,
+    ));
+    return true;
+  }
+
   // ---------------------------------------------------------------------------
   // readers
   // ---------------------------------------------------------------------------
@@ -339,23 +368,25 @@ void main() {
     expect(ledger.first.accountantId, acct);
     expect(ledger.first.createdAt, isNotNull);
 
-    // ---- the money, folded into EXACTLY the enumerated aggregates ----------
-    expect(await corr.adjustmentTotal(month: aug, accountantId: acct), 2000);
+    // ---- v44 MONEY RULE: an increase is a RECEIVABLE, not cash --------------
+    // Nobody handed over any money, so NOTHING on the collected side moves.
+    expect(await corr.adjustmentTotal(month: aug, accountantId: acct), 0,
+        reason: 'an increase never credits a wallet (v43 booked phantom cash)');
     w = await settles.walletForMonth(acct, aug);
-    expect(w.cashCollected, 12000, reason: '10,000 cash + the 2,000 correction');
-    expect(w.cashBalance, 12000);
-    expect(w.cardCollected, 0, reason: 'a cash correction never touches card');
+    expect(w.cashCollected, 10000, reason: 'exactly the cash that was received');
+    expect(w.cashBalance, 10000);
+    expect(w.cardCollected, 0);
     final life = await settles.wallet(acct);
-    expect(life.cashCollected, 12000, reason: 'the lifetime wallet must agree');
-    expect(life.cashBalance, 12000);
-    expect(await settles.monthUnsettled(acct, aug), 12000);
-    expect(await collected(aug), 12000, reason: 'revenue carries the delta');
+    expect(life.cashCollected, 10000, reason: 'the lifetime wallet must agree');
+    expect(life.cashBalance, 10000);
+    expect(await settles.monthUnsettled(acct, aug), 10000);
+    expect(await collected(aug), 10000, reason: 'revenue is real cash only');
 
-    // ---- and into NOTHING else --------------------------------------------
-    expect(await paidCount(aug), 1,
-        reason: 'paid/unpaid is COVERAGE vs due — an adjustment is neither');
-    expect(await unpaidCount(aug), 0);
-    expect(await remaining(aug), 0);
+    // ---- v44 DUE RULE: the customer OWES the difference and is UNPAID -------
+    expect(await remaining(aug), 2000,
+        reason: 'the difference is added to the outstanding balance');
+    expect(await paidCount(aug), 0, reason: 'unpaid again for the difference');
+    expect(await unpaidCount(aug), 1);
     expect((await subs.coverageBySubscriber(month: aug, branchId: main))['A'],
         10000, reason: 'coverage is what the subscriber paid — unchanged');
     expect(await receipts.getNextReceiptNumber(branchId: main), 2,
@@ -375,9 +406,17 @@ void main() {
     expect((await subs.getById('A'))!.amps, 12,
         reason: 'the corrected amps are applied to the subscriber');
     expect(subBefore['amps'], 10, reason: 'and it really was 10 before');
+    // v44: the 2,000 difference is OWED (unpaid) until an ordinary receipt
+    // collects it — that receipt is what reaches the wallet.
+    expect(await remaining(aug), 2000);
+    expect(await paidCount(aug), 0);
+    await pay('rA-diff', 'A',
+        cash: 2000, amps: 12, remaining: 0, issuedAt: '2026-08-06T08:00:00.000Z');
     expect(await remaining(aug), 0,
-        reason: 'August is still priced on the 10A it was invoiced at');
-    expect(await paidCount(aug), 1, reason: 'so it stays fully paid');
+        reason: 'August is priced on the frozen 10A + the collected difference');
+    expect(await paidCount(aug), 1, reason: 'the receipt covers the difference');
+    w = await settles.walletForMonth(acct, aug);
+    expect(w.cashCollected, 12000, reason: '10,000 + the 2,000 receipt');
 
     // ---- the corrected month now settles at the CORRECTED figure -----------
     expect(await requestableCash(aug), 12000);
@@ -431,10 +470,24 @@ void main() {
 
     // ---- the settled month's wallet rises by exactly the difference --------
     w = await settles.walletForMonth(acct, aug);
-    expect(w.cashCollected, 13000);
+    // v44: the increase moved NO cash — the customer owes 3,000, unpaid.
+    expect(w.cashCollected, 10000);
     expect(w.cashSettled, 10000, reason: 'the settlement itself did not move');
+    expect(w.cashBalance, 0);
+    expect((await settles.wallet(acct)).cashBalance, 0);
+    expect(await settles.monthUnsettled(acct, aug), 0);
+    expect(await collected(aug), 10000);
+    expect(await remaining(aug), 3000, reason: 'the customer owes the difference');
+    expect(await unpaidCount(aug), 1);
+    // The difference is collected with an ORDINARY receipt — that is what
+    // reaches the wallet and makes the ADDITIONAL settlement possible.
+    await pay('rA-diff', 'A',
+        cash: 3000, amps: 13, remaining: 0, issuedAt: '2026-08-06T08:00:00.000Z');
+    expect(await remaining(aug), 0);
+    expect(await paidCount(aug), 1);
+    w = await settles.walletForMonth(acct, aug);
+    expect(w.cashCollected, 13000, reason: '10,000 + the 3,000 receipt');
     expect(w.cashBalance, 3000);
-    expect((await settles.wallet(acct)).cashBalance, 3000);
     expect(await settles.monthUnsettled(acct, aug), 3000);
     expect(await collected(aug), 13000);
 
@@ -647,8 +700,10 @@ void main() {
     // ---- first decision applies -------------------------------------------
     expect(await approve(c), true);
     final afterApproval = await rawRow('corrections', 'id', 'cor-1');
-    expect(await collected(aug), 12000);
-    expect((await settles.walletForMonth(acct, aug)).cashBalance, 12000);
+    // v44: an increase credits nothing — the customer owes it instead.
+    expect(await collected(aug), 10000);
+    expect((await settles.walletForMonth(acct, aug)).cashBalance, 10000);
+    expect(await remaining(aug), 2000);
 
     // ---- every later decision is refused, and nothing moves ---------------
     expect(await corr.decide(c, CorrectionStatus.rejected, decidedBy: 'other'),
@@ -663,10 +718,11 @@ void main() {
         reason: 'status/decided_by/decided_at all survive the refused writes');
     expect((await corr.adjustmentsFor(month: aug)).length, 1,
         reason: 'the wallet can never be credited twice for one correction');
-    expect(await corr.adjustmentTotal(month: aug, accountantId: acct), 2000);
-    expect(await collected(aug), 12000);
-    expect((await settles.walletForMonth(acct, aug)).cashBalance, 12000);
-    expect((await settles.wallet(acct)).cashBalance, 12000);
+    expect(await corr.adjustmentTotal(month: aug, accountantId: acct), 0,
+        reason: 'v44: the ledger row exists but credits no wallet');
+    expect(await collected(aug), 10000);
+    expect((await settles.walletForMonth(acct, aug)).cashBalance, 10000);
+    expect((await settles.wallet(acct)).cashBalance, 10000);
   });
 
   // ===========================================================================
@@ -710,10 +766,11 @@ void main() {
     expect(await recordRefundPaid(down), true);
 
     // August moved exactly as designed.
-    expect(await corr.adjustmentTotal(month: aug, accountantId: acct), 5000);
-    expect((await settles.walletForMonth(acct, aug)).cashBalance, 25000,
+    expect(await corr.adjustmentTotal(month: aug, accountantId: acct), 0,
+        reason: 'v44: neither an increase nor a decrease credits a wallet');
+    expect((await settles.walletForMonth(acct, aug)).cashBalance, 20000,
         reason: '20,000 cash + 5,000 increase; the decrease is zeroed');
-    expect(await collected(aug), 22000,
+    expect(await collected(aug), 17000,
         reason: '20,000 cash + 5,000 increase − 3,000 physically returned');
 
     // ---- SEPTEMBER: byte-for-byte the month it was ------------------------
@@ -748,8 +805,9 @@ void main() {
     // The LIFETIME wallet is the sum of the two months — never more, never
     // less: August's corrected 25,000 plus September's untouched 7,000.
     final life = await settles.wallet(acct);
-    expect(life.cashCollected, 32000);
-    expect(life.cashBalance, 32000);
+    expect(life.cashCollected, 27000,
+        reason: 'v44: August 20,000 real cash + September 7,000 — no credit');
+    expect(life.cashBalance, 27000);
     expect(life.cashBalance, greaterThanOrEqualTo(0));
   });
 
@@ -801,7 +859,9 @@ void main() {
     final first = await request('cor-1', 'A',
         oldAmps: 10, newAmps: 15, receiptUuid: 'rc1');
     expect(await approve(first), true);
-    expect(await corr.adjustmentTotal(month: aug, accountantId: acct), 5000);
+    expect(await corr.adjustmentTotal(month: aug, accountantId: acct), 0,
+        reason: 'v44: an increase credits no wallet');
+    expect(await remaining(aug), 5000, reason: 'the customer owes the +5,000');
 
     // v43.1: approval APPLIES the corrected amps, so the subscriber itself is
     // now the effective basis and the next correction is naturally incremental.
@@ -817,12 +877,14 @@ void main() {
     expect(await approve(second), true);
 
     // Two corrections, 10A → 20A: the month may have moved by exactly 10,000.
-    expect(await corr.adjustmentTotal(month: aug, accountantId: acct), 10000,
-        reason: 'unbounded double-credit across repeated corrections');
+    expect(await remaining(aug), 10000,
+        reason: 'two corrections, 10A -> 20A: exactly 10,000 owed, never more');
+    expect((await corr.adjustmentsFor(month: aug, subscriberId: 'A')).length, 2,
+        reason: 'one ledger row per correction — nothing re-booked');
     expect((await subs.getById('A'))!.amps, 20,
         reason: 'and the subscriber ended on the final corrected value');
-    expect((await settles.walletForMonth(acct, aug)).cashBalance, 20000,
-        reason: '10,000 collected + 10,000 of corrections');
+    expect((await settles.walletForMonth(acct, aug)).cashBalance, 10000,
+        reason: 'v44: only the 10,000 actually collected — corrections credit nothing');
   });
 
   test('the wallet can never be driven negative by a decrease', () async {
@@ -874,10 +936,17 @@ void main() {
     // 3. THE CORRECTED MONTH IS FROZEN. August was invoiced at 10A and the
     // +5,000 rides in the adjustment ledger; if the live amps leaked backwards
     // August would re-open as unpaid - silent corruption of closed books.
-    expect(await remaining(aug), 0,
-        reason: 'August must NOT be re-priced on the corrected amps');
-    expect(await paidCount(aug), 1, reason: 'August stays fully paid');
-    expect(await unpaidCount(aug), 0);
+    // v44: the basis stays 10A (frozen) — the +5,000 is the approved
+    // increase, which the customer now OWES for August.
+    expect(await remaining(aug), 5000,
+        reason: 'the difference is owed for August; the amps basis is frozen');
+    expect(await paidCount(aug), 0, reason: 'unpaid again for the difference');
+    expect(await unpaidCount(aug), 1);
+    // Pay it with an ordinary receipt -> paid, and the cash reaches the wallet.
+    await pay('rA-diff', 'A',
+        cash: 5000, amps: 15, remaining: 0, issuedAt: '2026-08-06 10:00:00');
+    expect(await remaining(aug), 0);
+    expect(await paidCount(aug), 1, reason: 'the receipt covers the difference');
 
     // 4. the original receipt is still untouched.
     final r = await rawRow('receipts', 'uuid', 'rA');
@@ -915,9 +984,141 @@ void main() {
 
     expect((await subs.getById('A'))!.amps, 20, reason: 'latest value wins');
     expect(await remaining('2026-07'), 0, reason: 'July frozen at 10A');
-    expect(await remaining(aug), 0, reason: 'August frozen at 10A');
-    expect(await remaining(sep), 0, reason: 'September frozen at 15A');
+    expect(await remaining(aug), 5000,
+        reason: 'August: frozen at 10A, plus the owed +5,000 increase');
+    expect(await remaining(sep), 5000,
+        reason: 'September: frozen at 15A, plus the owed +5,000 increase');
     expect(await remaining('2026-10'), 20000,
         reason: 'October is the first month past every correction -> 20A');
+  });
+
+  test('v44: a DECREASE keeps the customer PAID; carrying the credit forward '
+      'reduces NEXT month and moves no cash', () async {
+    await price(aug, 1000);
+    await price(sep, 1000);
+    await addSub('A', 10);
+    await pay('rA', 'A',
+        cash: 10000, amps: 10, remaining: 0, issuedAt: '2026-08-05 10:00:00');
+    final walletBefore = (await settles.walletForMonth(acct, aug)).cashBalance;
+
+    // 10A -> 7A: a 3,000 credit.
+    final c = await request('cor-cf', 'A',
+        oldAmps: 10, newAmps: 7, receiptUuid: 'rA');
+    expect(await approve(c), true);
+    expect((await corr.getById(c.id))!.status, CorrectionStatus.refundDue);
+    expect(await remaining(aug), 0, reason: 'the customer REMAINS paid');
+    expect(await paidCount(aug), 1);
+    expect((await settles.walletForMonth(acct, aug)).cashBalance, walletBefore,
+        reason: 'a credit never moves a wallet');
+    expect(await remaining(sep), 7000, reason: '7A x 1000 before carry-forward');
+
+    expect(await carryForward(c), true);
+    expect((await corr.getById(c.id))!.status, CorrectionStatus.carriedForward);
+    expect(await remaining(sep), 4000,
+        reason: 'September due reduced by the 3,000 credit');
+    expect(await remaining(aug), 0, reason: 'August untouched');
+    expect((await settles.walletForMonth(acct, aug)).cashBalance, walletBefore);
+    expect((await settles.walletForMonth(acct, sep)).cashBalance, 0,
+        reason: 'no cash moved in September either');
+    expect(await carryForward(c), false, reason: 'terminal — cannot re-apply');
+    expect(await recordRefundPaid(c), false, reason: 'nor refund a carried credit');
+    final rows = await corr.adjustmentsFor(month: sep);
+    expect(rows.length, 1);
+    expect(rows.first.kind, AdjustmentKind.creditApplied);
+    expect(rows.first.amount, 3000);
+  });
+
+  test('v44 review: carrying a credit forward keeps EARLIER months frozen — '
+      'an unpaid July is not re-priced on the lower amps', () async {
+    await price('2026-07', 1000);
+    await price(aug, 1000);
+    await price(sep, 1000);
+    await addSub('A', 10, from: '2026-07');
+    // July UNPAID (owes 10,000); August invoiced and paid at 10A.
+    await pay('r8', 'A',
+        cash: 10000, amps: 10, remaining: 0, month: aug,
+        issuedAt: '2026-08-05 10:00:00');
+    expect(await remaining('2026-07'), 10000, reason: 'July owed at 10A');
+
+    // 10A -> 7A for August: a 3,000 credit; approval writes amps = 7.
+    final c = await request('cor-jul', 'A',
+        oldAmps: 10, newAmps: 7, month: aug, receiptUuid: 'r8');
+    expect(await approve(c), true);
+    expect((await subs.getById('A'))!.amps, 7);
+    expect(await remaining('2026-07'), 10000,
+        reason: 'refund_due: July still frozen on old_amps 10');
+
+    expect(await carryForward(c), true);
+    // THE BUG: carried_forward was missing from the freeze list, so July fell
+    // through to the live 7A and 3,000 of receivable silently vanished — on
+    // top of the 3,000 credit applied to September (credit granted twice).
+    expect(await remaining('2026-07'), 10000,
+        reason: 'carried_forward must freeze exactly like completed');
+    expect(await remaining(aug), 0, reason: 'August stays paid at 10A');
+    expect(await remaining(sep), 4000,
+        reason: 'September: 7A x 1000 minus the single 3,000 credit');
+  });
+
+  test('v44 review: a same-month chain freezes on the FIRST correction, '
+      'regardless of UUID order', () async {
+    await price(aug, 1000);
+    await addSub('A', 10);
+    await pay('rA', 'A',
+        cash: 10000, amps: 10, remaining: 0, issuedAt: '2026-08-05 10:00:00');
+    // Two corrections in ONE month; ids chosen so the SECOND sorts FIRST.
+    final c1 = await request('zzz-first', 'A',
+        oldAmps: 10, newAmps: 15, receiptUuid: 'rA');
+    expect(await approve(c1), true);
+    final c2 = await request('aaa-second', 'A',
+        oldAmps: 15, newAmps: 20, receiptUuid: 'rA');
+    expect(await approve(c2), true);
+    // Correct due: frozen 10A x 1000 + 5,000 + 5,000 = 20,000 -> owes 10,000.
+    expect(await remaining(aug), 10000,
+        reason: 'basis is the FIRST correction (10A), not the lexically first id');
+    await pay('rA-diff', 'A',
+        cash: 10000, amps: 20, remaining: 0, issuedAt: '2026-08-06 10:00:00');
+    expect(await remaining(aug), 0);
+    expect(await paidCount(aug), 1);
+  });
+
+  test('v44 review: a double-close race (refund + carry-forward) settles the '
+      'credit ONCE — the correction status is the arbiter', () async {
+    await price(aug, 1000);
+    await price(sep, 1000);
+    await addSub('A', 10);
+    await pay('rA', 'A',
+        cash: 10000, amps: 10, remaining: 0, issuedAt: '2026-08-05 10:00:00');
+    final c = await request('cor-race', 'A',
+        oldAmps: 10, newAmps: 7, receiptUuid: 'rA');
+    expect(await approve(c), true);
+    // Device 1 carried it forward (status carried_forward + credit_applied).
+    expect(await carryForward(c), true);
+    // Device 2, offline, had recorded the cash refund; after sync BOTH ledger
+    // rows exist but the status resolved (last-edit-wins) to `completed`.
+    await corr.insertAdjustment(FinancialAdjustment(
+      id: adjustmentId(c.id, AdjustmentKind.refundReturn),
+      correctionId: c.id,
+      subscriberId: 'A',
+      month: aug,
+      branchId: main,
+      accountantId: null,
+      kind: AdjustmentKind.refundReturn,
+      amount: -3000,
+      method: 'cash',
+      createdBy: owner,
+    ));
+    final db = await DbHelper().database;
+    await db.update('corrections', {'status': CorrectionStatus.completed},
+        where: 'id = ?', whereArgs: [c.id]);
+    // Only the row matching the FINAL status is in force.
+    expect(await remaining(sep), 7000,
+        reason: 'credit_applied is NOT in force: the correction is completed');
+    expect(await collected(aug), 7000,
+        reason: 'the refund_return IS in force: 10,000 - 3,000');
+    // ...and the other way round.
+    await db.update('corrections', {'status': CorrectionStatus.carriedForward},
+        where: 'id = ?', whereArgs: [c.id]);
+    expect(await remaining(sep), 4000, reason: 'now the credit is in force');
+    expect(await collected(aug), 10000, reason: 'and the refund is not');
   });
 }

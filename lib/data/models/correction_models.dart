@@ -21,12 +21,16 @@ class CorrectionStatus {
   static const String rejected = 'rejected';
   static const String refundDue = 'refund_due'; // decrease approved, cash not returned yet
   static const String completed = 'completed'; // cash physically returned
+  // v44: a decrease's credit was applied to the NEXT month's due instead of
+  // being refunded in cash. Terminal, like `completed`.
+  static const String carriedForward = 'carried_forward';
   static const List<String> all = [
     pending,
     approved,
     rejected,
     refundDue,
     completed,
+    carriedForward, // v44
   ];
 
   /// Normalize an arbitrary/legacy value to a valid status (default pending).
@@ -37,8 +41,9 @@ class CorrectionStatus {
 class AdjustmentKind {
   AdjustmentKind._();
 
-  /// The corrected month owes MORE than was invoiced — the delta is credited to
-  /// that month's wallet, so an additional settlement for the month is possible.
+  /// The corrected month owes MORE than was invoiced. v44: the difference is a
+  /// RECEIVABLE — it is added to that month's DUE (the customer is unpaid for
+  /// it) and credits NO wallet; the cash arrives through an ordinary receipt.
   static const String increase = 'correction_increase';
 
   /// The corrected month owes LESS than was invoiced. Recorded for the audit
@@ -48,8 +53,17 @@ class AdjustmentKind {
 
   /// The physical cash return that settles a `refund_due` correction.
   static const String refundReturn = 'refund_return';
+  // v44: a decrease's credit applied to a LATER month. `month` on the row is
+  // the month the credit REDUCES (the target), not the corrected month; it
+  // contributes 0 to every wallet figure and -amount to that month's due.
+  static const String creditApplied = 'credit_applied';
 
-  static const List<String> all = [increase, decrease, refundReturn];
+  static const List<String> all = [
+    increase,
+    decrease,
+    refundReturn,
+    creditApplied, // v44
+  ];
 
   /// Normalize an arbitrary/legacy value to a valid kind (default increase).
   static String normalize(String? v) => all.contains(v) ? v! : increase;
@@ -127,6 +141,7 @@ class Correction {
   bool get isRejected => status == CorrectionStatus.rejected;
   bool get isRefundDue => status == CorrectionStatus.refundDue;
   bool get isCompleted => status == CorrectionStatus.completed;
+  bool get isCarriedForward => status == CorrectionStatus.carriedForward;
 
   Map<String, dynamic> toMap() {
     return {

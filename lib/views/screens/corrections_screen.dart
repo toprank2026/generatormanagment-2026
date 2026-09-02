@@ -66,6 +66,7 @@ class _CorrectionsScreenState extends State<CorrectionsScreen> {
     CorrectionStatus.approved,
     CorrectionStatus.refundDue,
     CorrectionStatus.completed,
+    CorrectionStatus.carriedForward, // v44
     CorrectionStatus.rejected,
   ];
 
@@ -391,14 +392,33 @@ class _CorrectionsScreenState extends State<CorrectionsScreen> {
             ],
             if (canDecide && c.isRefundDue) ...[
               const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: saving ? null : () => _recordRefund(c),
-                  style: FilledButton.styleFrom(backgroundColor: _kAmber),
-                  icon: const Icon(Icons.payments, size: 18),
-                  label: Text('correction_record_refund'.tr),
-                ),
+              // v44: a credit closes ONE of two ways — cash physically
+              // returned, OR carried forward to reduce next month's due.
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: saving ? null : () => _recordRefund(c),
+                      style:
+                          FilledButton.styleFrom(backgroundColor: _kAmber),
+                      icon: const Icon(Icons.payments, size: 18),
+                      label: Text('correction_record_refund'.tr,
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: saving ? null : () => _carryForward(c),
+                      style: OutlinedButton.styleFrom(
+                          foregroundColor: _kBlue,
+                          side: const BorderSide(color: _kBlue)),
+                      icon: const Icon(Icons.redo, size: 18),
+                      label: Text('correction_carry_forward'.tr,
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
+                ],
               ),
             ],
           ],
@@ -448,6 +468,18 @@ class _CorrectionsScreenState extends State<CorrectionsScreen> {
     if (ok != true) return;
     final bool done = await _c.recordRefundPaid(c);
     _report(done, 'correction_refund_recorded');
+  }
+
+  /// v44 — apply the credit to next month instead of returning cash.
+  Future<void> _carryForward(Correction c) async {
+    final ok = await _confirm(
+      'correction_carry_forward'.tr,
+      "${'iqd'.tr} ${fmtAmount(c.difference.abs())}\n\n"
+      "${'correction_carry_forward_confirm'.tr}",
+    );
+    if (ok != true) return;
+    final bool done = await _c.carryForward(c);
+    _report(done, 'correction_carry_forward_done');
   }
 
   /// Confirm dialog, same shape as the settlement decision confirm.
@@ -506,6 +538,7 @@ class _CorrectionsScreenState extends State<CorrectionsScreen> {
       case CorrectionStatus.refundDue:
         return _kAmber;
       case CorrectionStatus.completed:
+      case CorrectionStatus.carriedForward: // v44
         return _kTeal;
       default:
         return Colors.orange;
@@ -522,6 +555,8 @@ class _CorrectionsScreenState extends State<CorrectionsScreen> {
         return 'correction_refund_due';
       case CorrectionStatus.completed:
         return 'correction_completed';
+      case CorrectionStatus.carriedForward: // v44
+        return 'correction_carried_forward';
       default:
         return 'correction_pending';
     }

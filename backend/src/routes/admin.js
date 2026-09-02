@@ -128,6 +128,8 @@ router.post(
   ctrl.rejectCorrection
 );
 router.post('/corrections/:id/refund-paid', ctrl.markCorrectionRefundPaid);
+// v44: apply a decrease's credit to the next month instead of returning cash.
+router.post('/corrections/:id/carry-forward', ctrl.carryForwardCorrection);
 
 // ---- Plans ----
 router.get('/plans', ctrl.listPlans);

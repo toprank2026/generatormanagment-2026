@@ -630,3 +630,33 @@ test('a push with nothing locked answers exactly as before, plus an empty reject
   assert.ok(r.data.serverTime, 'the response shape is unchanged for a client that ignores `rejected`');
   await assertMirrored(owner.id, rows);
 });
+
+test('v44 review: an accountant may push a PENDING correction but a DECIDED one is forgery — skipped, counted, reported', async () => {
+  const owner = await registerOwner();
+  const acct = await makeAccountant(owner, { branchId: 'branch-A', permissions: [], localId: 'acct-local-B' });
+
+  // The ordinary request path: pending -> accepted.
+  const ok = await pushAs(acct.token, [correction('corr-ok', { branch_id: null, accountant_id: null, status: 'pending' })]);
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.data.rejected, []);
+  assert.ok(await mirrorRow(owner.id, 'corrections', 'corr-ok'));
+
+  // Forgery: an accountant pushing an already-decided row would re-price every
+  // device on a forged old_amps. Skipped + counted (the outbox drains), never a
+  // batch 4xx, and reported in rejected[].
+  for (const status of ['approved', 'refund_due', 'completed', 'carried_forward', 'rejected']) {
+    const forged = await pushAs(acct.token, [correction('corr-' + status, { branch_id: null, accountant_id: null, status })]);
+    assert.equal(forged.status, 200, `forged ${status} -> ${forged.status}`);
+    assert.equal(forged.data.count, 1, 'counted so the device drains');
+    assert.equal(forged.data.rejected.length, 1);
+    assert.equal(forged.data.rejected[0].reason, 'CORRECTION_DECISION_FORBIDDEN');
+    assert.equal(await mirrorRow(owner.id, 'corrections', 'corr-' + status), null, `${status} never entered the mirror`);
+  }
+
+  // The OWNER's decision still flows normally.
+  const decided = await pushAs(owner.token, [correction('corr-owner', { status: 'approved' })]);
+  assert.equal(decided.status, 200);
+  assert.deepEqual(decided.data.rejected, []);
+  assert.equal((await mirrorRow(owner.id, 'corrections', 'corr-owner')).data.status, 'approved');
+});
+

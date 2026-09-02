@@ -6,6 +6,7 @@ import 'package:generatormanagment/core/permissions.dart';
 import 'package:generatormanagment/data/models/core_models.dart';
 import 'package:generatormanagment/utils/money.dart';
 import 'package:generatormanagment/views/screens/add_subscriber_screen.dart';
+import 'package:generatormanagment/views/widgets/corrections_month_tab.dart';
 import 'package:generatormanagment/views/screens/subscriber_detail_screen.dart';
 
 class SubscribersScreen extends StatefulWidget {
@@ -31,9 +32,14 @@ class _SubscribersScreenState extends State<SubscribersScreen>
     MapEntry('cat_gold', SubscriberCategory.gold),
     MapEntry('cat_standard', SubscriberCategory.standard),
     MapEntry('cat_commercial', SubscriberCategory.commercial),
+    // v44: the month's corrections — NOT a category filter. The sentinel is
+    // never passed to loadSubscribers; the tab swaps in its own list.
+    MapEntry('corrections_tab', _kCorrectionsTab),
   ];
+  static const String _kCorrectionsTab = '__corrections__';
   TabController? _tabController;
   String? _category; // active category filter (null = all)
+  bool _correctionsTab = false; // v44
 
   bool get _showTabs => widget.boardId == null;
 
@@ -46,7 +52,15 @@ class _SubscribersScreenState extends State<SubscribersScreen>
           TabController(length: _categoryTabs.length, vsync: this);
       _tabController!.addListener(() {
         if (_tabController!.indexIsChanging) return;
-        _category = _categoryTabs[_tabController!.index].value;
+        final String? v = _categoryTabs[_tabController!.index].value;
+        if (v == _kCorrectionsTab) {
+          // v44: swap the body; the subscriber list is left exactly as it was.
+          setState(() => _correctionsTab = true);
+          return;
+        }
+        final bool wasCorrections = _correctionsTab;
+        _category = v;
+        if (wasCorrections) setState(() => _correctionsTab = false);
         _reload();
       });
     }
@@ -57,6 +71,9 @@ class _SubscribersScreenState extends State<SubscribersScreen>
   /// v22 item 1: the search query reaches ALL variants (all / paid / unpaid /
   /// board-scoped), composed with the active filters at the SQL level.
   void _reload() {
+    // v44 review fix: on the Corrections tab the subscriber list is hidden —
+    // a search keystroke must not reload it behind the tab.
+    if (_correctionsTab) return;
     final String? q = searchCtrl.text.isEmpty ? null : searchCtrl.text;
     if (widget.filter != null) {
       controller.loadFilteredSubscribers(widget.filter!,
@@ -193,7 +210,10 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                   : const SizedBox.shrink(),
             )
           : null,
-      body: SafeArea(child: GetBuilder<CoreController>(
+      body: SafeArea(
+          child: _correctionsTab
+              ? const CorrectionsMonthTab()
+              : GetBuilder<CoreController>(
         builder: (ctrl) {
           if (ctrl.isLoading.value) {
             return const Center(child: CircularProgressIndicator());

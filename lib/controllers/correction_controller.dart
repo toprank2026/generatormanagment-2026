@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 import 'package:uuid/uuid.dart';
 import 'package:generatormanagment/controllers/auth_controller.dart';
+import 'package:generatormanagment/controllers/billing_controller.dart';
 import 'package:generatormanagment/controllers/branch_controller.dart';
 import 'package:generatormanagment/controllers/month_controller.dart';
 import 'package:generatormanagment/controllers/sync_controller.dart';
@@ -541,6 +542,107 @@ class CorrectionController extends GetxController {
       _busy = false;
       isSaving.value = false;
     }
+  }
+
+  /// v44 — closes a decrease by CARRYING the credit FORWARD to the next month
+  /// instead of returning cash. `refund_due -> carried_forward`, then ONE
+  /// `credit_applied` adjustment on the TARGET month (the month after the
+  /// corrected one), which reduces that month's due by the credit. Wallets
+  /// never move: no cash changed hands. Guarded transition first, like every
+  /// decision here, so a lost race books nothing.
+  Future<bool> carryForward(Correction c) async {
+    lastError.value = null;
+    if (!canDecide) {
+      lastError.value = 'correction_not_allowed';
+      return false;
+    }
+    if (_busy) return false;
+    _busy = true;
+    isSaving.value = true;
+    try {
+      final Correction? fresh = await _repo.getById(c.id);
+      if (fresh == null || !fresh.isRefundDue) {
+        lastError.value = 'correction_not_refund_due';
+        await load();
+        return false;
+      }
+      final String? srcMonth = fresh.month;
+      if (srcMonth == null || srcMonth.isEmpty) {
+        lastError.value = 'correction_month_missing';
+        return false;
+      }
+      final String target = _nextMonth(srcMonth);
+      // v44 review fix — a credit is applied ONLY when the target month can
+      // absorb it in full. Otherwise the surplus would be silently destroyed
+      // (the derived due would go negative and read as "paid" with no
+      // receipt). Refuse and point to the cash-refund path; nothing is written.
+      // Same three refusals as the backend's carry-forward route.
+      final String? sid = fresh.subscriberId;
+      final Subscriber? target0 =
+          (sid == null || sid.isEmpty) ? null : await _subRepo.getById(sid);
+      if (target0 == null) {
+        lastError.value = 'correction_carry_forward_unpriced';
+        return false;
+      }
+      final BillingController billing = Get.find<BillingController>();
+      if (!await billing.hasPriceFor(target0, target)) {
+        lastError.value = 'correction_carry_forward_unpriced';
+        return false;
+      }
+      final double targetDue = await billing.getDueAmount(target0, target);
+      final double credit = fresh.difference.abs();
+      if (targetDue <= 0) {
+        lastError.value = 'correction_carry_forward_covered';
+        return false;
+      }
+      if (credit > targetDue + 0.000001) {
+        lastError.value = 'correction_carry_forward_too_large';
+        return false;
+      }
+      final bool ok = await _repo.carryForward(fresh, by: _actingUserId);
+      if (!ok) {
+        lastError.value = 'correction_not_refund_due';
+        await load();
+        return false;
+      }
+      try {
+        await _repo.insertAdjustment(FinancialAdjustment(
+          id: _adjustmentId(fresh.id, AdjustmentKind.creditApplied),
+          correctionId: fresh.id,
+          subscriberId: fresh.subscriberId,
+          month: target, // the month the credit is applied TO
+          branchId: fresh.branchId,
+          accountantId: null, // a due reduction, never a wallet movement
+          kind: AdjustmentKind.creditApplied,
+          amount: fresh.difference.abs(),
+          method: await _methodFor(fresh),
+          createdBy: _actingUserId,
+        ));
+      } catch (_) {
+        // v44 review fix: the flip happened but the credit was never booked —
+        // put the correction back to refund_due so the credit is not lost
+        // (the backend's carry-forward reverts the same way).
+        await _repo.reopenRefundDue(fresh);
+        rethrow;
+      }
+      SyncController.poke();
+      await load();
+      return true;
+    } finally {
+      _busy = false;
+      isSaving.value = false;
+    }
+  }
+
+  /// 'yyyy-MM' + 1 month (year wrap safe).
+  static String _nextMonth(String m) {
+    final parts = m.split('-');
+    if (parts.length != 2) return m;
+    final int y = int.tryParse(parts[0]) ?? 0;
+    final int mo = int.tryParse(parts[1]) ?? 1;
+    final DateTime d = DateTime(y, mo + 1);
+    return '${d.year.toString().padLeft(4, '0')}-'
+        '${d.month.toString().padLeft(2, '0')}';
   }
 
   /// Rejects [c]. No adjustment is written and no money moves — the month keeps

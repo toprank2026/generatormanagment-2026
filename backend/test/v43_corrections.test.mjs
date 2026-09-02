@@ -360,6 +360,34 @@ test.after(async () => {
  *   subscriber (5 A) → receipt #(paid) in MONTH_A → pending settlement for
  *   MONTH_A → correction for MONTH_A quoting both.
  */
+
+/**
+ * v44 test helper — make the seeded subscriber's month PRICED so the dashboard
+ * can derive paid/unpaid. The shared seed creates NO tariff, and the
+ * dashboard's rule is "unpriced category => UNPAID", so paidCount can never be
+ * 1 without one. The tariff is chosen so amps x price == `dueTotal` (the invoice
+ * amount the shared seed paid), reading amps from the MIRROR — the fixture
+ * stamps a far-future `updated_at`, so re-pushing the subscriber would lose
+ * last-edit-wins.
+ */
+async function priceSeededMonth(owner, ids, { dueTotal, month = MONTH_A }) {
+  const sub = await mirrorRow(owner.id, 'subscribers', ids.sub);
+  const amps = Number((sub && sub.data && sub.data.amps) || 0) || 1;
+  const tariff = {
+    entity: 'monthly_prices',
+    localId: `${month}|main|standard`,
+    updatedAt: new Date().toISOString(),
+    data: {
+      month,
+      branch_id: null,
+      category: 'standard',
+      price_per_amp: dueTotal / amps,
+      updated_at: new Date(Date.now() + 5000).toISOString(),
+    },
+  };
+  await seedRows(owner, [tariff]);
+}
+
 async function seedCorrection({ difference, method = 'cash', paid = 50000 }) {
   const owner = await registerOwner();
   const acct = await makeAccountant(owner);
@@ -616,8 +644,8 @@ test('approving an INCREASE appends one correction_increase and leaves the invoi
 
 // -------------------------------------------------------------- the wallet ---
 
-test('the approved increase lands in the wallet — with ?month= and without — and never in another month', async () => {
-  const { owner, acct, apiId, paid } = await seedCorrection({ difference: 10000 });
+test('v44: an approved increase credits NO wallet — the customer owes the difference and is UNPAID until a receipt covers it', async () => {
+  const { owner, acct, apiId, paid, ids } = await seedCorrection({ difference: 10000 });
 
   const before = await walletOf(acct.token, MONTH_A);
   assert.equal(before.status, 200, `wallet -> ${before.status} ${JSON.stringify(before.data)}`);
@@ -626,15 +654,24 @@ test('the approved increase lands in the wallet — with ?month= and without —
   assert.equal((await approveCorrection(apiId)).status, 200);
 
   const scoped = await walletOf(acct.token, MONTH_A);
-  assert.equal(scoped.data.cash.collected, paid + 10000, 'the delta is folded into collected');
+  // v44 MONEY RULE: nobody handed over any cash, so NOTHING on the collected
+  // side moves. (v43 credited the delta here — phantom cash.)
+  assert.equal(scoped.data.cash.collected, paid, 'an increase credits no wallet');
   assert.equal(scoped.data.card.collected, 0, 'a cash correction never touches the card wallet');
   assert.equal(scoped.data.cash.settled, 0, 'the settlement is still only PENDING');
-  assert.equal(scoped.data.cash.balance, paid + 10000, 'balance = collected − settled');
+  assert.equal(scoped.data.cash.balance, paid, 'balance = collected − settled');
+
+  // v44 DUE RULE: the customer OWES the +10,000 and is unpaid for it.
+  await priceSeededMonth(owner, ids, { dueTotal: paid });
+  const dash = await api('GET', `/api/account/stats?month=${MONTH_A}`, { token: owner.token });
+  assert.equal(dash.status, 200, `stats -> ${dash.status} ${JSON.stringify(dash.data)}`);
+  assert.equal(dash.data.dashboard.paidCount, 0, 'unpaid again for the difference');
+  assert.equal(dash.data.dashboard.unpaidCount, 1);
 
   // The lifetime figure agrees (or the v42 lifetime cap would under-report).
   const lifetime = await walletOf(acct.token, null);
-  assert.equal(lifetime.data.cash.collected, paid + 10000, 'the all-time wallet folds it in too');
-  assert.equal(lifetime.data.collected, paid + 10000, 'the pre-v12 top-level alias still mirrors cash');
+  assert.equal(lifetime.data.cash.collected, paid, 'the all-time wallet is real cash only');
+  assert.equal(lifetime.data.collected, paid, 'the pre-v12 top-level alias still mirrors cash');
 
   // GOLDEN RULE: a correction can never affect another accounting month.
   const other = await walletOf(acct.token, MONTH_B);
@@ -642,13 +679,13 @@ test('the approved increase lands in the wallet — with ?month= and without —
   assert.equal(other.data.card.collected, 0);
 });
 
-test('a CARD invoice corrects into the card wallet, never the cash one', async () => {
+test('v44: correcting a CARD invoice moves NEITHER wallet — the difference is owed, not collected', async () => {
   const { acct, apiId, paid } = await seedCorrection({ difference: 7000, method: 'card' });
 
   assert.equal((await approveCorrection(apiId)).status, 200);
 
   const w = await walletOf(acct.token, MONTH_A);
-  assert.equal(w.data.card.collected, paid + 7000, 'the delta follows the corrected invoice’s method');
+  assert.equal(w.data.card.collected, paid, 'v44: the card wallet is exactly the card cash received');
   assert.equal(w.data.cash.collected, 0, 'the cash wallet is untouched');
 });
 
@@ -731,7 +768,7 @@ test('refund-paid closes the decrease with ONE refund_return, and a second call 
   assert.equal(
     (await walletOf(acct.token, MONTH_A)).data.cash.collected,
     paid,
-    "the accountant's wallet is untouched by a return the owner made"
+    'v44: exactly one ledger row was appended AND it credits nothing — the wallet is real cash only'
   );
   assert.equal(
     (await walletOf(owner.token, MONTH_A)).data.cash.collected,
@@ -791,8 +828,8 @@ test('a decided correction can never be decided again — approve/reject/refund-
   );
   assert.equal(
     (await walletOf(acct.token, MONTH_A)).data.cash.collected,
-    paid + 10000,
-    'the wallet was credited exactly once'
+    paid,
+    'v44: the single ledger row credits nothing — the wallet is real cash only'
   );
 });
 
@@ -998,11 +1035,12 @@ test('the append-only ledger can NEVER be deleted through the admin synced-data 
   );
 });
 
-test('the owner DASHBOARD folds approved corrections into collected, like the app does', async () => {
-  const { owner, acct, apiId } = await seedCorrection({ difference: 5000, paid: 50000 });
+test('v44: the owner DASHBOARD keeps collected as real cash and marks the customer UNPAID for the difference', async () => {
+  const { owner, acct, ids, apiId } = await seedCorrection({ difference: 5000, paid: 50000 });
 
   const stats = (month) =>
     api('GET', `/api/account/stats?month=${month}`, { token: owner.token });
+  await priceSeededMonth(owner, ids, { dueTotal: 50000 });
 
   const before = await stats(MONTH_A);
   assert.equal(before.status, 200, `stats -> ${before.status} ${JSON.stringify(before.data)}`);
@@ -1018,8 +1056,13 @@ test('the owner DASHBOARD folds approved corrections into collected, like the ap
   // and net profit than the device for the very same month.
   const after = await stats(MONTH_A);
   assert.equal(after.status, 200);
-  assert.equal(after.data.dashboard.collected, 55000, 'the +5,000 correction is collected');
-  assert.equal(after.data.dashboard.monthlyRevenue, 55000, 'revenue tracks collected');
+  // v44: an increase is a RECEIVABLE. Collected/revenue stay real cash; the
+  // customer's due rose by 5,000 so they are unpaid again for it.
+  assert.equal(after.data.dashboard.collected, 50000, 'collected is unchanged by an increase');
+  assert.equal(after.data.dashboard.monthlyRevenue, 50000, 'revenue tracks collected');
+  assert.equal(before.data.dashboard.paidCount, 1, 'paid on the original invoice');
+  assert.equal(after.data.dashboard.paidCount, 0, 'unpaid again for the +5,000 difference');
+  assert.equal(after.data.dashboard.unpaidCount, 1);
   assert.equal(
     after.data.dashboard.collected,
     (await walletOf(acct.token, MONTH_A)).data.cash.collected,
@@ -1031,3 +1074,106 @@ test('the owner DASHBOARD folds approved corrections into collected, like the ap
   assert.equal(other.status, 200);
   assert.equal(other.data.dashboard.collected, 0, 'a correction never leaks across months');
 });
+
+// ------------------------------------------------------------- v44 ----------
+
+test('v44: carry-forward closes a DECREASE by applying the credit to the NEXT month — no cash moves', async () => {
+  const { owner, acct, ids, apiId } = await seedCorrection({ difference: -8000 });
+  const adminTok = await getAdminToken();
+  const cf = (id) => api('POST', `/api/admin/corrections/${id}/carry-forward`, { token: adminTok });
+
+  // Approve the decrease -> refund_due; the customer remains paid; wallet untouched.
+  const approved = await api('POST', `/api/admin/corrections/${apiId}/approve`, { token: adminTok });
+  assert.equal(approved.status, 200, `approve -> ${approved.status} ${JSON.stringify(approved.data)}`);
+  assert.equal(approved.data.correction.status, 'refund_due');
+  const walletBefore = (await walletOf(acct.token, MONTH_A)).data.cash.collected;
+  await priceSeededMonth(owner, ids, { dueTotal: 50000 });
+  const dashA = await api('GET', `/api/account/stats?month=${MONTH_A}`, { token: owner.token });
+  assert.equal(dashA.data.dashboard.paidCount, 1, 'a decrease keeps the customer PAID');
+
+  // v44 review fix: a credit is applied ONLY when the target month can absorb
+  // it in full. Unpriced target -> refused, nothing written.
+  const unpriced = await cf(apiId);
+  assert.equal(unpriced.status, 409, `carry-forward into an unpriced month -> ${unpriced.status}`);
+  assert.equal(unpriced.data.code, 'CORRECTION_CARRY_TARGET_UNPRICED');
+  assert.equal((await mirrorRows(owner.id, 'financial_adjustments')).filter((a) => (a.data || {}).kind === 'credit_applied').length, 0, 'refusal wrote nothing');
+  assert.equal((await mirrorRow(owner.id, 'corrections', ids.correction)).data.status, 'refund_due', 'still holding the credit');
+
+  // Price the target month (amps 5 x 10,000 = 50,000 due, nothing paid) so the
+  // 8,000 credit fits.
+  await priceSeededMonth(owner, ids, { dueTotal: 50000, month: MONTH_B });
+
+  // Carry it forward.
+  const done = await cf(apiId);
+  assert.equal(done.status, 200, `carry-forward -> ${done.status} ${JSON.stringify(done.data)}`);
+  assert.equal(done.data.ok, true);
+  assert.equal(done.data.correction.status, 'carried_forward');
+  assert.equal(done.data.targetMonth, MONTH_B, 'applied to the month AFTER the corrected one');
+
+  // ONE credit_applied row, on the TARGET month, positive magnitude.
+  const ledger = await mirrorRows(owner.id, 'financial_adjustments');
+  const credits = ledger.filter((a) => (a.data || {}).kind === 'credit_applied');
+  assert.equal(credits.length, 1, 'exactly one credit_applied row');
+  assert.equal(credits[0].data.month, MONTH_B, 'its month is the TARGET month');
+  assert.equal(Number(credits[0].data.amount), 8000);
+  assert.equal(credits[0].data.accountant_id, null, 'a due reduction, never a wallet movement');
+
+  // No cash moved anywhere.
+  assert.equal((await walletOf(acct.token, MONTH_A)).data.cash.collected, walletBefore, 'wallet A untouched');
+  assert.equal((await walletOf(acct.token, MONTH_B)).data.cash.collected, 0, 'wallet B untouched');
+
+  // Terminal: cannot re-apply, cannot refund a carried credit.
+  const again = await cf(apiId);
+  assert.equal(again.status, 409, `second carry-forward -> ${again.status}`);
+  assert.equal(again.data.code, 'CORRECTION_NOT_REFUND_DUE');
+  const refund = await api('POST', `/api/admin/corrections/${apiId}/refund-paid`, { token: adminTok });
+  assert.equal(refund.status, 409, `refund after carry-forward -> ${refund.status}`);
+  assert.equal(refund.data.code, 'CORRECTION_NOT_REFUND_DUE');
+  assert.equal((await mirrorRows(owner.id, 'financial_adjustments')).filter((a) => (a.data || {}).kind === 'credit_applied').length, 1, 'still one');
+
+  // The list reports the derived settlement status.
+  const list = await api('GET', `/api/admin/corrections?userId=${owner.id}`, { token: adminTok });
+  assert.equal(list.status, 200);
+  const item = list.data.items.find((x) => x.localId === ids.correction);
+  assert.ok(item, 'the correction is listed');
+  assert.equal(item.settlementStatus, 'carried_forward');
+});
+
+test('v44: an approved INCREASE reports unpaid_difference until a receipt covers it, then paid', async () => {
+  const { owner, ids, apiId } = await seedCorrection({ difference: 5000, paid: 50000 });
+  const adminTok = await getAdminToken();
+  assert.equal((await api('POST', `/api/admin/corrections/${apiId}/approve`, { token: adminTok })).status, 200);
+  // v44 review fix: `paid` is DERIVED (frozen amps x price + delta − coverage),
+  // so the month must be priced: 50,000 invoiced + 5,000 increase.
+  await priceSeededMonth(owner, ids, { dueTotal: 50000 });
+
+  const before = await api('GET', `/api/admin/corrections?userId=${owner.id}`, { token: adminTok });
+  assert.equal(before.data.items.find((x) => x.localId === ids.correction).settlementStatus, 'unpaid_difference');
+
+  // The customer pays the difference with an ORDINARY receipt.
+  await seedRows(owner, [
+    receiptRow({ id: uid('rec'), no: 99, subscriberId: ids.sub, month: MONTH_A, amount: 5000, acctId: null }),
+  ]);
+  const after = await api('GET', `/api/admin/corrections?userId=${owner.id}`, { token: adminTok });
+  assert.equal(after.data.items.find((x) => x.localId === ids.correction).settlementStatus, 'paid');
+});
+
+test('v44 review: carry-forward is REFUSED when the credit exceeds what the target month still owes', async () => {
+  // A 60,000 credit against a target month that owes only 50,000.
+  const { owner, ids, apiId } = await seedCorrection({ difference: -60000, paid: 50000 });
+  const adminTok = await getAdminToken();
+  assert.equal((await api('POST', `/api/admin/corrections/${apiId}/approve`, { token: adminTok })).status, 200);
+  await priceSeededMonth(owner, ids, { dueTotal: 50000, month: MONTH_B });
+
+  const tooLarge = await api('POST', `/api/admin/corrections/${apiId}/carry-forward`, { token: adminTok });
+  assert.equal(tooLarge.status, 409, `too-large carry-forward -> ${tooLarge.status} ${JSON.stringify(tooLarge.data)}`);
+  assert.equal(tooLarge.data.code, 'CORRECTION_CARRY_TOO_LARGE');
+  assert.equal((await mirrorRow(owner.id, 'corrections', ids.correction)).data.status, 'refund_due', 'nothing changed');
+  assert.equal((await mirrorRows(owner.id, 'financial_adjustments')).filter((a) => (a.data || {}).kind === 'credit_applied').length, 0);
+
+  // The cash-refund path is still open.
+  const refund = await api('POST', `/api/admin/corrections/${apiId}/refund-paid`, { token: adminTok });
+  assert.equal(refund.status, 200, `refund -> ${refund.status} ${JSON.stringify(refund.data)}`);
+  assert.equal(refund.data.correction.status, 'completed');
+});
+

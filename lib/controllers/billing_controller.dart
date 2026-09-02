@@ -222,7 +222,15 @@ class BillingController extends GetxController {
       subscriberId: sub.id,
       month: month,
     );
-    double totalDue = (frozenAmps ?? sub.amps) * mp.pricePerAmp;
+    // v44 — plus the signed change from DECIDED corrections: an approved
+    // increase makes the customer owe the difference (UNPAID until a receipt
+    // covers it); a credit carried forward INTO this month reduces it. Dart
+    // twin of DbHelper.correctionDueDelta, so lists and detail agree.
+    final double dueDelta = await _correctionRepo.dueDeltaFor(
+      subscriberId: sub.id,
+      month: month,
+    );
+    double totalDue = (frozenAmps ?? sub.amps) * mp.pricePerAmp + dueDelta;
 
     // 2. Subtract COVERAGE (this branch's receipts only). Coverage = cash paid
     //    PLUS any discount waived (P5), so a discounted FULL payment shows due 0.

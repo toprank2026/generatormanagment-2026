@@ -1,6 +1,7 @@
 'use strict';
 
 const bcrypt = require('bcryptjs');
+const { buildFrozenAmps } = require('../utils/frozenAmps');
 const SyncRecord = require('../models/SyncRecord');
 const User = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
@@ -76,7 +77,7 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
   // (collected/expenses), applied in JS. monthly_prices is per-branch (its PK
   // is "<month>|<branchId>") so we match it by data.month + branch.
   const branchMatch = branchId ? { 'data.branch_id': branchId } : {};
-  const [priceRows, subscribers, receipts, expenses, lastUpload, boardsCount, circuitsCount, adjustmentRows] = await Promise.all([
+  const [priceRows, subscribers, receipts, expenses, lastUpload, boardsCount, circuitsCount, adjustmentRows, correctionRows] = await Promise.all([
     // Per-branch, per-category monthly prices (matched by data.month + branch;
     // legacy rows that predate per-branch pricing carry no branch_id and only
     // match consolidated). One row per category — we build a category→price map.
@@ -117,6 +118,16 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
     SyncRecord.find(
       { user: userId, entity: 'financial_adjustments', deleted: false, 'data.month': month, ...branchMatch },
       { data: 1 }
+    ),
+    // v44 review fix: the account's corrections — (a) their STATUS decides
+    // which ledger rows are in force, (b) a DECIDED one whose month >= the
+    // report month freezes the subscriber's amps on its old_amps (the mirror
+    // twin of DbHelper.effectiveAmps; without it the dashboard priced the
+    // corrected month on the LIVE applied amps and then added the increase
+    // again — double-counting every approved increase).
+    SyncRecord.find(
+      { user: userId, entity: 'corrections', deleted: false },
+      { data: 1, localId: 1 }
     ),
   ]);
 
@@ -201,12 +212,28 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
   //                                      only the physical return moves cash)
   // Scoped by the same accountant filter as the receipts above, so a
   // per-accountant dashboard stays consistent with that accountant's wallet.
+  // v44 MONEY RULE: only the PHYSICAL cash return moves collected money. An
+  // approved INCREASE no longer credits anything here — the customer owes the
+  // difference and it arrives through a real receipt (which is already in
+  // `receipts` above). Same rule as the app's adjustmentTotal.
   let adjustmentTotal = 0;
+  const frozen = buildFrozenAmps(correctionRows, month);
+  // v44 DUE RULE: + increases / − credits applied, per subscriber, folded into
+  // that subscriber's due below so paid/unpaid matches the app. STATUS-AWARE
+  // (review fix): a row counts only while its correction is in the terminal
+  // state it represents, so a double-close race can never settle twice.
+  const dueDeltaBySubscriber = new Map();
   for (const row of adjustmentRows) {
     const d = row.data || {};
-    if (d.kind !== 'correction_increase' && d.kind !== 'refund_return') continue;
-    if (!inScope(d)) continue;
-    adjustmentTotal += num(d.amount);
+    const sid = d.subscriber_id;
+    const cst = frozen.statusOf(d.correction_id);
+    if (d.kind === 'refund_return' && cst === 'completed') {
+      if (inScope(d)) adjustmentTotal += num(d.amount);
+    } else if (d.kind === 'correction_increase' && cst === 'approved' && sid != null) {
+      dueDeltaBySubscriber.set(sid, (dueDeltaBySubscriber.get(sid) || 0) + num(d.amount));
+    } else if (d.kind === 'credit_applied' && cst === 'carried_forward' && sid != null) {
+      dueDeltaBySubscriber.set(sid, (dueDeltaBySubscriber.get(sid) || 0) - num(d.amount));
+    }
   }
   collected += adjustmentTotal;
 
@@ -236,13 +263,16 @@ async function buildDashboard(userId, counts, month, accountantId = null, branch
   const paidByCategory = { gold: 0, standard: 0, commercial: 0 };
   for (const s of activeSubscribers) {
     const data = s.data || {};
-    const amps = num(data.amps);
+    // v44 review fix: the amps IN FORCE for this month (a decided correction
+    // at or after it freezes the basis on its old_amps), else the live value.
+    const amps = frozen.ampsFor(data.id || s.localId, num(data.amps));
     totalAmps += amps;
     // Price from the subscriber's OWN branch + category (consolidated view keeps
     // per-branch tariffs distinct). In single-branch mode all rows share one
     // branchKey so this is identical to the old per-category lookup.
     const catPrice = priceFor(data.branch_id, data.category);
-    const due = amps * catPrice;
+    // v44: + approved increases / − credits applied for this month.
+    const due = amps * catPrice + (dueDeltaBySubscriber.get(data.id || s.localId) || 0);
     expected += due;
     const coverage = coverageBySubscriber.get(data.id || s.localId) || 0;
     // v23 (§2.2): unpriced category → UNPAID (was: due=0 → coverage>=0 → paid,
@@ -479,9 +509,20 @@ const getWallet = asyncHandler(async (req, res) => {
   if (acctId) adjFilter['data.accountant_id'] = acctId;
   if (month) adjFilter['data.month'] = month;
   const adjustments = await SyncRecord.find(adjFilter).lean();
+  // v44 review fix: STATUS-AWARE — the cash return counts only while its
+  // correction is `completed` (see buildFrozenAmps).
+  const corrRows = await SyncRecord.find(
+    { user: ownerId, entity: 'corrections', deleted: false },
+    { data: 1, localId: 1 }
+  ).lean();
+  const walletFrozen = buildFrozenAmps(corrRows, null);
   for (const a of adjustments) {
     const d = a.data || {};
-    if (d.kind !== 'correction_increase' && d.kind !== 'refund_return') continue;
+    // v44: ONLY the physical cash return moves the wallet. An increase is a
+    // receivable (the customer owes it) and reaches the wallet through a real
+    // receipt; a decrease/credit never moves cash here.
+    if (d.kind !== 'refund_return') continue;
+    if (walletFrozen.statusOf(d.correction_id) !== 'completed') continue;
     // Same wallet bucketing as receipts/settlements: cash unless explicitly card.
     const method = (d.method || 'cash') === 'card' ? 'card' : 'cash';
     collected[method] += Number(d.amount) || 0;
@@ -619,6 +660,7 @@ const updateMyProfile = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  buildFrozenAmps,
   getMyData,
   getMyStats,
   getMyRecent,

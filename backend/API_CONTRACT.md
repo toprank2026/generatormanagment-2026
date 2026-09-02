@@ -452,14 +452,53 @@ next pull. They push and pull through `/api/sync` like any other business row �
   "old_amps": 5, "new_amps": 6,    // what the month WAS billed on / should be
   "old_due": 50000, "new_due": 60000,
   "difference": 10000,             // new_due − old_due; >0 increase, <0 decrease
-  "status": "pending",             // pending|approved|rejected|refund_due|completed
+  "status": "pending",             // pending|approved|rejected|refund_due|completed|carried_forward (v44)
   "requested_by": "user id", "requested_at": "ISO",
   "decided_by": "user id", "decided_at": "ISO", "decision_note": "...",
   "refund_paid_at": "ISO", "refund_paid_by": "user id",
   "created_at": "ISO", "updated_at": "ISO"
 }
 ```
-Lifecycle: `pending → approved | rejected`, and for a **decrease**
+**Flash v44 — correction settlement rules (the customer owes the difference).**
+The v43 rule credited an approved **increase** straight to the accountant's
+wallet — cash nobody had handed over. v44 replaces it:
+
+| `financial_adjustments.kind` | wallet / `collected` | customer **due** for `month` |
+|---|---|---|
+| `correction_increase` | **0** | **+ amount** — the customer is **unpaid** for the difference until an ordinary receipt covers it |
+| `correction_decrease` | 0 | 0 — the customer **remains paid**; the credit lives on the correction |
+| `refund_return` (negative) | + amount (owner cash out) | 0 |
+| `credit_applied` (**new**) | 0 | **− amount** — a decrease's credit carried forward INTO this `month` (the target) |
+
+So an accountant's wallet is again exactly **receipts − settlements**; the
+difference reaches it only through a real receipt. `GET /api/account/wallet`
+and `GET /api/account/stats` (`collected`, `monthlyRevenue`, and the per-
+subscriber paid/unpaid derivation) mirror this rule byte-for-byte with the app.
+No schema change: `credit_applied` rides in the existing ledger with `month` =
+the month it is applied to; `carried_forward` is a new value of the existing
+TEXT `status`.
+
+`GET /api/admin/corrections` items also carry **`settlementStatus`** (derived,
+never stored): `awaiting_approval · unpaid_difference · paid · credit ·
+refunded · carried_forward · rejected` — for an approved increase, `paid` is
+derived on the app's exact formula (frozen amps × price + in-force delta −
+valid-receipt coverage ≤ 0), never on the stored `newDue` snapshot.
+
+`POST /api/admin/corrections/:id/carry-forward` applies the credit **only when
+the target month (corrected month + 1) can absorb it in full**; otherwise it
+refuses with `409` and writes nothing: `CORRECTION_CARRY_TARGET_UNPRICED` (no
+tariff for the subscriber's branch/category), `CORRECTION_CARRY_TARGET_COVERED`
+(target already fully paid), `CORRECTION_CARRY_TOO_LARGE` (credit exceeds what
+the target still owes). Use the cash refund (`refund-paid`) instead. On success
+the response carries `targetMonth`. The app enforces the same three refusals.
+
+**Status-aware folds.** A ledger row counts only while its correction is in the
+terminal state it represents (`correction_increase` ↔ `approved`,
+`credit_applied` ↔ `carried_forward`, `refund_return` ↔ `completed`), on the
+device and in `wallet`/`stats`. The correction's status is last-edit-wins, so a
+double-close race can never settle a credit twice.
+
+Lifecycle: `pending → approved | rejected`, and for a **decrease** (v44: `refund_due → carried_forward` via carry-forward is the alternative close)
 `pending → refund_due → completed` (the cash return is its own step).
 Golden rule: *invoice month = accounting month = settlement month = correction
 month* — a correction can never affect another month.
@@ -473,7 +512,7 @@ month* — a correction can never affect another month.
   "month": "2026-08",              // the same tariff bucket as receipts/settlements
   "branch_id": "uuid",
   "accountant_id": "uuid|null",    // null on refund_return — see the money rule
-  "kind": "correction_increase",   // correction_increase|correction_decrease|refund_return
+  "kind": "correction_increase",   // correction_increase|correction_decrease|refund_return|credit_applied (v44)
   "amount": 10000,
   "method": "cash",                // 'cash'|'card' — which wallet, like settlements
   "created_at": "ISO", "created_by": "user id", "updated_at": "ISO"
@@ -948,6 +987,7 @@ Errors: `400` missing `entity`, `404 code=BRANCH_NOT_FOUND`, `403 code=FORBIDDEN
 - `POST   /api/admin/corrections/:id/approve`         approve — **this is what appends the money adjustment**
 - `POST   /api/admin/corrections/:id/reject`          reject — body `{ "note": "..." }`; moves no money
 - `POST   /api/admin/corrections/:id/refund-paid`     record the physical cash return that closes a decrease
+- `POST   /api/admin/corrections/:id/carry-forward`   **v44** — close a decrease by applying its credit to the NEXT month instead (no cash moves)
 - `GET    /api/admin/plans`                          list all plans
 - `PUT    /api/admin/plans`                          upsert a plan (body = Plan)
 - `DELETE /api/admin/plans/:code`                    delete a plan

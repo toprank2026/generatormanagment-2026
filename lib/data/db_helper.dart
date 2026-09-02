@@ -474,10 +474,42 @@ class DbHelper {
   static String effectiveAmps({String sub = 's', String price = 'mp'}) =>
       "COALESCE((SELECT c.old_amps FROM corrections c "
       "WHERE c.subscriber_id = $sub.id "
-      "AND c.status IN ('approved', 'refund_due', 'completed') "
+      "AND c.status IN ('approved', 'refund_due', 'completed', 'carried_forward') "
       "AND c.old_amps IS NOT NULL "
       "AND c.month >= $price.month "
-      "ORDER BY c.month ASC, c.id ASC LIMIT 1), $sub.amps)";
+      "ORDER BY c.month ASC, COALESCE(c.requested_at, '') ASC, c.id ASC LIMIT 1), "
+      "$sub.amps)";
+
+  /// v44 — the signed change to a subscriber's DUE for a month that comes from
+  /// DECIDED corrections, independent of amps:
+  ///
+  ///   + Σ `correction_increase` for (subscriber, month) — the customer owes
+  ///     the difference and is UNPAID until a receipt covers it;
+  ///   − Σ `credit_applied`     for (subscriber, month) — a decrease's credit
+  ///     carried forward INTO this month reduces what is owed.
+  ///
+  /// `correction_decrease` and `refund_return` contribute nothing here: the
+  /// customer stays paid at the invoiced due, and the credit lives on the
+  /// correction until it is refunded or applied. Like [effectiveAmps] it reads
+  /// the month from the joined `monthly_prices` alias and takes NO bind
+  /// parameter, so it drops into the existing raw SQL untouched.
+  ///
+  /// STATUS-AWARE (v44 review fix): a row counts only while its correction is
+  /// in the terminal state that row represents — an increase while `approved`,
+  /// a carried credit while `carried_forward`. The correction's status is
+  /// last-edit-wins across devices, so it is the single arbiter: an offline
+  /// race that appended BOTH a `refund_return` and a `credit_applied` for one
+  /// credit can never settle it twice. (The ledger stays append-only; the
+  /// join decides which rows are *in force*.)
+  static String correctionDueDelta({String sub = 's', String price = 'mp'}) =>
+      "COALESCE((SELECT SUM(CASE "
+      "WHEN a.kind = 'correction_increase' AND c.status = 'approved' "
+      "THEN COALESCE(a.amount, 0) "
+      "WHEN a.kind = 'credit_applied' AND c.status = 'carried_forward' "
+      "THEN -COALESCE(a.amount, 0) "
+      "ELSE 0 END) FROM financial_adjustments a "
+      "LEFT JOIN corrections c ON c.id = a.correction_id "
+      "WHERE a.subscriber_id = $sub.id AND a.month = $price.month), 0)";
 
   /// The same rule for a query that has NO `monthly_prices` join: the month is
   /// a BIND PARAMETER, so the caller must supply it (and, because the `?` sits
@@ -486,10 +518,11 @@ class DbHelper {
   static String effectiveAmpsParam({String sub = 's'}) =>
       "COALESCE((SELECT c.old_amps FROM corrections c "
       "WHERE c.subscriber_id = $sub.id "
-      "AND c.status IN ('approved', 'refund_due', 'completed') "
+      "AND c.status IN ('approved', 'refund_due', 'completed', 'carried_forward') "
       "AND c.old_amps IS NOT NULL "
       "AND c.month >= ? "
-      "ORDER BY c.month ASC, c.id ASC LIMIT 1), $sub.amps)";
+      "ORDER BY c.month ASC, COALESCE(c.requested_at, '') ASC, c.id ASC LIMIT 1), "
+      "$sub.amps)";
 
   /// Display-only: no stored value is read differently and nothing is rewritten.
   static String creationOrder([String alias = '']) {

@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 import 'package:generatormanagment/data/repositories/accountant_repository.dart';
 import 'package:generatormanagment/data/repositories/core_repositories.dart';
+import 'package:generatormanagment/data/repositories/correction_repository.dart';
 import 'package:generatormanagment/data/repositories/billing_repositories.dart';
 import 'package:generatormanagment/data/repositories/expense_repository.dart';
 import 'package:generatormanagment/data/models/billing_models.dart';
@@ -19,6 +20,7 @@ class ReportsController extends GetxController {
   final SubscriberRepository _subRepo = SubscriberRepository();
   final ReceiptRepository _receiptRepo = ReceiptRepository();
   final MonthlyPriceRepository _priceRepo = MonthlyPriceRepository();
+  final CorrectionRepository _correctionRepo = CorrectionRepository();
   final ExpenseRepository _expenseRepo = ExpenseRepository();
   final AuthController _auth = Get.find();
   final BranchController _branch = Get.find();
@@ -195,6 +197,13 @@ class ReportsController extends GetxController {
           expectedLocal += amps * (prices[cat] ?? 0.0);
         });
       }
+      // v44 review fix: approved increases raise what the month is expected
+      // to bring in and carried credits lower it — the same delta `remaining`
+      // and the backend `expected` already fold, so the three agree.
+      expectedLocal += await _correctionRepo.dueDeltaTotal(
+        month: m,
+        branchId: branch,
+      );
       final double collectedLocal = await _receiptRepo.getCollectedSum(m,
           accountantId: scope, branchId: branch);
       // v33 (audit fix, mirrors DashboardController): remaining = Σ
